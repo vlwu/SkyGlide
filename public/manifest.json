@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "SkyGlide - Flight Game",
+  "version": "1.0.0",
+  "description": "A lightweight, Elytra-inspired flying game in your new tab.",
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "action": {
+    "default_title": "Start Flying!"
+  },
+  "permissions": ["storage"]
+}
