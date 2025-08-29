@@ -2,35 +2,51 @@ import { createNoise2D } from 'simplex-noise';
 
 const MAX_HEIGHT = 160;
 const MOISTURE_NOISE_SCALE = 0.05;
+const TEMPERATURE_NOISE_SCALE = 0.025;
 const WATER_LEVEL = 0.22 * MAX_HEIGHT;
 
 const BIOMES = {
     SAND: { color: { r: 0.99, g: 0.85, b: 0.21 } },
-    GRASSLAND: { color: { r: 0.49, g: 0.70, b: 0.26 }, foliage: true, foliageDensity: 0.05 },
-    FOREST: { color: { r: 0.22, g: 0.56, b: 0.24 }, foliage: true, foliageDensity: 0.3 },
+    GRASSLAND: { color: { r: 0.49, g: 0.70, b: 0.26 }, foliage: { profile: 'deciduous_green', density: 0.03 } },
+    FOREST: { color: { r: 0.22, g: 0.56, b: 0.24 }, foliage: { profile: 'deciduous_green', density: 0.4 } },
     ROCK: { color: { r: 0.5, g: 0.5, b: 0.5 } },
     SNOW: { color: { r: 0.96, g: 0.96, b: 0.96 } },
+    SAVANNA: { color: { r: 0.76, g: 0.69, b: 0.42 }, foliage: { profile: 'savanna', density: 0.02 } },
+    AUTUMNAL_FOREST: { color: { r: 0.8, g: 0.4, b: 0.1 }, foliage: { profile: 'deciduous_autumn', density: 0.35 } },
+    TAIGA: { color: { r: 0.1, g: 0.4, b: 0.2 }, foliage: { profile: 'pine', density: 0.4 } },
+    TUNDRA: { color: { r: 0.6, g: 0.6, b: 0.55 } },
+    SWAMP: { color: { r: 0.2, g: 0.3, b: 0.25 }, foliage: { profile: 'deciduous_green', density: 0.1 } },
 };
+
 
 const elevationNoise = createNoise2D();
 const moistureNoise = createNoise2D();
+const temperatureNoise = createNoise2D();
 
-function getBiome(e, m) {
-    // e = elevation, normalized 0-1
-    // Water level is at e = 0.22
+function getBiome(e, m, t) {
+    if (e < 0.24) { // Lowlands near water
+        if (t > 0.5 && m > 0.5) return BIOMES.SWAMP;
+        return BIOMES.SAND;
+    }
 
-    if (e < 0.24) return BIOMES.SAND; // Creates ocean floor and beaches up to e = 0.24
-    if (e > 0.75) { // High altitude
+    if (e > 0.75) { // High elevations
         if (m < 0.5) return BIOMES.ROCK;
         return BIOMES.SNOW;
     }
-    if (e > 0.5) { // Medium-high altitude
-        if (m < 0.5) return BIOMES.GRASSLAND;
-        return BIOMES.FOREST;
+
+    if (t < 0.3) { // Cold regions
+         if (m > 0.4) return BIOMES.TAIGA;
+         return BIOMES.TUNDRA;
     }
-    // Low altitude (just above the beach)
+
+    if (t > 0.7) { // Hot regions
+        if (m < 0.4) return BIOMES.SAVANNA;
+        return BIOMES.FOREST; // Tropical Forest
+    }
+
+    // Temperate regions
     if (m < 0.33) return BIOMES.GRASSLAND;
-    if (m < 0.66) return BIOMES.GRASSLAND;
+    if (m < 0.66) return BIOMES.AUTUMNAL_FOREST;
     return BIOMES.FOREST;
 }
 
@@ -56,10 +72,7 @@ self.onmessage = function(e) {
 
     const positions = new Float32Array(vertexCount * 3);
     const colors = new Float32Array(vertexCount * 3);
-    const foliage = {
-        leaves: [],
-        trunks: []
-    };
+    const foliageData = {};
 
     for (let i = 0, z = -size / 2; z <= size / 2; z += segmentSize) {
         for (let x = -size / 2; x <= size / 2; x += segmentSize, i++) {
@@ -88,7 +101,8 @@ self.onmessage = function(e) {
             positions[i * 3 + 2] = z;
 
             const moisture = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
-            const biome = getBiome(elevation, moisture);
+            const temperature = (temperatureNoise(worldX * TEMPERATURE_NOISE_SCALE, worldZ * TEMPERATURE_NOISE_SCALE) + 1) / 2;
+            const biome = getBiome(elevation, moisture, temperature);
             colors[i * 3] = biome.color.r;
             colors[i * 3 + 1] = biome.color.g;
             colors[i * 3 + 2] = biome.color.b;
@@ -111,27 +125,34 @@ self.onmessage = function(e) {
         e = Math.pow(e, 2.0);
 
         const m = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
-        const biome = getBiome(e, m);
+        const t = (temperatureNoise(worldX * TEMPERATURE_NOISE_SCALE, worldZ * TEMPERATURE_NOISE_SCALE) + 1) / 2;
+        const biome = getBiome(e, m, t);
 
-        if (biome.foliage && Math.random() < biome.foliageDensity) {
+        if (biome.foliage && Math.random() < biome.foliage.density) {
             const y = e * MAX_HEIGHT;
             if (y > WATER_LEVEL) {
-                 foliage.leaves.push(x, y + 2, z);
-                 foliage.trunks.push(x, y + 1, z);
+                 const profileName = biome.foliage.profile;
+                 if (!foliageData[profileName]) {
+                     foliageData[profileName] = [];
+                 }
+                 foliageData[profileName].push(x, y, z);
             }
         }
     }
 
-    const foliageLeavesMatrix = new Float32Array(foliage.leaves);
-    const foliageTrunksMatrix = new Float32Array(foliage.trunks);
+    const transferable = [positions.buffer, colors.buffer];
+    const finalFoliageData = {};
 
-    const transferable = [positions.buffer, colors.buffer, foliageLeavesMatrix.buffer, foliageTrunksMatrix.buffer];
+    for (const profileName in foliageData) {
+        const buffer = new Float32Array(foliageData[profileName]);
+        finalFoliageData[profileName] = buffer;
+        transferable.push(buffer.buffer);
+    }
 
     self.postMessage({
         positions,
         colors,
-        foliageLeavesMatrix,
-        foliageTrunksMatrix,
+        foliageData: finalFoliageData,
         chunkId
     }, transferable);
 };
