@@ -48,7 +48,14 @@ function init() {
     // Create a group to act as the player's physics object
     player = new THREE.Group();
     const playerGeometry = new THREE.OctahedronGeometry(0.5);
-    const playerMaterial = new THREE.MeshStandardMaterial({ color: 0xff4500, metalness: 0.3, roughness: 0.6 });
+    const playerMaterial = new THREE.MeshPhysicalMaterial({
+        metalness: 0.2,
+        roughness: 0,
+        transmission: 1.0,
+        ior: 1.7,
+        thickness: 0.8,
+        transparent: true
+    });
     playerMesh = new THREE.Mesh(playerGeometry, playerMaterial); // Assign to global variable
     playerMesh.scale.set(2, 0.8, 1.2); // Elytra-like shape
     playerMesh.rotation.x = Math.PI / 2; // Rotate the visible mesh 90 degrees
