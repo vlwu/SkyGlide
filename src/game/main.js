@@ -4,7 +4,9 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 
 let scene, camera, renderer, player, playerMesh, world, raycaster, sky, sun, directionIndicator;
 let airStreams = [];
-const STREAM_SEGMENTS = 15;
+const STREAM_SEGMENTS = 20;
+const STREAM_WIDTH = 0.12; // Made ribbons thinner
+
 let previousYaw = 0;
 
 const playerVelocity = new THREE.Vector3(0, 0, 0);
@@ -100,45 +102,54 @@ function init() {
     scene.add(player);
     player.updateMatrixWorld(true);
 
-    // Air Stream Effect
-    const playerVertices = playerMesh.geometry.attributes.position;
-    const uniqueVertices = [];
-    const vertexMap = new Map();
 
-    for (let i = 0; i < playerVertices.count; i++) {
-        const x = playerVertices.getX(i);
-        const y = playerVertices.getY(i);
-        const z = playerVertices.getZ(i);
-        const key = `${x.toFixed(3)},${y.toFixed(3)},${z.toFixed(3)}`;
-        if (!vertexMap.has(key)) {
-            vertexMap.set(key, true);
-            uniqueVertices.push(new THREE.Vector3(x, y, z));
-        }
-    }
+    // Emitter points for the trails are now specific "wingtip" locations
+    const streamOrigins = [
+        new THREE.Vector3(0.5, 0, -0.1),  // Right wingtip
+        new THREE.Vector3(-0.5, 0, -0.1), // Left wingtip
+    ];
 
-    uniqueVertices.forEach(vertex => {
+    streamOrigins.forEach(vertex => {
         const points = [];
         const initialWorldPos = playerMesh.localToWorld(vertex.clone());
         for (let i = 0; i < STREAM_SEGMENTS; i++) {
             points.push(initialWorldPos.clone());
         }
-
-        const streamGeometry = new THREE.BufferGeometry().setFromPoints(points);
-        const streamMaterial = new THREE.LineBasicMaterial({
-            color: 0xffffff,
+    
+        const streamGeometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(STREAM_SEGMENTS * 2 * 3);
+        const colors = new Float32Array(STREAM_SEGMENTS * 2 * 3);
+        streamGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        streamGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    
+        const indices = [];
+        for (let i = 0; i < STREAM_SEGMENTS - 1; i++) {
+            const p1 = i * 2;
+            const p2 = p1 + 1;
+            const p3 = p1 + 2;
+            const p4 = p1 + 3;
+            indices.push(p1, p2, p3);
+            indices.push(p2, p4, p3);
+        }
+        streamGeometry.setIndex(indices);
+    
+        const streamMaterial = new THREE.MeshBasicMaterial({
+            vertexColors: true,
             transparent: true,
+            side: THREE.FrontSide, // Changed from DoubleSide to be less intrusive
             opacity: 0.5
         });
-        const streamLine = new THREE.Line(streamGeometry, streamMaterial);
-        streamLine.frustumCulled = false;
-
+    
+        const streamMesh = new THREE.Mesh(streamGeometry, streamMaterial);
+        streamMesh.frustumCulled = false;
+    
         airStreams.push({
-            line: streamLine,
+            mesh: streamMesh,
             origin: vertex.clone(),
             points: points,
             material: streamMaterial
         });
-        scene.add(streamLine);
+        scene.add(streamMesh);
     });
 
 
@@ -310,13 +321,14 @@ function restartGame() {
 
     player.updateMatrixWorld(true);
 
-    // Reset air streams
+
     airStreams.forEach(stream => {
         const initialWorldPos = stream.origin.clone().applyMatrix4(playerMesh.matrixWorld);
         for (let i = 0; i < STREAM_SEGMENTS; i++) {
             stream.points[i].copy(initialWorldPos);
         }
-        stream.line.geometry.setFromPoints(stream.points);
+        // Force an update to collapse the mesh on restart
+        updateAirStreams();
     });
 
     world.reset();
@@ -359,18 +371,56 @@ function animate() {
 
 function updateAirStreams() {
     const speed = playerVelocity.length();
-    const opacity = THREE.MathUtils.clamp(speed * 2.0, 0.2, 0.7);
+    // Made opacity much lower for a more subtle effect
+    const opacity = THREE.MathUtils.clamp(speed * 1.0, 0.05, 0.35);
+
+    const upVector = new THREE.Vector3(0, 1, 0).applyQuaternion(playerMesh.quaternion);
+
+    const startColor = new THREE.Color(0.9, 0.95, 1.0); // Bright, nearly white
+    const endColor = new THREE.Color(0.5, 0.7, 1.0);   // Softer, lighter blue for a gentler fade
 
     airStreams.forEach(stream => {
         const currentWorldPos = stream.origin.clone().applyMatrix4(playerMesh.matrixWorld);
 
-        // Shift points down the trail and add the new position at the start
+        // Shift history of points
         for (let i = STREAM_SEGMENTS - 1; i > 0; i--) {
             stream.points[i].copy(stream.points[i - 1]);
         }
         stream.points[0].copy(currentWorldPos);
 
-        stream.line.geometry.setFromPoints(stream.points);
+        const positions = stream.mesh.geometry.attributes.position.array;
+        const colors = stream.mesh.geometry.attributes.color.array;
+
+        for (let i = 0; i < STREAM_SEGMENTS; i++) {
+            const point = stream.points[i];
+
+            const ribbonUp = upVector.clone().multiplyScalar(STREAM_WIDTH / 2);
+            const p1 = point.clone().add(ribbonUp);
+            const p2 = point.clone().sub(ribbonUp);
+            
+            positions[i * 6 + 0] = p1.x;
+            positions[i * 6 + 1] = p1.y;
+            positions[i * 6 + 2] = p1.z;
+
+            positions[i * 6 + 3] = p2.x;
+            positions[i * 6 + 4] = p2.y;
+            positions[i * 6 + 5] = p2.z;
+
+            // Gradient color logic
+            const alpha = i / (STREAM_SEGMENTS - 1);
+            const currentColor = new THREE.Color().lerpColors(startColor, endColor, alpha);
+
+            colors[i * 6 + 0] = currentColor.r;
+            colors[i * 6 + 1] = currentColor.g;
+            colors[i * 6 + 2] = currentColor.b;
+            
+            colors[i * 6 + 3] = currentColor.r;
+            colors[i * 6 + 4] = currentColor.g;
+            colors[i * 6 + 5] = currentColor.b;
+        }
+
+        stream.mesh.geometry.attributes.position.needsUpdate = true;
+        stream.mesh.geometry.attributes.color.needsUpdate = true;
         stream.material.opacity = opacity;
     });
 }
@@ -406,7 +456,7 @@ function update() {
     player.position.add(playerVelocity);
 
     playerVelocity.multiplyScalar(0.99);
-    
+
     player.updateMatrixWorld(true);
 
     const cameraOffset = new THREE.Vector3(0, 2.0, 5.0);
