@@ -9,7 +9,8 @@ export class World {
 
         // Create the pool
         const obstacleGeometry = new THREE.TorusGeometry(2, 0.3, 16, 100);
-        const obstacleMaterial = new THREE.MeshBasicMaterial({ color: 0x228B22 });
+        // Switched to MeshStandardMaterial to react to light
+        const obstacleMaterial = new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 });
         for (let i = 0; i < this.poolSize; i++) {
             const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
             this.scene.add(obstacle);
@@ -20,9 +21,10 @@ export class World {
 
     // Repositions an obstacle to a new random location ahead of the player
     resetObstacle(obstacle) {
-        obstacle.position.x = (Math.random() - 0.5) * 20;
-        obstacle.position.y = (Math.random() - 0.5) * 10 + 5;
-        obstacle.position.z = this.obstacleSpawnZ - Math.random() * 30;
+        // Expanded spawn area for true 3D flight
+        obstacle.position.x = (Math.random() - 0.5) * 40;
+        obstacle.position.y = (Math.random() - 0.5) * 20 + 5;
+        obstacle.position.z = this.obstacleSpawnZ - Math.random() * 100;
     }
 
     update(playerZ) {
