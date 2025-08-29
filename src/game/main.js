@@ -100,7 +100,7 @@ function init() {
     playerMesh.scale.set(2, 0.8, 1.2);
     playerMesh.rotation.x = Math.PI / 2;
     player.add(playerMesh);
-    player.position.y = 25;
+    player.position.y = 150;
     scene.add(player);
     player.updateMatrixWorld(true);
 
@@ -313,7 +313,7 @@ function handleCollision() {
 function restartGame() {
     isGameOver = false;
 
-    player.position.set(0, 25, 0);
+    player.position.set(0, 150, 0);
     player.rotation.set(0, 0, 0);
     playerVelocity.set(0, 0, 0);
     targetRotation = { x: 0, y: 0 };
