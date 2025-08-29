@@ -44,8 +44,8 @@ export class TerrainChunk {
             uniforms: {
                 u_time: { value: 0 },
                 u_sunDirection: { value: new THREE.Vector3(0, 1, 0) },
-                u_surfaceColor: { value: new THREE.Color(0x60BFFF) }, // Lighter blue for viewing from above
-                u_depthColor: { value: new THREE.Color(0x0A4D8F) },   // Deeper blue for grazing angles
+                u_surfaceColor: { value: new THREE.Color(0x60BFFF) },
+                u_depthColor: { value: new THREE.Color(0x0A4D8F) },
             },
             vertexShader: `
                 uniform float u_time;
@@ -57,8 +57,11 @@ export class TerrainChunk {
                     vec4 worldPosition_flat = modelMatrix * vec4(position, 1.0);
 
                     // Calculate wave displacement using world coordinates for seamless tiling
-                    float wave_z_offset = sin(worldPosition_flat.x * 0.05 + u_time * 0.5) * 0.4 +
-                                          sin(worldPosition_flat.z * 0.08 + u_time * 0.8) * 0.4;
+                    // Add a third, smaller, faster wave for more detail
+                    float wave1 = sin(worldPosition_flat.x * 0.05 + u_time * 0.5) * 0.4;
+                    float wave2 = sin(worldPosition_flat.z * 0.08 + u_time * 0.8) * 0.4;
+                    float wave3 = sin(worldPosition_flat.x * 0.22 + worldPosition_flat.z * 0.15 + u_time * 1.2) * 0.15;
+                    float wave_z_offset = wave1 + wave2 + wave3;
 
                     // Create a new local position with the wave offset
                     vec3 pos = position;
@@ -68,9 +71,12 @@ export class TerrainChunk {
                     vec4 finalWorldPosition = modelMatrix * vec4(pos, 1.0);
                     v_worldPosition = finalWorldPosition.xyz;
 
-                    // Calculate normal analytically for correct lighting
-                    float dW_dx = 0.4 * 0.05 * cos(worldPosition_flat.x * 0.05 + u_time * 0.5);
-                    float dW_dz = 0.4 * 0.08 * cos(worldPosition_flat.z * 0.08 + u_time * 0.8);
+                    // Calculate normal analytically for correct lighting by taking partial derivatives of the wave function
+                    float dW_dx = 0.4 * 0.05 * cos(worldPosition_flat.x * 0.05 + u_time * 0.5) +
+                                  0.15 * 0.22 * cos(worldPosition_flat.x * 0.22 + worldPosition_flat.z * 0.15 + u_time * 1.2);
+                    float dW_dz = 0.4 * 0.08 * cos(worldPosition_flat.z * 0.08 + u_time * 0.8) +
+                                  0.15 * 0.15 * cos(worldPosition_flat.x * 0.22 + worldPosition_flat.z * 0.15 + u_time * 1.2);
+
                     vec3 worldNormal = normalize(vec3(-dW_dx, 1.0, -dW_dz));
                     v_worldNormal = worldNormal;
 
@@ -91,21 +97,21 @@ export class TerrainChunk {
                     // A more pronounced Fresnel effect for a glassy water look
                     float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(viewDirection, normal), 0.0), 5.0);
 
-                    // Sharper specular highlight
+                    // Softer, broader specular highlight
                     vec3 reflection = reflect(-u_sunDirection, normal);
                     float specular = max(0.0, dot(reflection, viewDirection));
-                    specular = pow(specular, 64.0) * 0.8;
+                    specular = pow(specular, 48.0) * 0.6;
 
                     // Color is mixed based on the viewing angle (Fresnel)
-                    // When looking from above, the color is closer to u_surfaceColor
                     vec3 waterColor = mix(u_surfaceColor, u_depthColor, fresnel);
 
                     // Final color with transparency controlled by Fresnel
-                    // This makes the water more transparent when looking straight down
-                    gl_FragColor = vec4(waterColor + specular, mix(0.65, 1.0, fresnel));
+                    // Slightly more transparent overall
+                    gl_FragColor = vec4(waterColor + specular, mix(0.6, 0.95, fresnel));
                 }
             `,
             transparent: true,
+            side: THREE.DoubleSide,
         });
 
         this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
