@@ -506,19 +506,12 @@ function update() {
     updateTerrainInteraction();
     updateAirStreams();
 
-    // Animate water
+
     world.getActiveWaterMeshes().forEach(mesh => {
-        const positions = mesh.geometry.attributes.position.array;
-        const originalPositions = mesh.geometry.userData.originalPositions;
-        for (let i = 0; i < positions.length / 3; i++) {
-            const x = originalPositions[i * 3];
-            const y = originalPositions[i * 3 + 1];
-            // Increased wave amplitude for better visibility
-            const wave1 = Math.sin(x * 0.05 + elapsedTime * 0.5) * 0.4;
-            const wave2 = Math.sin(y * 0.08 + elapsedTime * 0.8) * 0.4;
-            positions[i * 3 + 2] = wave1 + wave2; // Animate z-vertex (vertical axis for rotated plane)
+        if (mesh.material.uniforms) {
+            mesh.material.uniforms.u_time.value = elapsedTime;
+            mesh.material.uniforms.u_sunDirection.value.copy(sun).normalize();
         }
-        mesh.geometry.attributes.position.needsUpdate = true;
     });
 
 

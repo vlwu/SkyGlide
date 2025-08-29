@@ -11,7 +11,7 @@ export class TerrainChunk {
 
     buildMeshes({ positions, colors, foliageLeavesMatrix, foliageTrunksMatrix }) {
         const segments = Math.sqrt(positions.length / 3) - 1;
-        const size = 200; // CHUNK_SIZE from World.js
+        const size = 200;
         const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
         geometry.rotateX(-Math.PI / 2);
 
@@ -38,26 +38,81 @@ export class TerrainChunk {
     }
 
     generateWater(size) {
-        const waterGeometry = new THREE.PlaneGeometry(size, size, 50, 50);
+        const waterGeometry = new THREE.PlaneGeometry(size, size, 100, 100);
 
-        // Replaced the expensive Reflector with a standard Mesh and Material
-        const waterMaterial = new THREE.MeshStandardMaterial({
-            color: 0x5599ff,
+        const waterMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                u_time: { value: 0 },
+                u_sunDirection: { value: new THREE.Vector3(0, 1, 0) },
+                u_surfaceColor: { value: new THREE.Color(0x5599ff) },
+                u_depthColor: { value: new THREE.Color(0x003366) },
+            },
+            vertexShader: `
+                uniform float u_time;
+                varying vec3 v_worldPosition;
+                varying vec3 v_worldNormal;
+
+                void main() {
+                    // Calculate world position of the flat vertex
+                    vec4 worldPosition_flat = modelMatrix * vec4(position, 1.0);
+
+                    // Calculate wave displacement using world coordinates for seamless tiling
+                    float wave_z_offset = sin(worldPosition_flat.x * 0.05 + u_time * 0.5) * 0.4 +
+                                          sin(worldPosition_flat.z * 0.08 + u_time * 0.8) * 0.4;
+
+                    // Create a new local position with the wave offset
+                    vec3 pos = position;
+                    pos.z += wave_z_offset;
+                    
+                    // Final world position includes the wave
+                    vec4 finalWorldPosition = modelMatrix * vec4(pos, 1.0);
+                    v_worldPosition = finalWorldPosition.xyz;
+
+                    // Calculate normal analytically for correct lighting
+                    float dW_dx = 0.4 * 0.05 * cos(worldPosition_flat.x * 0.05 + u_time * 0.5);
+                    float dW_dz = 0.4 * 0.08 * cos(worldPosition_flat.z * 0.08 + u_time * 0.8);
+                    vec3 worldNormal = normalize(vec3(-dW_dx, 1.0, -dW_dz));
+                    v_worldNormal = worldNormal;
+
+                    gl_Position = projectionMatrix * viewMatrix * finalWorldPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 u_sunDirection;
+                uniform vec3 u_surfaceColor;
+                uniform vec3 u_depthColor;
+                varying vec3 v_worldPosition;
+                varying vec3 v_worldNormal;
+
+                void main() {
+                    vec3 viewDirection = normalize(cameraPosition - v_worldPosition);
+                    vec3 normal = normalize(v_worldNormal);
+
+                    // Fresnel effect
+                    float fresnel = 1.0 - max(dot(viewDirection, normal), 0.0);
+                    fresnel = pow(fresnel, 2.0);
+
+                    // Specular highlight
+                    vec3 reflection = reflect(-u_sunDirection, normal);
+                    float specular = max(0.0, dot(reflection, viewDirection));
+                    specular = pow(specular, 32.0) * 0.7;
+
+                    // Depth-based color
+                    float depth = 1.0 - (v_worldPosition.y - (-25.0 + (0.22 * 160.0))) / 10.0;
+                    depth = clamp(depth, 0.0, 1.0);
+                    vec3 waterColor = mix(u_surfaceColor, u_depthColor, depth);
+
+                    // Final color
+                    gl_FragColor = vec4(waterColor + specular, mix(0.8, 1.0, fresnel));
+                }
+            `,
             transparent: true,
-            opacity: 0.8,
-            roughness: 0.1,
-            metalness: 0.2
         });
 
         this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
-
-        const waterLevel = -25 + (0.22 * 160); // base_y + WATER_LEVEL
+        const waterLevel = -25 + (0.22 * 160);
         this.waterMesh.position.set(this.xOffset, waterLevel, this.zOffset);
         this.waterMesh.rotation.x = -Math.PI / 2;
-
-        // Store original vertices for animation
-        this.waterMesh.geometry.userData.originalPositions = this.waterMesh.geometry.attributes.position.array.slice();
-
         this.scene.add(this.waterMesh);
     }
 
