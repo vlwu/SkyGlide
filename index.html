@@ -25,6 +25,34 @@
             <button id="settings-button">Settings</button>
         </div>
     </div>
+    <div id="settings-overlay">
+        <h1>Settings</h1>
+        <div class="settings-content">
+            <div class="settings-option">
+                <span>Fullscreen</span>
+                <button id="fullscreen-button" class="settings-action-button">Toggle</button>
+            </div>
+            <h2 class="settings-subtitle">Keybinds</h2>
+            <div class="keybind-list">
+                <div class="keybind-row">
+                    <span>Pitch Up</span><kbd>ArrowUp</kbd>
+                </div>
+                <div class="keybind-row">
+                    <span>Pitch Down</span><kbd>ArrowDown</kbd>
+                </div>
+                <div class="keybind-row">
+                    <span>Turn Left</span><kbd>ArrowLeft</kbd>
+                </div>
+                <div class="keybind-row">
+                    <span>Turn Right</span><kbd>ArrowRight</kbd>
+                </div>
+                <div class="keybind-row">
+                    <span>Pause</span><kbd>Escape</kbd>
+                </div>
+            </div>
+        </div>
+        <button id="back-from-settings-button">Back</button>
+    </div>
     <script type="module" src="/../src/game/main.js"></script>
 </body>
 </html>

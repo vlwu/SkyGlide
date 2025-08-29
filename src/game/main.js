@@ -16,7 +16,7 @@ const forwardThrust = 0.016;
 let isGameOver = false;
 let isPaused = false;
 let score = 0;
-let scoreElement, gameOverOverlay, pauseOverlay, gameContainer, pauseScoreElement, resumeButton;
+let scoreElement, gameOverOverlay, pauseOverlay, gameContainer, pauseScoreElement, resumeButton, settingsOverlay, settingsButton, backFromSettingsButton, fullscreenButton;
 
 function init() {
     // --- Scene Setup ---
@@ -71,6 +71,10 @@ function init() {
     pauseOverlay = document.getElementById('pause-overlay');
     pauseScoreElement = document.getElementById('pause-score');
     resumeButton = document.getElementById('resume-button');
+    settingsOverlay = document.getElementById('settings-overlay');
+    settingsButton = document.getElementById('settings-button');
+    backFromSettingsButton = document.getElementById('back-from-settings-button');
+    fullscreenButton = document.getElementById('fullscreen-button');
 
 
     // --- Lighting ---
@@ -113,6 +117,9 @@ function init() {
     document.addEventListener('pointerlockchange', onPointerLockChange, false);
     gameOverOverlay.addEventListener('click', restartGame);
     resumeButton.addEventListener('click', togglePause);
+    settingsButton.addEventListener('click', showSettings);
+    backFromSettingsButton.addEventListener('click', hideSettings);
+    fullscreenButton.addEventListener('click', toggleFullscreen);
 
     // --- Start ---
     animate();
@@ -147,25 +154,29 @@ function onMouseMove(event) {
     // Adjust target rotation based on the change in mouse position
     targetRotation.y -= movementX * 0.002;
     targetRotation.x -= movementY * 0.002;
-
-    // Clamp the vertical pitch to prevent the player from flipping over
-    const maxPitch = Math.PI / 2 - 0.1; // Approx +/- 85 degrees
-    targetRotation.x = Math.max(-maxPitch, Math.min(maxPitch, targetRotation.x));
 }
 
 function onKeyDown(event) {
     if (event.key === 'Escape') {
-        togglePause();
+        if (settingsOverlay.style.opacity === '1') {
+            hideSettings();
+        } else {
+            togglePause();
+        }
         return;
     }
 
     if (isPaused || isGameOver) return; // Ignore key presses when paused or game over
 
-    // Left/Right arrow keys for roll/turning effect
+    // Arrow keys for flight control
     if (event.key === 'ArrowLeft') {
         targetRotation.y += 0.5;
     } else if (event.key === 'ArrowRight') {
         targetRotation.y -= 0.5;
+    } else if (event.key === 'ArrowUp') {
+        targetRotation.x -= 0.3; // Pitch down
+    } else if (event.key === 'ArrowDown') {
+        targetRotation.x += 0.3; // Pitch up
     }
 }
 
@@ -182,6 +193,37 @@ function togglePause() {
         pauseOverlay.style.opacity = '0';
         setTimeout(() => pauseOverlay.style.display = 'none', 500); // Match CSS transition duration
         gameContainer.requestPointerLock(); // Re-lock the cursor
+    }
+}
+
+function showSettings() {
+    // Hide pause menu, show settings menu
+    pauseOverlay.style.opacity = '0';
+    // Use the same transition duration as the CSS
+    setTimeout(() => { pauseOverlay.style.display = 'none'; }, 500);
+
+    settingsOverlay.style.display = 'flex';
+    setTimeout(() => { settingsOverlay.style.opacity = '1'; }, 10);
+}
+
+function hideSettings() {
+    // Hide settings menu, show pause menu
+    settingsOverlay.style.opacity = '0';
+    setTimeout(() => { settingsOverlay.style.display = 'none'; }, 500);
+
+    pauseOverlay.style.display = 'flex';
+    setTimeout(() => { pauseOverlay.style.opacity = '1'; }, 10);
+}
+
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
     }
 }
 
@@ -249,6 +291,11 @@ function animate() {
 }
 
 function update() {
+    // --- Input Clamping ---
+    // Clamp the vertical pitch to prevent the player from flipping over
+    const maxPitch = Math.PI / 2 - 0.1; // Approx +/- 85 degrees
+    targetRotation.x = Math.max(-maxPitch, Math.min(maxPitch, targetRotation.x));
+
     // --- Flight Physics ---
     // Smoothly interpolate player group's rotation towards the target
     player.rotation.x = THREE.MathUtils.lerp(player.rotation.x, targetRotation.x, 0.05);
