@@ -17,7 +17,8 @@ The goal is simple: fly as far as you can, dodging obstacles and honing your ref
 ## How to Play
 
 *   **Controls**: Use the **Mouse** or **Arrow Keys** (Left/Right) to steer.
-*   **Objective**: Fly as far as possible without colliding with any obstacles.
+*   **Objective**: Fly as far as possible to get the highest score. The game ends if you collide with an obstacle.
+*   **Restart**: Simply **click** anywhere after a game over to start a new flight.
 *   *(More controls like dive/climb can be added here later)*
 
 ## Get the Extension

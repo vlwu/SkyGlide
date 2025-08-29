@@ -10,7 +10,7 @@ body, html {
     height: 100vh;
 }
 
-#intro-overlay {
+#intro-overlay, #game-over-overlay {
     position: absolute;
     top: 0;
     left: 0;
@@ -28,13 +28,31 @@ body, html {
     transition: opacity 1.5s ease-out;
 }
 
-#intro-overlay h1 {
+#intro-overlay h1, #game-over-overlay h1 {
     font-size: 4rem;
     margin: 0;
     font-weight: 300;
 }
 
-#intro-overlay p {
+#intro-overlay p, #game-over-overlay p {
     font-size: 1.2rem;
     font-weight: 300;
+}
+
+#game-over-overlay {
+    opacity: 0;
+    display: none; /* Hidden by default */
+    cursor: pointer;
+}
+
+#score-container {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 1.5rem;
+    font-weight: 500;
+    z-index: 5;
+    text-shadow: 1px 1px 4px rgba(0,0,0,0.5);
 }

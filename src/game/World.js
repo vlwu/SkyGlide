@@ -33,4 +33,12 @@ export class World {
             }
         });
     }
+
+    reset() {
+        this.obstaclePool.forEach(obstacle => {
+            this.resetObstacle(obstacle);
+            // Also spread them out initially
+            obstacle.position.z -= Math.random() * 50;
+        });
+    }
 }
