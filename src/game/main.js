@@ -17,6 +17,8 @@ let isPaused = false;
 let score = 0;
 let scoreElement, gameOverOverlay, pauseOverlay, gameContainer, pauseScoreElement, resumeButton, settingsOverlay, settingsButton, backFromSettingsButton, fullscreenButton;
 
+let invertMousePitch = false;
+
 function init() {
 
     scene = new THREE.Scene();
@@ -70,6 +72,7 @@ function init() {
     settingsButton = document.getElementById('settings-button');
     backFromSettingsButton = document.getElementById('back-from-settings-button');
     fullscreenButton = document.getElementById('fullscreen-button');
+    const invertPitchToggle = document.getElementById('invert-pitch-toggle');
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
@@ -109,6 +112,16 @@ function init() {
     settingsButton.addEventListener('click', showSettings);
     backFromSettingsButton.addEventListener('click', hideSettings);
     fullscreenButton.addEventListener('click', toggleFullscreen);
+    invertPitchToggle.addEventListener('change', (event) => {
+        invertMousePitch = event.target.checked;
+        localStorage.setItem('invertMousePitch', invertMousePitch);
+    });
+
+    const savedInvertSetting = localStorage.getItem('invertMousePitch');
+    if (savedInvertSetting !== null) {
+        invertMousePitch = savedInvertSetting === 'true';
+        invertPitchToggle.checked = invertMousePitch;
+    }
 
 
     animate();
@@ -142,7 +155,12 @@ function onMouseMove(event) {
 
 
     targetRotation.y -= movementX * 0.002;
-    targetRotation.x -= movementY * 0.002;
+    
+    if (invertMousePitch) {
+        targetRotation.x += movementY * 0.002;
+    } else {
+        targetRotation.x -= movementY * 0.002;
+    }
 }
 
 function onKeyDown(event) {
