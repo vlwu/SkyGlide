@@ -26,8 +26,8 @@ let invertMousePitch = false;
 function init() {
 
     scene = new THREE.Scene();
-    // REMOVED: The following line created a uniform haze that washed out the sky colors.
-    // scene.fog = new THREE.Fog(skyColor, 150, 400);
+
+
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 2, 5);
@@ -35,6 +35,7 @@ function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.5;
     gameContainer = document.getElementById('game-container');
     gameContainer.appendChild(renderer.domElement);
 
@@ -45,13 +46,13 @@ function init() {
 
     sun = new THREE.Vector3();
 
-    // MODIFIED: Adjusted sky parameters for a more vibrant and less hazy appearance.
+
     const effectController = {
-        turbidity: 1,       // Reduced from 2 for a clearer sky
-        rayleigh: 2.5,      // Increased from 1 for a richer, deeper blue
-        mieCoefficient: 0.001, // Reduced from 0.005 to minimize the white glare around the sun
-        mieDirectionalG: 0.8,
-        elevation: 20,      // Lowered from 35 to create a warmer, late-afternoon light
+        turbidity: 10,
+        rayleigh: 3,
+        mieCoefficient: 0.005,
+        mieDirectionalG: 0.7,
+        elevation: 5,
         azimuth: 180,
     };
 
@@ -79,9 +80,9 @@ function init() {
     fullscreenButton = document.getElementById('fullscreen-button');
     const invertPitchToggle = document.getElementById('invert-pitch-toggle');
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    const hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x4caf50, 0.6);
+    scene.add(hemisphereLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
     directionalLight.position.copy(sun).multiplyScalar(50);
     scene.add(directionalLight);
 

@@ -10,7 +10,7 @@ export class TerrainChunk {
 
     buildMeshes({ positions, colors, foliageLeavesMatrix, foliageTrunksMatrix }) {
         const segments = Math.sqrt(positions.length / 3) - 1;
-        const size = Math.max(...positions.map(p => Math.abs(p))); // Approximation
+        const size = Math.max(...positions.map(p => Math.abs(p)));
         const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
         geometry.rotateX(-Math.PI / 2);
         geometry.attributes.position.array = positions;
@@ -38,13 +38,13 @@ export class TerrainChunk {
 
         const treeLeavesGeo = new THREE.IcosahedronGeometry(1.5, 0);
         const treeTrunkGeo = new THREE.CylinderGeometry(0.2, 0.2, 2, 5);
-        
-        const treeLeavesMat = new THREE.MeshStandardMaterial({ color: 0x006400, flatShading: true });
-        const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, flatShading: true });
-        
+
+        const treeLeavesMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32, flatShading: true });
+        const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x5D4037, flatShading: true });
+
         const foliageMesh = new THREE.InstancedMesh(treeLeavesGeo, treeLeavesMat, instanceCount);
         const trunkMesh = new THREE.InstancedMesh(treeTrunkGeo, treeTrunkMat, instanceCount);
-        
+
         const dummy = new THREE.Object3D();
 
         for (let i = 0; i < instanceCount; i++) {

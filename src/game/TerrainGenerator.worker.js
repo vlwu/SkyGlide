@@ -5,12 +5,12 @@ const ELEVATION_NOISE_SCALE = 0.02;
 const MOISTURE_NOISE_SCALE = 0.05;
 
 const BIOMES = {
-    OCEAN: { color: { r: 0.27, g: 0.51, b: 0.70 } },
-    SAND: { color: { r: 0.94, g: 0.90, b: 0.55 } },
-    GRASSLAND: { color: { r: 0.30, g: 0.69, b: 0.31 }, foliage: true, foliageDensity: 0.05 },
-    FOREST: { color: { r: 0.13, g: 0.55, b: 0.13 }, foliage: true, foliageDensity: 0.3 },
-    ROCK: { color: { r: 0.5, g: 0.5, b: 0.5 } },
-    SNOW: { color: { r: 1.0, g: 1.0, b: 1.0 } },
+    OCEAN: { color: { r: 0.11, g: 0.53, b: 0.90 } },
+    SAND: { color: { r: 0.99, g: 0.85, b: 0.21 } },
+    GRASSLAND: { color: { r: 0.49, g: 0.70, b: 0.26 }, foliage: true, foliageDensity: 0.05 },
+    FOREST: { color: { r: 0.22, g: 0.56, b: 0.24 }, foliage: true, foliageDensity: 0.3 },
+    ROCK: { color: { r: 0.38, g: 0.38, b: 0.38 } },
+    SNOW: { color: { r: 0.96, g: 0.96, b: 0.96 } },
 };
 
 const elevationNoise = createNoise2D();
@@ -96,7 +96,7 @@ self.onmessage = function(e) {
 
         if (biome.foliage && Math.random() < biome.foliageDensity) {
             const y = Math.pow((getOctaveNoise(worldX, worldZ, 4, 0.5, 2, 0.005, 1) + 1) / 2, 2.5) * MAX_HEIGHT;
-            
+
             foliage.leaves.push(x, y + 2, z);
             foliage.trunks.push(x, y + 1, z);
         }
