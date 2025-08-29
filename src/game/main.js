@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { World } from './World.js';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
 
-let scene, camera, renderer, player, playerMesh, world, raycaster;
+let scene, camera, renderer, player, playerMesh, world, raycaster, sky, sun;
 let previousYaw = 0; // For calculating turn rate
 // --- Physics & Control Variables ---
 const playerVelocity = new THREE.Vector3(0, 0, 0);
@@ -20,8 +21,8 @@ let scoreElement, gameOverOverlay, pauseOverlay;
 function init() {
     // --- Scene Setup ---
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB); // Sky blue
-    scene.fog = new THREE.Fog(0x87CEEB, 150, 400); // Adjusted fog for larger world
+    const skyColor = 0x87CEEB;
+    scene.fog = new THREE.Fog(skyColor, 150, 400); // Adjusted fog for larger world
 
     // --- Camera ---
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -30,7 +31,38 @@ function init() {
     // --- Renderer ---
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
     document.getElementById('game-container').appendChild(renderer.domElement);
+    
+    // --- Procedural Sky ---
+    sky = new Sky();
+    sky.scale.setScalar(450000);
+    scene.add(sky);
+
+    sun = new THREE.Vector3();
+    
+    const effectController = {
+        turbidity: 10,
+        rayleigh: 2,
+        mieCoefficient: 0.005,
+        mieDirectionalG: 0.8,
+        elevation: 15, // angle of the sun
+        azimuth: 180, // direction of the sun
+    };
+    
+    const uniforms = sky.material.uniforms;
+    uniforms['turbidity'].value = effectController.turbidity;
+    uniforms['rayleigh'].value = effectController.rayleigh;
+    uniforms['mieCoefficient'].value = effectController.mieCoefficient;
+    uniforms['mieDirectionalG'].value = effectController.mieDirectionalG;
+
+    const phi = THREE.MathUtils.degToRad(90 - effectController.elevation);
+    const theta = THREE.MathUtils.degToRad(effectController.azimuth);
+
+    sun.setFromSphericalCoords(1, phi, theta);
+
+    uniforms['sunPosition'].value.copy(sun);
+
 
     // --- UI Elements ---
     scoreElement = document.getElementById('score-container');
@@ -41,7 +73,7 @@ function init() {
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 10, 7);
+    directionalLight.position.copy(sun).multiplyScalar(50); // Align light with sky's sun
     scene.add(directionalLight);
 
     // --- Player ---
