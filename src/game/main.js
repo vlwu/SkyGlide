@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { World } from './World.js';
 
-let scene, camera, renderer, player, world, raycaster;
+let scene, camera, renderer, player, playerMesh, world, raycaster;
+let previousYaw = 0; // For calculating turn rate
 // --- Physics & Control Variables ---
 const playerVelocity = new THREE.Vector3(0, 0, 0);
 const gravity = new THREE.Vector3(0, -0.003, 0);
@@ -48,10 +49,11 @@ function init() {
     player = new THREE.Group();
     const playerGeometry = new THREE.OctahedronGeometry(0.5);
     const playerMaterial = new THREE.MeshStandardMaterial({ color: 0xff4500, metalness: 0.3, roughness: 0.6 });
-    const playerMesh = new THREE.Mesh(playerGeometry, playerMaterial);
+    playerMesh = new THREE.Mesh(playerGeometry, playerMaterial); // Assign to global variable
     playerMesh.scale.set(2, 0.8, 1.2); // Elytra-like shape
     playerMesh.rotation.x = Math.PI / 2; // Rotate the visible mesh 90 degrees
     player.add(playerMesh); // Add the mesh to the group
+    player.position.y = 25; // Set initial spawn height
     scene.add(player); // Add the group to the scene
 
     // --- World ---
@@ -131,10 +133,14 @@ function restartGame() {
     isGameOver = false;
 
     // Reset player physics and position
-    player.position.set(0, 0, 0);
+    player.position.set(0, 25, 0); // Set respawn height
     player.rotation.set(0, 0, 0); // Reset group's rotation
     playerVelocity.set(0, 0, 0);
     targetRotation = { x: 0, y: 0 };
+    
+    // Reset visual mesh rotation and yaw tracker
+    playerMesh.rotation.set(Math.PI / 2, 0, 0);
+    previousYaw = 0;
 
 
     // Reset world and score
@@ -181,6 +187,21 @@ function update() {
     // Smoothly interpolate player group's rotation towards the target
     player.rotation.x = THREE.MathUtils.lerp(player.rotation.x, targetRotation.x, 0.05);
     player.rotation.y = THREE.MathUtils.lerp(player.rotation.y, targetRotation.y, 0.05);
+
+    // --- Continuous Visual Rotation ---
+    // Calculate Yaw Delta for Roll speed
+    const yawDelta = player.rotation.y - previousYaw;
+    previousYaw = player.rotation.y;
+    const rollSpeed = yawDelta * -8; // Multiplier for sensitivity
+
+    // Calculate Tumble speed from Vertical Velocity
+    const tumbleSpeed = playerVelocity.y * -1.5; // Multiplier for sensitivity
+
+    // Apply continuous rotation to the visible mesh on its local axes
+    // This does not affect the physics or camera controls
+    playerMesh.rotateY(rollSpeed); // Roll around its forward axis
+    playerMesh.rotateX(tumbleSpeed); // Tumble around its side-to-side axis
+
 
     // Create a forward vector based on the group's orientation
     const forwardVector = new THREE.Vector3(0, 0, -1);
