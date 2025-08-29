@@ -3,7 +3,7 @@ import { createNoise2D } from 'simplex-noise';
 
 // --- TERRAIN CONFIGURATION ---
 const MAX_HEIGHT = 40;
-const ELEVATION_NOISE_SCALE = 0.02;
+const ELEVATION_NOISE_SCALE = 0.02; // Kept for reference, but new function uses its own frequency
 const MOISTURE_NOISE_SCALE = 0.05;
 
 // --- BIOME SETUP ---
@@ -40,6 +40,23 @@ function getBiome(e, m) {
     return BIOMES.FOREST;
 }
 
+// --- NEW MULTI-OCTAVE NOISE FUNCTION ---
+function getOctaveNoise(x, z, octaves, persistence, lacunarity, initialFrequency, initialAmplitude) {
+    let total = 0;
+    let frequency = initialFrequency;
+    let amplitude = initialAmplitude;
+    let maxValue = 0; // Used for normalization
+
+    for (let i = 0; i < octaves; i++) {
+        total += elevationNoise(x * frequency, z * frequency) * amplitude;
+        maxValue += amplitude;
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+
+    return total / maxValue;
+}
+
 
 export class TerrainChunk {
     constructor(scene, size, segments, xOffset, zOffset) {
@@ -64,13 +81,22 @@ export class TerrainChunk {
             const x = vertices.getX(i) + this.xOffset;
             const z = vertices.getZ(i) + this.zOffset;
 
-            // Generate elevation and normalize to 0-1 range
-            const elevation = (elevationNoise(x * ELEVATION_NOISE_SCALE, z * ELEVATION_NOISE_SCALE) + 1) / 2;
+            // Generate moisture (can be kept simple or also use multi-octave noise)
             const moisture = (moistureNoise(x * MOISTURE_NOISE_SCALE, z * MOISTURE_NOISE_SCALE) + 1) / 2;
+            
+            // --- USE THE NEW MULTI-OCTAVE NOISE FUNCTION ---
+            // Parameters: (x, z, octaves, persistence, lacunarity, initialFrequency, initialAmplitude)
+            const noiseValue = getOctaveNoise(x, z, 4, 0.5, 2, 0.005, 1);
+            
+            // Normalize the result from [-1, 1] to [0, 1]
+            const elevation = (noiseValue + 1) / 2;
+            
+            // Use an exponent to create more plains and sharper peaks, for a more dramatic landscape
+            const scaledElevation = Math.pow(elevation, 2.5);
 
-            vertices.setY(i, elevation * MAX_HEIGHT);
+            vertices.setY(i, scaledElevation * MAX_HEIGHT);
 
-            const biome = getBiome(elevation, moisture);
+            const biome = getBiome(scaledElevation, moisture);
             colors.push(biome.color.r, biome.color.g, biome.color.b);
         }
 
@@ -116,8 +142,9 @@ export class TerrainChunk {
             const worldX = x + this.xOffset;
             const worldZ = z + this.zOffset;
             
-            // Get biome at this position
-            const e = (elevationNoise(worldX * ELEVATION_NOISE_SCALE, worldZ * ELEVATION_NOISE_SCALE) + 1) / 2;
+            // Get biome at this position by re-calculating noise
+            const noiseValue = getOctaveNoise(worldX, worldZ, 4, 0.5, 2, 0.005, 1);
+            const e = Math.pow((noiseValue + 1) / 2, 2.5);
             const m = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
             const biome = getBiome(e, m);
 
