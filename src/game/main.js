@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { World } from './World.js';
 
-let scene, camera, renderer, player, world, ground;
+let scene, camera, renderer, player, world, raycaster;
 // --- Physics & Control Variables ---
 const playerVelocity = new THREE.Vector3(0, 0, 0);
 const gravity = new THREE.Vector3(0, -0.003, 0);
@@ -20,7 +20,7 @@ function init() {
     // --- Scene Setup ---
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB); // Sky blue
-    scene.fog = new THREE.Fog(0x87CEEB, 50, 200); // Add fog for depth
+    scene.fog = new THREE.Fog(0x87CEEB, 150, 400); // Adjusted fog for larger world
 
     // --- Camera ---
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -57,14 +57,8 @@ function init() {
     // --- World ---
     world = new World(scene);
 
-    // --- Ground Plane for reference ---
-    const groundGeometry = new THREE.PlaneGeometry(500, 500, 50, 50);
-    const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x4caf50, wireframe: true });
-    ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -25;
-    scene.add(ground);
-
+    // --- Collision Detection ---
+    raycaster = new THREE.Raycaster();
 
     camera.lookAt(player.position);
 
@@ -154,13 +148,18 @@ function restartGame() {
 
 
 function checkCollisions() {
-    // Note: Using the first child for collision. If more complex models are added, this may need adjustment.
-    const playerBox = new THREE.Box3().setFromObject(player.children[0]);
-    for (const obstacle of world.obstaclePool) {
-        const obstacleBox = new THREE.Box3().setFromObject(obstacle);
-        if (playerBox.intersectsBox(obstacleBox)) {
+    // Cast a ray downwards from the player's position
+    raycaster.set(player.position, new THREE.Vector3(0, -1, 0));
+    
+    const terrainMeshes = world.getActiveTerrainMeshes();
+    if (terrainMeshes.length === 0) return;
+
+    const intersects = raycaster.intersectObjects(terrainMeshes);
+
+    if (intersects.length > 0) {
+        // Check if the player is very close to the ground
+        if (intersects[0].distance < 1.0) { 
             handleCollision();
-            break;
         }
     }
 }
@@ -202,12 +201,6 @@ function update() {
     // Apply velocity to player group's position
     player.position.add(playerVelocity);
 
-    // Make ground infinite by having it follow the player
-    if (ground) {
-        ground.position.x = player.position.x;
-        ground.position.z = player.position.z;
-    }
-
     // Simple air drag
     playerVelocity.multiplyScalar(0.99);
 
@@ -220,7 +213,7 @@ function update() {
     camera.lookAt(player.position);
 
     // --- World Update ---
-    world.update(player.position.z);
+    world.update(player.position);
 
     // --- Collision Check ---
     checkCollisions();

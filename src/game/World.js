@@ -1,46 +1,75 @@
 import * as THREE from 'three';
+import { TerrainChunk } from './TerrainChunk.js';
+
+const CHUNK_SIZE = 200; // Size of each terrain chunk
+const CHUNK_SEGMENTS = 50; // Resolution of each chunk
+const VIEW_DISTANCE = 2; // In chunks, so a 5x5 grid (2+1+2) will be active
 
 export class World {
     constructor(scene) {
         this.scene = scene;
+        this.activeChunks = new Map();
+        this.currentPlayerChunkX = null;
+        this.currentPlayerChunkZ = null;
+        
+        // Obstacle pool remains for future use
         this.obstaclePool = [];
-        this.poolSize = 20;
-        this.obstacleSpawnZ = -50; // How far ahead to spawn new obstacles
+    }
 
-        // Create the pool
-        const obstacleGeometry = new THREE.TorusGeometry(2, 0.3, 16, 100);
-        // Switched to MeshStandardMaterial to react to light
-        const obstacleMaterial = new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 });
-        for (let i = 0; i < this.poolSize; i++) {
-            const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
-            this.scene.add(obstacle);
-            this.resetObstacle(obstacle);
-            this.obstaclePool.push(obstacle);
+    update(playerPosition) {
+        const playerChunkX = Math.round(playerPosition.x / CHUNK_SIZE);
+        const playerChunkZ = Math.round(playerPosition.z / CHUNK_SIZE);
+
+        // Only update chunks if the player has moved to a new one
+        if (playerChunkX !== this.currentPlayerChunkX || playerChunkZ !== this.currentPlayerChunkZ) {
+            this.currentPlayerChunkX = playerChunkX;
+            this.currentPlayerChunkZ = playerChunkZ;
+            this.updateChunks();
         }
     }
 
-    // Repositions an obstacle to a new random location ahead of the player
-    resetObstacle(obstacle) {
-        // Expanded spawn area for true 3D flight
-        obstacle.position.x = (Math.random() - 0.5) * 40;
-        obstacle.position.y = (Math.random() - 0.5) * 20 + 5;
-        obstacle.position.z = this.obstacleSpawnZ - Math.random() * 100;
+    updateChunks() {
+        const chunksToKeep = new Set();
+        // Loop through the grid of chunks that should be visible
+        for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
+            for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
+                const chunkX = this.currentPlayerChunkX + x;
+                const chunkZ = this.currentPlayerChunkZ + z;
+                const chunkId = `${chunkX},${chunkZ}`;
+                chunksToKeep.add(chunkId);
+
+                // If chunk doesn't exist, create it
+                if (!this.activeChunks.has(chunkId)) {
+                    const xOffset = chunkX * CHUNK_SIZE;
+                    const zOffset = chunkZ * CHUNK_SIZE;
+                    const newChunk = new TerrainChunk(this.scene, CHUNK_SIZE, CHUNK_SEGMENTS, xOffset, zOffset);
+                    this.activeChunks.set(chunkId, newChunk);
+                }
+            }
+        }
+
+        // Remove chunks that are no longer in view
+        for (const [chunkId, chunk] of this.activeChunks.entries()) {
+            if (!chunksToKeep.has(chunkId)) {
+                chunk.dispose();
+                this.activeChunks.delete(chunkId);
+            }
+        }
     }
 
-    update(playerZ) {
-        this.obstaclePool.forEach(obstacle => {
-            // If an obstacle has gone past the player, reset it
-            if (obstacle.position.z > playerZ + 10) {
-                this.resetObstacle(obstacle);
-            }
-        });
+    getActiveTerrainMeshes() {
+        return Array.from(this.activeChunks.values()).map(chunk => chunk.mesh).filter(mesh => mesh !== null);
     }
 
     reset() {
-        this.obstaclePool.forEach(obstacle => {
-            this.resetObstacle(obstacle);
-            // Also spread them out initially
-            obstacle.position.z -= Math.random() * 50;
-        });
+        // Clear all existing chunks
+        for (const chunk of this.activeChunks.values()) {
+            chunk.dispose();
+        }
+        this.activeChunks.clear();
+        
+        // Reset player chunk position to force re-generation on restart
+        this.currentPlayerChunkX = null;
+        this.currentPlayerChunkZ = null;
     }
 }
