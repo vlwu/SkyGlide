@@ -5,7 +5,6 @@ const MOISTURE_NOISE_SCALE = 0.05;
 const WATER_LEVEL = 0.22 * MAX_HEIGHT;
 
 const BIOMES = {
-    OCEAN: { color: { r: 0.11, g: 0.53, b: 0.90 } },
     SAND: { color: { r: 0.99, g: 0.85, b: 0.21 } },
     GRASSLAND: { color: { r: 0.49, g: 0.70, b: 0.26 }, foliage: true, foliageDensity: 0.05 },
     FOREST: { color: { r: 0.22, g: 0.56, b: 0.24 }, foliage: true, foliageDensity: 0.3 },
@@ -17,16 +16,19 @@ const elevationNoise = createNoise2D();
 const moistureNoise = createNoise2D();
 
 function getBiome(e, m) {
-    if (e < 0.20) return BIOMES.OCEAN;
-    if (e < 0.22) return BIOMES.SAND;
-    if (e > 0.75) {
+    // e = elevation, normalized 0-1
+    // Water level is at e = 0.22
+
+    if (e < 0.24) return BIOMES.SAND; // Creates ocean floor and beaches up to e = 0.24
+    if (e > 0.75) { // High altitude
         if (m < 0.5) return BIOMES.ROCK;
         return BIOMES.SNOW;
     }
-    if (e > 0.5) {
+    if (e > 0.5) { // Medium-high altitude
         if (m < 0.5) return BIOMES.GRASSLAND;
         return BIOMES.FOREST;
     }
+    // Low altitude (just above the beach)
     if (m < 0.33) return BIOMES.GRASSLAND;
     if (m < 0.66) return BIOMES.GRASSLAND;
     return BIOMES.FOREST;

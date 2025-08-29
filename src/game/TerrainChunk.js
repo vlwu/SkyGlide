@@ -44,8 +44,8 @@ export class TerrainChunk {
             uniforms: {
                 u_time: { value: 0 },
                 u_sunDirection: { value: new THREE.Vector3(0, 1, 0) },
-                u_surfaceColor: { value: new THREE.Color(0x5599ff) },
-                u_depthColor: { value: new THREE.Color(0x003366) },
+                u_surfaceColor: { value: new THREE.Color(0x60BFFF) }, // Lighter blue for viewing from above
+                u_depthColor: { value: new THREE.Color(0x0A4D8F) },   // Deeper blue for grazing angles
             },
             vertexShader: `
                 uniform float u_time;
@@ -63,7 +63,7 @@ export class TerrainChunk {
                     // Create a new local position with the wave offset
                     vec3 pos = position;
                     pos.z += wave_z_offset;
-                    
+
                     // Final world position includes the wave
                     vec4 finalWorldPosition = modelMatrix * vec4(pos, 1.0);
                     v_worldPosition = finalWorldPosition.xyz;
@@ -88,22 +88,21 @@ export class TerrainChunk {
                     vec3 viewDirection = normalize(cameraPosition - v_worldPosition);
                     vec3 normal = normalize(v_worldNormal);
 
-                    // Fresnel effect
-                    float fresnel = 1.0 - max(dot(viewDirection, normal), 0.0);
-                    fresnel = pow(fresnel, 2.0);
+                    // A more pronounced Fresnel effect for a glassy water look
+                    float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(viewDirection, normal), 0.0), 5.0);
 
-                    // Specular highlight
+                    // Sharper specular highlight
                     vec3 reflection = reflect(-u_sunDirection, normal);
                     float specular = max(0.0, dot(reflection, viewDirection));
-                    specular = pow(specular, 32.0) * 0.7;
+                    specular = pow(specular, 64.0) * 0.8;
 
-                    // Depth-based color
-                    float depth = 1.0 - (v_worldPosition.y - (-25.0 + (0.22 * 160.0))) / 10.0;
-                    depth = clamp(depth, 0.0, 1.0);
-                    vec3 waterColor = mix(u_surfaceColor, u_depthColor, depth);
+                    // Color is mixed based on the viewing angle (Fresnel)
+                    // When looking from above, the color is closer to u_surfaceColor
+                    vec3 waterColor = mix(u_surfaceColor, u_depthColor, fresnel);
 
-                    // Final color
-                    gl_FragColor = vec4(waterColor + specular, mix(0.8, 1.0, fresnel));
+                    // Final color with transparency controlled by Fresnel
+                    // This makes the water more transparent when looking straight down
+                    gl_FragColor = vec4(waterColor + specular, mix(0.65, 1.0, fresnel));
                 }
             `,
             transparent: true,
