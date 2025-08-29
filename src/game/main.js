@@ -3,6 +3,8 @@ import { World } from './World.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 
 let scene, camera, renderer, player, playerMesh, world, raycaster, sky, sun, directionIndicator;
+let airStreams = [];
+const STREAM_SEGMENTS = 15;
 let previousYaw = 0;
 
 const playerVelocity = new THREE.Vector3(0, 0, 0);
@@ -96,6 +98,49 @@ function init() {
     player.add(playerMesh);
     player.position.y = 25;
     scene.add(player);
+    player.updateMatrixWorld(true);
+
+    // Air Stream Effect
+    const playerVertices = playerMesh.geometry.attributes.position;
+    const uniqueVertices = [];
+    const vertexMap = new Map();
+
+    for (let i = 0; i < playerVertices.count; i++) {
+        const x = playerVertices.getX(i);
+        const y = playerVertices.getY(i);
+        const z = playerVertices.getZ(i);
+        const key = `${x.toFixed(3)},${y.toFixed(3)},${z.toFixed(3)}`;
+        if (!vertexMap.has(key)) {
+            vertexMap.set(key, true);
+            uniqueVertices.push(new THREE.Vector3(x, y, z));
+        }
+    }
+
+    uniqueVertices.forEach(vertex => {
+        const points = [];
+        const initialWorldPos = playerMesh.localToWorld(vertex.clone());
+        for (let i = 0; i < STREAM_SEGMENTS; i++) {
+            points.push(initialWorldPos.clone());
+        }
+
+        const streamGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        const streamMaterial = new THREE.LineBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.5
+        });
+        const streamLine = new THREE.Line(streamGeometry, streamMaterial);
+        streamLine.frustumCulled = false;
+
+        airStreams.push({
+            line: streamLine,
+            origin: vertex.clone(),
+            points: points,
+            material: streamMaterial
+        });
+        scene.add(streamLine);
+    });
+
 
     const indicatorGeometry = new THREE.SphereGeometry(0.15, 8, 8);
     const indicatorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
@@ -162,7 +207,7 @@ function onMouseMove(event) {
 
 
     targetRotation.y -= movementX * 0.002;
-    
+
     if (invertMousePitch) {
         targetRotation.x += movementY * 0.002;
     } else {
@@ -260,9 +305,19 @@ function restartGame() {
     playerVelocity.set(0, 0, 0);
     targetRotation = { x: 0, y: 0 };
 
-
     playerMesh.rotation.set(Math.PI / 2, 0, 0);
     previousYaw = 0;
+
+    player.updateMatrixWorld(true);
+
+    // Reset air streams
+    airStreams.forEach(stream => {
+        const initialWorldPos = stream.origin.clone().applyMatrix4(playerMesh.matrixWorld);
+        for (let i = 0; i < STREAM_SEGMENTS; i++) {
+            stream.points[i].copy(initialWorldPos);
+        }
+        stream.line.geometry.setFromPoints(stream.points);
+    });
 
     world.reset();
     score = 0;
@@ -302,6 +357,24 @@ function animate() {
     renderer.render(scene, camera);
 }
 
+function updateAirStreams() {
+    const speed = playerVelocity.length();
+    const opacity = THREE.MathUtils.clamp(speed * 2.0, 0.2, 0.7);
+
+    airStreams.forEach(stream => {
+        const currentWorldPos = stream.origin.clone().applyMatrix4(playerMesh.matrixWorld);
+
+        // Shift points down the trail and add the new position at the start
+        for (let i = STREAM_SEGMENTS - 1; i > 0; i--) {
+            stream.points[i].copy(stream.points[i - 1]);
+        }
+        stream.points[0].copy(currentWorldPos);
+
+        stream.line.geometry.setFromPoints(stream.points);
+        stream.material.opacity = opacity;
+    });
+}
+
 function update() {
 
     const maxPitch = Math.PI / 2 - 0.1;
@@ -333,6 +406,8 @@ function update() {
     player.position.add(playerVelocity);
 
     playerVelocity.multiplyScalar(0.99);
+    
+    player.updateMatrixWorld(true);
 
     const cameraOffset = new THREE.Vector3(0, 2.0, 5.0);
     cameraOffset.applyQuaternion(player.quaternion);
@@ -353,6 +428,7 @@ function update() {
 
 
     checkCollisions();
+    updateAirStreams();
 
     score = Math.floor(Math.abs(player.position.z));
     scoreElement.textContent = `Score: ${score}`;
