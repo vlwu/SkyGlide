@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { World } from './World.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 
-let scene, camera, renderer, player, playerMesh, world, raycaster, sky, sun;
+let scene, camera, renderer, player, playerMesh, world, raycaster, sky, sun, directionIndicator;
 let previousYaw = 0;
 
 const playerVelocity = new THREE.Vector3(0, 0, 0);
@@ -97,6 +97,12 @@ function init() {
     player.position.y = 25;
     scene.add(player);
 
+    const indicatorGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+    const indicatorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
+    directionIndicator = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
+    directionIndicator.visible = false;
+    scene.add(directionIndicator);
+
 
     world = new World(scene);
 
@@ -133,6 +139,7 @@ function init() {
             introOverlay.style.opacity = '0';
             setTimeout(() => introOverlay.style.display = 'none', 1500);
             gameContainer.requestPointerLock();
+            directionIndicator.visible = true;
             introOverlay.removeEventListener('click', startGame);
         };
         introOverlay.addEventListener('click', startGame);
@@ -195,12 +202,14 @@ function togglePause() {
         pauseOverlay.style.display = 'flex';
         setTimeout(() => pauseOverlay.style.opacity = '1', 10);
         document.exitPointerLock();
+        directionIndicator.visible = false;
     } else {
         pauseOverlay.style.opacity = '0';
         setTimeout(() => {
             pauseOverlay.style.display = 'none';
             gameContainer.requestPointerLock();
         }, 500);
+        directionIndicator.visible = true;
     }
 }
 
@@ -240,6 +249,7 @@ function handleCollision() {
     gameOverOverlay.style.display = 'flex';
     setTimeout(() => gameOverOverlay.style.opacity = '1', 10);
     document.exitPointerLock();
+    directionIndicator.visible = false;
 }
 
 function restartGame() {
@@ -260,7 +270,7 @@ function restartGame() {
     gameOverOverlay.style.opacity = '0';
     setTimeout(() => gameOverOverlay.style.display = 'none', 1500);
 
-
+    directionIndicator.visible = true;
     gameContainer.requestPointerLock();
 }
 
@@ -331,6 +341,16 @@ function update() {
     camera.lookAt(player.position);
 
     world.update(player.position);
+
+    const targetQuaternion = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(targetRotation.x, targetRotation.y, 0, 'YXZ')
+    );
+    const indicatorDirection = new THREE.Vector3(0, 0, -1);
+    indicatorDirection.applyQuaternion(targetQuaternion);
+    const indicatorDistance = 6;
+    const targetIndicatorPosition = player.position.clone().add(indicatorDirection.multiplyScalar(indicatorDistance));
+    directionIndicator.position.lerp(targetIndicatorPosition, 0.2);
+
 
     checkCollisions();
 
