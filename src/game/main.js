@@ -12,7 +12,6 @@ const liftForce = 0.005;
 
 const forwardThrust = 0.016;
 
-
 let isGameOver = false;
 let isPaused = false;
 let score = 0;
@@ -24,10 +23,8 @@ function init() {
     const skyColor = 0x87CEEB;
     scene.fog = new THREE.Fog(skyColor, 150, 400);
 
-
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 2, 5);
-
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -64,8 +61,6 @@ function init() {
 
     uniforms['sunPosition'].value.copy(sun);
 
-
-
     scoreElement = document.getElementById('score-container');
     gameOverOverlay = document.getElementById('game-over-overlay');
     pauseOverlay = document.getElementById('pause-overlay');
@@ -76,15 +71,11 @@ function init() {
     backFromSettingsButton = document.getElementById('back-from-settings-button');
     fullscreenButton = document.getElementById('fullscreen-button');
 
-
-
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.copy(sun).multiplyScalar(50);
     scene.add(directionalLight);
-
-
 
     player = new THREE.Group();
     const playerGeometry = new THREE.OctahedronGeometry(0.5);
@@ -106,11 +97,9 @@ function init() {
 
     world = new World(scene);
 
-
     raycaster = new THREE.Raycaster();
 
     camera.lookAt(player.position);
-
 
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('keydown', onKeyDown);
@@ -168,7 +157,6 @@ function onKeyDown(event) {
 
     if (isPaused || isGameOver) return;
 
-
     if (event.key === 'ArrowLeft') {
         targetRotation.y += 0.5;
     } else if (event.key === 'ArrowRight') {
@@ -191,8 +179,10 @@ function togglePause() {
         document.exitPointerLock();
     } else {
         pauseOverlay.style.opacity = '0';
-        setTimeout(() => pauseOverlay.style.display = 'none', 500);
-        gameContainer.requestPointerLock();
+        setTimeout(() => {
+            pauseOverlay.style.display = 'none';
+            gameContainer.requestPointerLock();
+        }, 500);
     }
 }
 
@@ -237,7 +227,6 @@ function handleCollision() {
 function restartGame() {
     isGameOver = false;
 
-
     player.position.set(0, 25, 0);
     player.rotation.set(0, 0, 0);
     playerVelocity.set(0, 0, 0);
@@ -247,11 +236,8 @@ function restartGame() {
     playerMesh.rotation.set(Math.PI / 2, 0, 0);
     previousYaw = 0;
 
-
-
     world.reset();
     score = 0;
-
 
     gameOverOverlay.style.opacity = '0';
     setTimeout(() => gameOverOverlay.style.display = 'none', 1500);
@@ -259,7 +245,6 @@ function restartGame() {
 
     gameContainer.requestPointerLock();
 }
-
 
 function checkCollisions() {
 
@@ -278,7 +263,6 @@ function checkCollisions() {
     }
 }
 
-
 function animate() {
     requestAnimationFrame(animate);
 
@@ -292,53 +276,35 @@ function animate() {
 
 function update() {
 
-
     const maxPitch = Math.PI / 2 - 0.1;
     targetRotation.x = Math.max(-maxPitch, Math.min(maxPitch, targetRotation.x));
 
-
-
     player.rotation.x = THREE.MathUtils.lerp(player.rotation.x, targetRotation.x, 0.05);
     player.rotation.y = THREE.MathUtils.lerp(player.rotation.y, targetRotation.y, 0.05);
-
-
 
     const yawDelta = player.rotation.y - previousYaw;
     previousYaw = player.rotation.y;
     const rollSpeed = yawDelta * -8;
 
-
     const tumbleSpeed = playerVelocity.y * -1.5;
-
-
 
     playerMesh.rotateY(rollSpeed);
     playerMesh.rotateX(tumbleSpeed);
 
-
-
     const forwardVector = new THREE.Vector3(0, 0, -1);
     forwardVector.applyQuaternion(player.quaternion);
 
-
     playerVelocity.add(forwardVector.multiplyScalar(forwardThrust));
 
-
     playerVelocity.add(gravity);
-
 
     const diveAngle = player.rotation.x;
     const liftAmount = Math.max(0, 1.0 - Math.abs(diveAngle)) * liftForce;
     playerVelocity.y += liftAmount * Math.abs(playerVelocity.z);
 
-
-
     player.position.add(playerVelocity);
 
-
     playerVelocity.multiplyScalar(0.99);
-
-
 
     const cameraOffset = new THREE.Vector3(0, 2.0, 5.0);
     cameraOffset.applyQuaternion(player.quaternion);
@@ -346,12 +312,9 @@ function update() {
     camera.position.lerp(targetCameraPosition, 0.1);
     camera.lookAt(player.position);
 
-
     world.update(player.position);
 
-
     checkCollisions();
-
 
     score = Math.floor(Math.abs(player.position.z));
     scoreElement.textContent = `Score: ${score}`;
