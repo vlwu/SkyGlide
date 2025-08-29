@@ -13,9 +13,9 @@ const playerVelocity = new THREE.Vector3(0, 0, 0);
 const gravity = new THREE.Vector3(0, -0.003, 0);
 let targetRotation = { x: 0, y: 0 };
 
-// Re-tuned Physics Constants
+
 const liftForce = 0.005;
-const forwardThrust = 0.01;
+const forwardThrust = 0.013;
 const groundEffectDistance = 10;
 const groundEffectStrength = 0.0015;
 
@@ -25,10 +25,10 @@ let isPaused = false;
 let score = 0;
 let highScore = 0;
 
-// UI Elements
+
 let scoreElement, speedElement, highScoreElement, gameOverOverlay, pauseOverlay, gameContainer, pauseScoreElement, resumeButton, settingsOverlay, settingsButton, backFromSettingsButton, fullscreenButton, gameOverScoreElement, gameOverHighScoreElement, introHighScoreElement;
 
-// Settings
+
 let invertMousePitch = false;
 let mouseSensitivity = 1.0;
 
@@ -72,7 +72,7 @@ function init() {
     sun.setFromSphericalCoords(1, phi, theta);
     uniforms['sunPosition'].value.copy(sun);
 
-    // Get UI Elements
+
     scoreElement = document.getElementById('score');
     speedElement = document.getElementById('speed');
     highScoreElement = document.getElementById('high-score');
@@ -98,8 +98,8 @@ function init() {
     scene.add(directionalLight);
 
     player = new THREE.Group();
-    
-    // Original Octahedron (Rhombus) Mesh
+
+
     const playerGeometry = new THREE.OctahedronGeometry(0.5);
     const playerMaterial = new THREE.MeshPhysicalMaterial({
         metalness: 0.2,
@@ -112,13 +112,13 @@ function init() {
     playerMesh = new THREE.Mesh(playerGeometry, playerMaterial);
     playerMesh.scale.set(2, 0.8, 1.2);
     playerMesh.rotation.x = Math.PI / 2;
-    
+
     player.add(playerMesh);
     player.position.y = 150;
     scene.add(player);
     player.updateMatrixWorld(true);
 
-    // Original Stream Origins
+
     const streamOrigins = [
         new THREE.Vector3(0.5, 0, -0.1),
         new THREE.Vector3(-0.5, 0, -0.1),
@@ -177,7 +177,7 @@ function init() {
     raycaster = new THREE.Raycaster();
     camera.lookAt(player.position);
 
-    // Event Listeners
+
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('pointerlockchange', onPointerLockChange, false);
@@ -187,7 +187,7 @@ function init() {
     backFromSettingsButton.addEventListener('click', hideSettings);
     fullscreenButton.addEventListener('click', toggleFullscreen);
 
-    // Settings Loading
+
     invertPitchToggle.addEventListener('change', (event) => {
         invertMousePitch = event.target.checked;
         localStorage.setItem('invertMousePitch', invertMousePitch);
@@ -236,7 +236,7 @@ function onMouseMove(event) {
     if (document.pointerLockElement !== gameContainer || isPaused || isGameOver) return;
     const movementX = event.movementX || 0;
     const movementY = event.movementY || 0;
-    
+
     targetRotation.y -= movementX * 0.002 * mouseSensitivity;
     if (invertMousePitch) {
         targetRotation.x += movementY * 0.002 * mouseSensitivity;
@@ -306,16 +306,16 @@ function toggleFullscreen() {
 
 function handleCollision() {
     isGameOver = true;
-    
+
     if (score > highScore) {
         highScore = score;
         localStorage.setItem('highScore', highScore);
         updateHighScoreDisplay();
     }
-    
+
     gameOverScoreElement.textContent = `Final Score: ${score}`;
     gameOverHighScoreElement.textContent = `High Score: ${highScore}`;
-    
+
     gameOverOverlay.style.display = 'flex';
     setTimeout(() => gameOverOverlay.style.opacity = '1', 10);
     document.exitPointerLock();
@@ -328,8 +328,8 @@ function restartGame() {
     player.rotation.set(0, 0, 0);
     playerVelocity.set(0, 0, 0);
     targetRotation = { x: 0, y: 0 };
-    
-    // Restore mesh rotation
+
+
     playerMesh.rotation.set(Math.PI / 2, 0, 0);
     previousYaw = 0;
     player.updateMatrixWorld(true);
@@ -344,7 +344,7 @@ function restartGame() {
 
     world.reset();
     score = 0;
-    
+
     gameOverOverlay.style.opacity = '0';
     setTimeout(() => gameOverOverlay.style.display = 'none', 1500);
 
@@ -361,7 +361,7 @@ function updateTerrainInteraction() {
 
     if (intersects.length > 0) {
         const distanceToGround = intersects[0].distance;
-        if (distanceToGround < 1.0) { // Reverted collision distance
+        if (distanceToGround < 1.0) {
             handleCollision();
         } else if (distanceToGround < groundEffectDistance) {
             const groundEffect = (1 - (distanceToGround / groundEffectDistance)) * groundEffectStrength;
@@ -432,7 +432,7 @@ function updateAirStreams() {
 function update() {
     const speed = playerVelocity.length();
 
-    // 1. ROTATION
+
     const maxPitch = Math.PI / 2 - 0.1;
     targetRotation.x = Math.max(-maxPitch, Math.min(maxPitch, targetRotation.x));
     player.rotation.x = THREE.MathUtils.lerp(player.rotation.x, targetRotation.x, 0.05);
@@ -440,52 +440,62 @@ function update() {
 
     const yawDelta = player.rotation.y - previousYaw;
     previousYaw = player.rotation.y;
-    
-    // Restore original mesh rotation animations
+
+
     const rollSpeed = yawDelta * -8;
     const tumbleSpeed = playerVelocity.y * -1.5;
     playerMesh.rotateY(rollSpeed);
     playerMesh.rotateX(tumbleSpeed);
-    
-    // 2. FORCES
+
+
     const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(player.quaternion);
 
-    // Apply thrust and gravity
+
     playerVelocity.add(forwardVector.multiplyScalar(forwardThrust));
     playerVelocity.add(gravity);
 
-    // Steer velocity towards the forward vector to improve control
+
     const targetVelocity = forwardVector.clone().multiplyScalar(speed);
     playerVelocity.lerp(targetVelocity, 0.025);
 
-    // Lift Force, similar to original implementation
+
     const diveAngle = player.rotation.x;
     const forwardSpeed = -playerVelocity.clone().projectOnVector(forwardVector).z;
     const liftAmount = Math.max(0, 1.0 - Math.abs(diveAngle)) * liftForce;
     playerVelocity.y += liftAmount * Math.abs(forwardSpeed);
 
-    // 3. POSITION & DRAG
+
     player.position.add(playerVelocity);
-    
-    // Apply linear drag
+
+
     playerVelocity.multiplyScalar(0.99);
 
     player.updateMatrixWorld(true);
 
-    // 4. CAMERA
-    const cameraOffset = new THREE.Vector3(0, 2.0, 5.0);
+
+    // Dynamic camera that pulls back with speed and banks into turns
+    const dynamicZOffset = Math.min(speed * 30, 6);
+    const cameraOffset = new THREE.Vector3(0, 2.5, 6.0 + dynamicZOffset);
     cameraOffset.applyQuaternion(player.quaternion);
     const targetCameraPosition = player.position.clone().add(cameraOffset);
-    camera.position.lerp(targetCameraPosition, 0.1);
-    
-    camera.lookAt(player.position);
+    camera.position.lerp(targetCameraPosition, 0.08);
 
-    // Speed-based FOV
+    const lookAtPosition = player.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+    const targetRotationMatrix = new THREE.Matrix4().lookAt(camera.position, lookAtPosition, camera.up);
+    const targetCameraQuaternion = new THREE.Quaternion().setFromRotationMatrix(targetRotationMatrix);
+
+    const cameraRoll = yawDelta * -2.0;
+    const rollQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), cameraRoll);
+    targetCameraQuaternion.multiply(rollQuaternion);
+
+    camera.quaternion.slerp(targetCameraQuaternion, 0.06);
+
+
     const targetFov = 75 + speed * 15;
     camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.05);
     camera.updateProjectionMatrix();
 
-    // 5. WORLD & UI
+
     world.update(player.position);
 
     const targetQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(targetRotation.x, targetRotation.y, 0, 'YXZ'));
