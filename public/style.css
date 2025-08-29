@@ -2,10 +2,39 @@ body, html {
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background-color: #000;
+    background-color: #1a1a1a; /* Dark fallback */
 }
 
 #game-container {
     width: 100vw;
     height: 100vh;
+}
+
+#intro-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    text-align: center;
+    background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
+    z-index: 10;
+    transition: opacity 1.5s ease-out;
+}
+
+#intro-overlay h1 {
+    font-size: 4rem;
+    margin: 0;
+    font-weight: 300;
+}
+
+#intro-overlay p {
+    font-size: 1.2rem;
+    font-weight: 300;
 }
