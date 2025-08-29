@@ -16,7 +16,7 @@ const forwardThrust = 0.016;
 let isGameOver = false;
 let isPaused = false;
 let score = 0;
-let scoreElement, gameOverOverlay, pauseOverlay;
+let scoreElement, gameOverOverlay, pauseOverlay, gameContainer, pauseScoreElement, resumeButton;
 
 function init() {
     // --- Scene Setup ---
@@ -32,7 +32,8 @@ function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    document.getElementById('game-container').appendChild(renderer.domElement);
+    gameContainer = document.getElementById('game-container');
+    gameContainer.appendChild(renderer.domElement);
     
     // --- Procedural Sky ---
     sky = new Sky();
@@ -68,6 +69,9 @@ function init() {
     scoreElement = document.getElementById('score-container');
     gameOverOverlay = document.getElementById('game-over-overlay');
     pauseOverlay = document.getElementById('pause-overlay');
+    pauseScoreElement = document.getElementById('pause-score');
+    resumeButton = document.getElementById('resume-button');
+
 
     // --- Lighting ---
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -106,31 +110,47 @@ function init() {
     // --- Event Listeners ---
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('click', () => {
-        if (isGameOver) restartGame();
-    });
+    document.addEventListener('pointerlockchange', onPointerLockChange, false);
+    gameOverOverlay.addEventListener('click', restartGame);
+    resumeButton.addEventListener('click', togglePause);
 
     // --- Start ---
     animate();
 
-    // Fade out intro
+    // Wait for click on intro to start game and lock pointer
     const introOverlay = document.getElementById('intro-overlay');
     if (introOverlay) {
-        setTimeout(() => {
+        const startGame = () => {
             introOverlay.style.opacity = '0';
             setTimeout(() => introOverlay.style.display = 'none', 1500);
-        }, 500);
+            gameContainer.requestPointerLock();
+            introOverlay.removeEventListener('click', startGame);
+        };
+        introOverlay.addEventListener('click', startGame);
+    }
+}
+
+function onPointerLockChange() {
+    // If the pointer is unlocked by the user (e.g., pressing Esc), pause the game
+    if (document.pointerLockElement !== gameContainer && !isGameOver && !isPaused) {
+        togglePause();
     }
 }
 
 function onMouseMove(event) {
-    if (isPaused || isGameOver) return; // Ignore mouse movement when paused or game over
+    // Ignore mouse movement if pointer is not locked or game is not active
+    if (document.pointerLockElement !== gameContainer || isPaused || isGameOver) return;
 
-    const mouseX = (event.clientX / window.innerWidth) * 2 - 1;
-    const mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
-    // Control player's pitch (up/down) and yaw (left/right)
-    targetRotation.x = mouseY * 0.8;
-    targetRotation.y = -mouseX * 1.2;
+    const movementX = event.movementX || 0;
+    const movementY = event.movementY || 0;
+
+    // Adjust target rotation based on the change in mouse position
+    targetRotation.y -= movementX * 0.002;
+    targetRotation.x -= movementY * 0.002;
+
+    // Clamp the vertical pitch to prevent the player from flipping over
+    const maxPitch = Math.PI / 2 - 0.1; // Approx +/- 85 degrees
+    targetRotation.x = Math.max(-maxPitch, Math.min(maxPitch, targetRotation.x));
 }
 
 function onKeyDown(event) {
@@ -154,11 +174,14 @@ function togglePause() {
     isPaused = !isPaused;
 
     if (isPaused) {
+        pauseScoreElement.textContent = `Score: ${score}`;
         pauseOverlay.style.display = 'flex';
         setTimeout(() => pauseOverlay.style.opacity = '1', 10);
+        document.exitPointerLock(); // Release the cursor
     } else {
         pauseOverlay.style.opacity = '0';
         setTimeout(() => pauseOverlay.style.display = 'none', 500); // Match CSS transition duration
+        gameContainer.requestPointerLock(); // Re-lock the cursor
     }
 }
 
@@ -166,6 +189,7 @@ function handleCollision() {
     isGameOver = true;
     gameOverOverlay.style.display = 'flex';
     setTimeout(() => gameOverOverlay.style.opacity = '1', 10); // Fade in
+    document.exitPointerLock(); // Release the cursor on game over
 }
 
 function restartGame() {
@@ -189,6 +213,9 @@ function restartGame() {
     // Hide overlay
     gameOverOverlay.style.opacity = '0';
     setTimeout(() => gameOverOverlay.style.display = 'none', 1500);
+
+    // Request pointer lock for the new game
+    gameContainer.requestPointerLock();
 }
 
 
