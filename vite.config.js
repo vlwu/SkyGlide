@@ -10,6 +10,13 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: 'index.html'
+      },
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/three')) {
+            return 'three';
+          }
+        }
       }
     }
   }
