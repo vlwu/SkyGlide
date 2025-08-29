@@ -14,6 +14,11 @@ export class Player {
         this.previousYaw = 0;
         this.gravity = new THREE.Vector3(0, PLAYER_CONFIG.GRAVITY, 0);
 
+        // Pre-allocate objects for performance
+        this._forwardVector = new THREE.Vector3();
+        this._targetVelocity = new THREE.Vector3();
+        this._tempVector = new THREE.Vector3();
+
         this.reset();
     }
 
@@ -53,19 +58,20 @@ export class Player {
         this.playerModel.rotateX(tumbleSpeed);
 
         // Physics Calculation
-        const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(this.mesh.quaternion);
+        this._forwardVector.set(0, 0, -1).applyQuaternion(this.mesh.quaternion);
 
         // Apply forward thrust and gravity
-        this.velocity.add(forwardVector.clone().multiplyScalar(PLAYER_CONFIG.FORWARD_THRUST));
+        this._tempVector.copy(this._forwardVector).multiplyScalar(PLAYER_CONFIG.FORWARD_THRUST);
+        this.velocity.add(this._tempVector);
         this.velocity.add(this.gravity);
 
         // Re-orient velocity towards player's direction (simulates aerodynamic control)
-        const targetVelocity = forwardVector.clone().multiplyScalar(speed);
-        this.velocity.lerp(targetVelocity, 0.025);
+        this._targetVelocity.copy(this._forwardVector).multiplyScalar(speed);
+        this.velocity.lerp(this._targetVelocity, 0.025);
 
         // Calculate and apply lift
         const diveAngle = this.mesh.rotation.x;
-        const forwardSpeed = -this.velocity.clone().projectOnVector(forwardVector).z;
+        const forwardSpeed = -this.velocity.clone().projectOnVector(this._forwardVector).z;
         const liftAmount = Math.max(0, 1.0 - Math.abs(diveAngle)) * PLAYER_CONFIG.LIFT_FORCE;
         this.velocity.y += liftAmount * Math.abs(forwardSpeed);
 
