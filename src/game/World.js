@@ -3,7 +3,7 @@ import { TerrainChunk } from './TerrainChunk.js';
 
 const CHUNK_SIZE = 200;
 const CHUNK_SEGMENTS = 50;
-const VIEW_DISTANCE = 3; // Increased for a larger world view
+const VIEW_DISTANCE = 3;
 
 export class World {
     constructor(scene) {
@@ -20,7 +20,7 @@ export class World {
             const chunkData = e.data;
             if (this.activeChunks.has(chunkData.chunkId)) {
                 const chunk = this.activeChunks.get(chunkData.chunkId);
-                // Ensure chunk hasn't been disposed while it was generating
+
                 if (chunk && chunk instanceof TerrainChunk) {
                     chunk.buildMeshes(chunkData);
                 }
@@ -55,13 +55,13 @@ export class World {
                 }
             }
         }
-        
+
         chunksToLoad.forEach(({ chunkX, chunkZ, chunkId }) => {
             const xOffset = chunkX * CHUNK_SIZE;
             const zOffset = chunkZ * CHUNK_SIZE;
             const newChunk = new TerrainChunk(this.scene, xOffset, zOffset);
             this.activeChunks.set(chunkId, newChunk);
-            
+
             this.terrainGeneratorWorker.postMessage({
                 size: CHUNK_SIZE,
                 segments: CHUNK_SEGMENTS,
@@ -82,6 +82,12 @@ export class World {
     getActiveTerrainMeshes() {
         return Array.from(this.activeChunks.values())
             .map(chunk => chunk.mesh)
+            .filter(mesh => mesh !== null);
+    }
+
+    getActiveWaterMeshes() {
+        return Array.from(this.activeChunks.values())
+            .map(chunk => chunk.waterMesh)
             .filter(mesh => mesh !== null);
     }
 

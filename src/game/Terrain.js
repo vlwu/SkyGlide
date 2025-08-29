@@ -24,7 +24,6 @@ export class Terrain {
         const noiseScale = 0.02;
 
         const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
-        // We rotate the plane to be our ground
         geometry.rotateX(-Math.PI / 2);
 
         const noise2D = createNoise2D();

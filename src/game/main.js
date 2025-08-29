@@ -13,21 +13,18 @@ const playerVelocity = new THREE.Vector3(0, 0, 0);
 const gravity = new THREE.Vector3(0, -0.003, 0);
 let targetRotation = { x: 0, y: 0 };
 
-
 const liftForce = 0.005;
 const forwardThrust = 0.013;
 const groundEffectDistance = 10;
 const groundEffectStrength = 0.0015;
 
-
 let isGameOver = false;
 let isPaused = false;
 let score = 0;
 let highScore = 0;
-
+let clock;
 
 let scoreElement, speedElement, highScoreElement, gameOverOverlay, pauseOverlay, gameContainer, pauseScoreElement, resumeButton, settingsOverlay, settingsButton, backFromSettingsButton, fullscreenButton, gameOverScoreElement, gameOverHighScoreElement, introHighScoreElement;
-
 
 let invertMousePitch = false;
 let mouseSensitivity = 1.0;
@@ -35,6 +32,7 @@ let mouseSensitivity = 1.0;
 function init() {
     scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x87ceeb, 200, 800);
+    clock = new THREE.Clock();
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 2, 5);
@@ -431,6 +429,7 @@ function updateAirStreams() {
 
 function update() {
     const speed = playerVelocity.length();
+    const elapsedTime = clock.getElapsedTime();
 
 
     const maxPitch = Math.PI / 2 - 0.1;
@@ -473,7 +472,7 @@ function update() {
     player.updateMatrixWorld(true);
 
 
-    // Dynamic camera that pulls back with speed and banks into turns
+
     const dynamicZOffset = Math.min(speed * 30, 6);
     const cameraOffset = new THREE.Vector3(0, 2.5, 6.0 + dynamicZOffset);
     cameraOffset.applyQuaternion(player.quaternion);
@@ -506,6 +505,22 @@ function update() {
 
     updateTerrainInteraction();
     updateAirStreams();
+
+    // Animate water
+    world.getActiveWaterMeshes().forEach(mesh => {
+        const positions = mesh.geometry.attributes.position.array;
+        const originalPositions = mesh.geometry.userData.originalPositions;
+        for (let i = 0; i < positions.length / 3; i++) {
+            const x = originalPositions[i * 3];
+            const y = originalPositions[i * 3 + 1];
+            // Increased wave amplitude for better visibility
+            const wave1 = Math.sin(x * 0.05 + elapsedTime * 0.5) * 0.4;
+            const wave2 = Math.sin(y * 0.08 + elapsedTime * 0.8) * 0.4;
+            positions[i * 3 + 2] = wave1 + wave2; // Animate z-vertex (vertical axis for rotated plane)
+        }
+        mesh.geometry.attributes.position.needsUpdate = true;
+    });
+
 
     score = Math.floor(Math.abs(player.position.z));
     scoreElement.textContent = `Score: ${score}`;

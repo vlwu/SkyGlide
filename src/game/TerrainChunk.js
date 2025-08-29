@@ -6,14 +6,18 @@ export class TerrainChunk {
         this.xOffset = xOffset;
         this.zOffset = zOffset;
         this.mesh = null;
+        this.waterMesh = null;
     }
 
     buildMeshes({ positions, colors, foliageLeavesMatrix, foliageTrunksMatrix }) {
         const segments = Math.sqrt(positions.length / 3) - 1;
-        const size = Math.max(...positions.map(p => Math.abs(p)));
+        const size = 200; // CHUNK_SIZE from World.js
         const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
         geometry.rotateX(-Math.PI / 2);
-        geometry.attributes.position.array = positions;
+
+        const posAttribute = new THREE.BufferAttribute(positions, 3);
+        geometry.setAttribute('position', posAttribute);
+
 
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
@@ -30,6 +34,31 @@ export class TerrainChunk {
         this.scene.add(this.mesh);
 
         this.generateFoliage(foliageLeavesMatrix, foliageTrunksMatrix);
+        this.generateWater(size);
+    }
+
+    generateWater(size) {
+        const waterGeometry = new THREE.PlaneGeometry(size, size, 50, 50);
+
+        // Replaced the expensive Reflector with a standard Mesh and Material
+        const waterMaterial = new THREE.MeshStandardMaterial({
+            color: 0x5599ff,
+            transparent: true,
+            opacity: 0.8,
+            roughness: 0.1,
+            metalness: 0.2
+        });
+
+        this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
+
+        const waterLevel = -25 + (0.22 * 160); // base_y + WATER_LEVEL
+        this.waterMesh.position.set(this.xOffset, waterLevel, this.zOffset);
+        this.waterMesh.rotation.x = -Math.PI / 2;
+
+        // Store original vertices for animation
+        this.waterMesh.geometry.userData.originalPositions = this.waterMesh.geometry.attributes.position.array.slice();
+
+        this.scene.add(this.waterMesh);
     }
 
     generateFoliage(leavesPositions, trunksPositions) {
@@ -80,6 +109,12 @@ export class TerrainChunk {
             });
             this.scene.remove(this.mesh);
             this.mesh = null;
+        }
+        if (this.waterMesh) {
+            this.waterMesh.geometry.dispose();
+            this.waterMesh.material.dispose();
+            this.scene.remove(this.waterMesh);
+            this.waterMesh = null;
         }
     }
 }
