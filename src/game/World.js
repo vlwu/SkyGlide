@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { TerrainChunk } from './TerrainChunk.js';
 
-const CHUNK_SIZE = 200; // Size of each terrain chunk
-const CHUNK_SEGMENTS = 50; // Resolution of each chunk
-const VIEW_DISTANCE = 2; // In chunks, so a 5x5 grid (2+1+2) will be active
+const CHUNK_SIZE = 200;
+const CHUNK_SEGMENTS = 50;
+const VIEW_DISTANCE = 3; // Increased for a larger world view
 
 export class World {
     constructor(scene) {
@@ -11,16 +11,27 @@ export class World {
         this.activeChunks = new Map();
         this.currentPlayerChunkX = null;
         this.currentPlayerChunkZ = null;
-        
-        // Obstacle pool remains for future use
-        this.obstaclePool = [];
+
+        this.terrainGeneratorWorker = new Worker(new URL('./TerrainGenerator.worker.js', import.meta.url), {
+            type: 'module'
+        });
+
+        this.terrainGeneratorWorker.onmessage = (e) => {
+            const chunkData = e.data;
+            if (this.activeChunks.has(chunkData.chunkId)) {
+                const chunk = this.activeChunks.get(chunkData.chunkId);
+                // Ensure chunk hasn't been disposed while it was generating
+                if (chunk && chunk instanceof TerrainChunk) {
+                    chunk.buildMeshes(chunkData);
+                }
+            }
+        };
     }
 
     update(playerPosition) {
         const playerChunkX = Math.round(playerPosition.x / CHUNK_SIZE);
         const playerChunkZ = Math.round(playerPosition.z / CHUNK_SIZE);
 
-        // Only update chunks if the player has moved to a new one
         if (playerChunkX !== this.currentPlayerChunkX || playerChunkZ !== this.currentPlayerChunkZ) {
             this.currentPlayerChunkX = playerChunkX;
             this.currentPlayerChunkZ = playerChunkZ;
@@ -30,7 +41,8 @@ export class World {
 
     updateChunks() {
         const chunksToKeep = new Set();
-        // Loop through the grid of chunks that should be visible
+        const chunksToLoad = [];
+
         for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
             for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
                 const chunkX = this.currentPlayerChunkX + x;
@@ -38,17 +50,27 @@ export class World {
                 const chunkId = `${chunkX},${chunkZ}`;
                 chunksToKeep.add(chunkId);
 
-                // If chunk doesn't exist, create it
                 if (!this.activeChunks.has(chunkId)) {
-                    const xOffset = chunkX * CHUNK_SIZE;
-                    const zOffset = chunkZ * CHUNK_SIZE;
-                    const newChunk = new TerrainChunk(this.scene, CHUNK_SIZE, CHUNK_SEGMENTS, xOffset, zOffset);
-                    this.activeChunks.set(chunkId, newChunk);
+                    chunksToLoad.push({ chunkX, chunkZ, chunkId });
                 }
             }
         }
+        
+        chunksToLoad.forEach(({ chunkX, chunkZ, chunkId }) => {
+            const xOffset = chunkX * CHUNK_SIZE;
+            const zOffset = chunkZ * CHUNK_SIZE;
+            const newChunk = new TerrainChunk(this.scene, xOffset, zOffset);
+            this.activeChunks.set(chunkId, newChunk);
+            
+            this.terrainGeneratorWorker.postMessage({
+                size: CHUNK_SIZE,
+                segments: CHUNK_SEGMENTS,
+                xOffset,
+                zOffset,
+                chunkId
+            });
+        });
 
-        // Remove chunks that are no longer in view
         for (const [chunkId, chunk] of this.activeChunks.entries()) {
             if (!chunksToKeep.has(chunkId)) {
                 chunk.dispose();
@@ -58,17 +80,16 @@ export class World {
     }
 
     getActiveTerrainMeshes() {
-        return Array.from(this.activeChunks.values()).map(chunk => chunk.mesh).filter(mesh => mesh !== null);
+        return Array.from(this.activeChunks.values())
+            .map(chunk => chunk.mesh)
+            .filter(mesh => mesh !== null);
     }
 
     reset() {
-        // Clear all existing chunks
         for (const chunk of this.activeChunks.values()) {
             chunk.dispose();
         }
         this.activeChunks.clear();
-        
-        // Reset player chunk position to force re-generation on restart
         this.currentPlayerChunkX = null;
         this.currentPlayerChunkZ = null;
     }
