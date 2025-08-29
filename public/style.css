@@ -39,6 +39,7 @@ body, html {
 #intro-overlay p, #game-over-overlay p {
     font-size: 1.2rem;
     font-weight: 300;
+    margin: 10px 0;
 }
 
 #game-over-overlay {
@@ -117,6 +118,10 @@ body, html {
     font-weight: 500;
     z-index: 5;
     text-shadow: 1px 1px 4px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
 }
 
 

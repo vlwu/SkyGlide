@@ -11,10 +11,17 @@
     <div id="intro-overlay">
         <h1>SkyGlide</h1>
         <p>Move your mouse or use arrow keys to steer</p>
+        <p id="intro-high-score">High Score: 0</p>
     </div>
-    <div id="score-container">Score: 0</div>
+    <div id="score-container">
+        <span id="score">Score: 0</span>
+        <span id="speed">Speed: 0 km/h</span>
+        <span id="high-score">High Score: 0</span>
+    </div>
     <div id="game-over-overlay">
         <h1>Game Over</h1>
+        <p id="game-over-score">Final Score: 0</p>
+        <p id="game-over-high-score">High Score: 0</p>
         <p>Click to fly again</p>
     </div>
     <div id="pause-overlay">
@@ -38,6 +45,10 @@
                     <input type="checkbox" id="invert-pitch-toggle">
                     <span class="slider round"></span>
                 </label>
+            </div>
+             <div class="settings-option">
+                <span>Mouse Sensitivity</span>
+                <input type="range" id="sensitivity-slider" min="0.1" max="2.0" step="0.1" value="1.0">
             </div>
             <h2 class="settings-subtitle">Keybinds</h2>
             <div class="keybind-list">
