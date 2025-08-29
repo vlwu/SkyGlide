@@ -5,7 +5,7 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 let scene, camera, renderer, player, playerMesh, world, raycaster, sky, sun, directionIndicator;
 let airStreams = [];
 const STREAM_SEGMENTS = 20;
-const STREAM_WIDTH = 0.12; // Made ribbons thinner
+const STREAM_WIDTH = 0.12;
 
 let previousYaw = 0;
 
@@ -26,8 +26,8 @@ let invertMousePitch = false;
 function init() {
 
     scene = new THREE.Scene();
-    const skyColor = 0x87CEEB;
-    scene.fog = new THREE.Fog(skyColor, 150, 400);
+    // REMOVED: The following line created a uniform haze that washed out the sky colors.
+    // scene.fog = new THREE.Fog(skyColor, 150, 400);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 2, 5);
@@ -45,12 +45,13 @@ function init() {
 
     sun = new THREE.Vector3();
 
+    // MODIFIED: Adjusted sky parameters for a more vibrant and less hazy appearance.
     const effectController = {
-        turbidity: 2,
-        rayleigh: 1,
-        mieCoefficient: 0.005,
+        turbidity: 1,       // Reduced from 2 for a clearer sky
+        rayleigh: 2.5,      // Increased from 1 for a richer, deeper blue
+        mieCoefficient: 0.001, // Reduced from 0.005 to minimize the white glare around the sun
         mieDirectionalG: 0.8,
-        elevation: 35,
+        elevation: 20,      // Lowered from 35 to create a warmer, late-afternoon light
         azimuth: 180,
     };
 
@@ -103,10 +104,10 @@ function init() {
     player.updateMatrixWorld(true);
 
 
-    // Emitter points for the trails are now specific "wingtip" locations
+
     const streamOrigins = [
-        new THREE.Vector3(0.5, 0, -0.1),  // Right wingtip
-        new THREE.Vector3(-0.5, 0, -0.1), // Left wingtip
+        new THREE.Vector3(0.5, 0, -0.1),
+        new THREE.Vector3(-0.5, 0, -0.1),
     ];
 
     streamOrigins.forEach(vertex => {
@@ -115,13 +116,13 @@ function init() {
         for (let i = 0; i < STREAM_SEGMENTS; i++) {
             points.push(initialWorldPos.clone());
         }
-    
+
         const streamGeometry = new THREE.BufferGeometry();
         const positions = new Float32Array(STREAM_SEGMENTS * 2 * 3);
         const colors = new Float32Array(STREAM_SEGMENTS * 2 * 3);
         streamGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         streamGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    
+
         const indices = [];
         for (let i = 0; i < STREAM_SEGMENTS - 1; i++) {
             const p1 = i * 2;
@@ -132,17 +133,17 @@ function init() {
             indices.push(p2, p4, p3);
         }
         streamGeometry.setIndex(indices);
-    
+
         const streamMaterial = new THREE.MeshBasicMaterial({
             vertexColors: true,
             transparent: true,
-            side: THREE.FrontSide, // Changed from DoubleSide to be less intrusive
+            side: THREE.FrontSide,
             opacity: 0.5
         });
-    
+
         const streamMesh = new THREE.Mesh(streamGeometry, streamMaterial);
         streamMesh.frustumCulled = false;
-    
+
         airStreams.push({
             mesh: streamMesh,
             origin: vertex.clone(),
@@ -327,7 +328,7 @@ function restartGame() {
         for (let i = 0; i < STREAM_SEGMENTS; i++) {
             stream.points[i].copy(initialWorldPos);
         }
-        // Force an update to collapse the mesh on restart
+
         updateAirStreams();
     });
 
@@ -371,18 +372,18 @@ function animate() {
 
 function updateAirStreams() {
     const speed = playerVelocity.length();
-    // Made opacity much lower for a more subtle effect
+
     const opacity = THREE.MathUtils.clamp(speed * 1.0, 0.05, 0.35);
 
     const upVector = new THREE.Vector3(0, 1, 0).applyQuaternion(playerMesh.quaternion);
 
-    const startColor = new THREE.Color(0.9, 0.95, 1.0); // Bright, nearly white
-    const endColor = new THREE.Color(0.5, 0.7, 1.0);   // Softer, lighter blue for a gentler fade
+    const startColor = new THREE.Color(0.9, 0.95, 1.0);
+    const endColor = new THREE.Color(0.5, 0.7, 1.0);
 
     airStreams.forEach(stream => {
         const currentWorldPos = stream.origin.clone().applyMatrix4(playerMesh.matrixWorld);
 
-        // Shift history of points
+
         for (let i = STREAM_SEGMENTS - 1; i > 0; i--) {
             stream.points[i].copy(stream.points[i - 1]);
         }
@@ -397,7 +398,7 @@ function updateAirStreams() {
             const ribbonUp = upVector.clone().multiplyScalar(STREAM_WIDTH / 2);
             const p1 = point.clone().add(ribbonUp);
             const p2 = point.clone().sub(ribbonUp);
-            
+
             positions[i * 6 + 0] = p1.x;
             positions[i * 6 + 1] = p1.y;
             positions[i * 6 + 2] = p1.z;
@@ -406,14 +407,14 @@ function updateAirStreams() {
             positions[i * 6 + 4] = p2.y;
             positions[i * 6 + 5] = p2.z;
 
-            // Gradient color logic
+
             const alpha = i / (STREAM_SEGMENTS - 1);
             const currentColor = new THREE.Color().lerpColors(startColor, endColor, alpha);
 
             colors[i * 6 + 0] = currentColor.r;
             colors[i * 6 + 1] = currentColor.g;
             colors[i * 6 + 2] = currentColor.b;
-            
+
             colors[i * 6 + 3] = currentColor.r;
             colors[i * 6 + 4] = currentColor.g;
             colors[i * 6 + 5] = currentColor.b;
