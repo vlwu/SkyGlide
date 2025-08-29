@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { World } from './World.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 
-let scene, camera, renderer, player, playerMesh, world, raycaster, sky, sun, directionIndicator;
+let scene, camera, renderer, player, playerMesh, world, raycaster, sky, sun, directionIndicator, starField, hemisphereLight, directionalLight;
 let airStreams = [];
 const STREAM_SEGMENTS = 20;
 const STREAM_WIDTH = 0.12;
@@ -29,6 +29,15 @@ let scoreElement, speedElement, highScoreElement, gameOverOverlay, pauseOverlay,
 let invertMousePitch = false;
 let mouseSensitivity = 1.0;
 
+const skyEffectController = {
+    turbidity: 10,
+    rayleigh: 3,
+    mieCoefficient: 0.005,
+    mieDirectionalG: 0.8, // Adjusted for a tighter sun glare
+    elevation: 5,
+    azimuth: 180,
+};
+
 function init() {
     scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x87ceeb, 200, 800);
@@ -40,7 +49,7 @@ function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.5;
+    renderer.toneMappingExposure = 0.45; // Slightly reduced exposure
     gameContainer = document.getElementById('game-container');
     gameContainer.appendChild(renderer.domElement);
 
@@ -50,23 +59,14 @@ function init() {
 
     sun = new THREE.Vector3();
 
-    const effectController = {
-        turbidity: 10,
-        rayleigh: 3,
-        mieCoefficient: 0.005,
-        mieDirectionalG: 0.7,
-        elevation: 5,
-        azimuth: 180,
-    };
-
     const uniforms = sky.material.uniforms;
-    uniforms['turbidity'].value = effectController.turbidity;
-    uniforms['rayleigh'].value = effectController.rayleigh;
-    uniforms['mieCoefficient'].value = effectController.mieCoefficient;
-    uniforms['mieDirectionalG'].value = effectController.mieDirectionalG;
+    uniforms['turbidity'].value = skyEffectController.turbidity;
+    uniforms['rayleigh'].value = skyEffectController.rayleigh;
+    uniforms['mieCoefficient'].value = skyEffectController.mieCoefficient;
+    uniforms['mieDirectionalG'].value = skyEffectController.mieDirectionalG;
 
-    const phi = THREE.MathUtils.degToRad(90 - effectController.elevation);
-    const theta = THREE.MathUtils.degToRad(effectController.azimuth);
+    const phi = THREE.MathUtils.degToRad(90 - skyEffectController.elevation);
+    const theta = THREE.MathUtils.degToRad(skyEffectController.azimuth);
     sun.setFromSphericalCoords(1, phi, theta);
     uniforms['sunPosition'].value.copy(sun);
 
@@ -89,11 +89,30 @@ function init() {
     const invertPitchToggle = document.getElementById('invert-pitch-toggle');
     const sensitivitySlider = document.getElementById('sensitivity-slider');
 
-    const hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x4caf50, 0.6);
+    hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x4caf50, 0.6);
     scene.add(hemisphereLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
     directionalLight.position.copy(sun).multiplyScalar(50);
     scene.add(directionalLight);
+
+    const starVertices = [];
+    for (let i = 0; i < 10000; i++) {
+        const x = THREE.MathUtils.randFloatSpread(2000);
+        const y = THREE.MathUtils.randFloatSpread(2000);
+        const z = THREE.MathUtils.randFloatSpread(2000);
+        starVertices.push(x, y, z);
+    }
+    const starGeometry = new THREE.BufferGeometry();
+    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+    const starMaterial = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 0.7,
+        transparent: true,
+        opacity: 0
+    });
+    starField = new THREE.Points(starGeometry, starMaterial);
+    scene.add(starField);
+
 
     player = new THREE.Group();
 
@@ -427,9 +446,83 @@ function updateAirStreams() {
     });
 }
 
+function updateDynamicSky(elapsedTime) {
+    const uniforms = sky.material.uniforms;
+    const dayDuration = 240; // 4 minutes for a full day-night cycle
+    const time = (elapsedTime % dayDuration) / dayDuration;
+
+    // Elevation cycles from -5 (night) to 90 (midday) and back
+    skyEffectController.elevation = -90 * Math.cos(time * Math.PI * 2) + 0.1;
+    // Clamp to a visual minimum
+    const visualElevation = Math.max(skyEffectController.elevation, -5);
+
+    const phi = THREE.MathUtils.degToRad(90 - visualElevation);
+    const theta = THREE.MathUtils.degToRad(skyEffectController.azimuth);
+    sun.setFromSphericalCoords(1, phi, theta);
+    uniforms['sunPosition'].value.copy(sun);
+
+    // Define colors for different times of day
+    const dayFogColor = new THREE.Color(0x87ceeb);
+    const sunsetFogColor = new THREE.Color(0xe88e3c);
+    const nightFogColor = new THREE.Color(0x0a101a);
+    const dayLightColor = new THREE.Color(0xffffff);
+    const sunsetLightColor = new THREE.Color(0xffaa55);
+
+    // Determine current state based on sun elevation
+    const isDay = skyEffectController.elevation > 10;
+    const isSunset = skyEffectController.elevation >= -5 && skyEffectController.elevation <= 10;
+    const isNight = skyEffectController.elevation < -5;
+
+    let targetRayleigh, targetTurbidity, targetExposure, targetFogColor, targetLightColor;
+
+    if (isSunset) {
+        // Create a factor that goes from 0 (start of sunset) to 1 (end of sunset)
+        const sunsetFactor = 1 - (skyEffectController.elevation + 5) / 15;
+        targetRayleigh = THREE.MathUtils.lerp(3.5, 20, sunsetFactor);
+        targetTurbidity = THREE.MathUtils.lerp(8, 15, sunsetFactor);
+        targetExposure = THREE.MathUtils.lerp(0.45, 0.4, sunsetFactor);
+        targetFogColor = sunsetFogColor;
+        targetLightColor = sunsetLightColor;
+    } else if (isDay) {
+        targetRayleigh = 3.5;
+        targetTurbidity = 8;
+        targetExposure = 0.45;
+        targetFogColor = dayFogColor;
+        targetLightColor = dayLightColor;
+    } else { // Night
+        targetRayleigh = 0.1;
+        targetTurbidity = 1;
+        targetExposure = 0.15;
+        targetFogColor = nightFogColor;
+        targetLightColor = dayLightColor; // Light color is irrelevant as intensity is 0
+    }
+
+    // Smoothly transition shader and scene properties
+    const lerpSpeed = 0.05;
+    uniforms['rayleigh'].value = THREE.MathUtils.lerp(uniforms['rayleigh'].value, targetRayleigh, lerpSpeed);
+    uniforms['turbidity'].value = THREE.MathUtils.lerp(uniforms['turbidity'].value, targetTurbidity, lerpSpeed);
+    renderer.toneMappingExposure = THREE.MathUtils.lerp(renderer.toneMappingExposure, targetExposure, lerpSpeed);
+    scene.fog.color.lerp(targetFogColor, lerpSpeed);
+    
+    // Update lighting intensity and color
+    const lightIntensity = Math.max(0, skyEffectController.elevation) / 90;
+    directionalLight.intensity = lightIntensity * 1.0;
+    directionalLight.color.lerp(targetLightColor, lerpSpeed);
+    hemisphereLight.intensity = lightIntensity * 0.6;
+    hemisphereLight.color.lerp(targetFogColor, lerpSpeed); // Hemilight matches fog color
+
+    // Update stars
+    const starOpacity = THREE.MathUtils.clamp(1.0 - (skyEffectController.elevation + 5) / 10, 0, 1);
+    starField.material.opacity = THREE.MathUtils.lerp(starField.material.opacity, starOpacity, lerpSpeed);
+    starField.position.copy(player.position);
+}
+
+
 function update() {
     const speed = playerVelocity.length();
     const elapsedTime = clock.getElapsedTime();
+    
+    updateDynamicSky(elapsedTime);
 
 
     const maxPitch = Math.PI / 2 - 0.1;
