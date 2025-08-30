@@ -44,7 +44,7 @@ export class TerrainChunk {
         this.waterMesh = null;
     }
 
-    buildMeshes({ positions, colors, foliageData }) {
+    buildMeshes({ positions, colors, foliageData, waterTableHeight }) {
         const segments = Math.sqrt(positions.length / 3) - 1;
         const size = 200;
         const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
@@ -69,10 +69,10 @@ export class TerrainChunk {
         this.scene.add(this.mesh);
 
         this.generateFoliage(foliageData);
-        this.generateWater(size);
+        this.generateWater(size, waterTableHeight);
     }
 
-    generateWater(size) {
+    generateWater(size, waterTableHeight) {
         const waterGeometry = new THREE.PlaneGeometry(size, size, 100, 100);
 
         const waterMaterial = new THREE.ShaderMaterial({
@@ -150,7 +150,7 @@ export class TerrainChunk {
         });
 
         this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
-        const waterLevel = -25 + (0.22 * 160);
+        const waterLevel = -25 + waterTableHeight;
         this.waterMesh.position.set(this.xOffset, waterLevel, this.zOffset);
         this.waterMesh.rotation.x = -Math.PI / 2;
         this.scene.add(this.waterMesh);
@@ -178,25 +178,25 @@ export class TerrainChunk {
 
                 const height = THREE.MathUtils.randFloat(profile.heightRange[0], profile.heightRange[1]);
                 const scale = THREE.MathUtils.randFloat(profile.scaleRange[0], profile.scaleRange[1]);
-                
-                // For leaves
+
+
                 dummy.position.set(x, y + height, z);
                 dummy.scale.set(scale, scale, scale);
                 dummy.rotation.y = Math.random() * Math.PI * 2;
                 dummy.updateMatrix();
                 leavesMesh.setMatrixAt(i, dummy.matrix);
 
-                // For trunks
+
                 dummy.position.set(x, y + height / 2, z);
-                dummy.scale.set(1, height / profile.trunkGeo.parameters.height, 1); // Scale trunk height
-                dummy.rotation.y = 0; // Keep trunks straight
+                dummy.scale.set(1, height / profile.trunkGeo.parameters.height, 1);
+                dummy.rotation.y = 0;
                 dummy.updateMatrix();
                 trunkMesh.setMatrixAt(i, dummy.matrix);
             }
-            
+
             leavesMesh.instanceMatrix.needsUpdate = true;
             trunkMesh.instanceMatrix.needsUpdate = true;
-            
+
             this.mesh.add(leavesMesh);
             this.mesh.add(trunkMesh);
         }

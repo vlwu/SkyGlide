@@ -5,7 +5,8 @@ import { Player } from './Player.js';
 import { UIManager } from './UIManager.js';
 import { InputManager } from './InputManager.js';
 import { HoopManager } from './HoopManager.js';
-import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG, HOOP_CONFIG } from './config.js';
+import { MechanicsManager } from './MechanicsManager.js';
+import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG, HOOP_CONFIG, PROXIMITY_SCORING_CONFIG, UPDRAFT_CONFIG } from './config.js';
 
 
 const GameState = {
@@ -17,7 +18,7 @@ const GameState = {
 };
 let currentGameState = GameState.INTRO;
 
-let scene, camera, renderer, player, world, raycaster, sky, sun, directionIndicator, starField, hemisphereLight, directionalLight, uiManager, inputManager, hoopManager;
+let scene, camera, renderer, player, world, raycaster, sky, sun, directionIndicator, starField, hemisphereLight, directionalLight, uiManager, inputManager, hoopManager, mechanicsManager;
 let airStreams = [];
 const STREAM_SEGMENTS = AIRSTREAM_CONFIG.SEGMENTS;
 const STREAM_WIDTH = AIRSTREAM_CONFIG.WIDTH;
@@ -81,7 +82,7 @@ function setGameState(newState) {
         uiManager.showSettings(true);
     } else if (currentGameState === GameState.GAME_OVER) {
         if (score > highScore) {
-            highScore = score;
+            highScore = Math.floor(score);
             localStorage.setItem('highScore', highScore);
             uiManager.updateHighScore(highScore);
         }
@@ -110,7 +111,8 @@ function init() {
 
     player = new Player(scene);
     hoopManager = new HoopManager(scene);
-    world = new World(scene, hoopManager);
+    mechanicsManager = new MechanicsManager(scene);
+    world = new World(scene, hoopManager, mechanicsManager);
     raycaster = new THREE.Raycaster();
     camera.lookAt(player.mesh.position);
 
@@ -249,30 +251,41 @@ function restartGame() {
     updateAirStreams();
     world.reset();
     hoopManager.reset();
+    mechanicsManager.reset();
     score = 0;
     uiManager.showGameOver(false);
     setGameState(GameState.PLAYING);
+}
+
+function updateProximityScoring(distanceToGround) {
+    if (distanceToGround < PROXIMITY_SCORING_CONFIG.MAX_DISTANCE) {
+        const bonus = (PROXIMITY_SCORING_CONFIG.MAX_DISTANCE - distanceToGround) * PROXIMITY_SCORING_CONFIG.SCORE_MULTIPLIER;
+        score += bonus;
+        uiManager.showProximityBonus(bonus);
+    }
 }
 
 function updateTerrainInteraction() {
     const terrainMeshes = world.getActiveTerrainMeshes();
     if (terrainMeshes.length === 0) return;
 
-
     raycaster.set(player.mesh.position, _downVector);
     const downIntersects = raycaster.intersectObjects(terrainMeshes);
     if (downIntersects.length > 0) {
         const distanceToGround = downIntersects[0].distance;
-        if (distanceToGround < 1.0) {
+
+        if (distanceToGround < PROXIMITY_SCORING_CONFIG.MIN_DISTANCE) {
             setGameState(GameState.GAME_OVER);
             return;
         }
+
+        updateProximityScoring(distanceToGround);
+
         if (distanceToGround < PLAYER_CONFIG.GROUND_EFFECT_DISTANCE) {
             const groundEffect = (1 - (distanceToGround / PLAYER_CONFIG.GROUND_EFFECT_DISTANCE)) * PLAYER_CONFIG.GROUND_EFFECT_STRENGTH;
             player.velocity.y += groundEffect;
         }
     }
-
 
     raycaster.set(player.mesh.position, player._forwardVector);
     const forwardIntersects = raycaster.intersectObjects(terrainMeshes);
@@ -295,6 +308,16 @@ function updateHoopInteraction() {
 
             player.applyBoost(speedBoost);
             score += scoreBonus;
+        }
+    }
+}
+
+function updateMechanicsInteraction() {
+    const activeUpdrafts = mechanicsManager.getActiveUpdrafts();
+    for (const updraft of activeUpdrafts) {
+        const distance = player.mesh.position.distanceTo(updraft.position);
+        if (distance < UPDRAFT_CONFIG.RADIUS) {
+            player.velocity.y += UPDRAFT_CONFIG.STRENGTH;
         }
     }
 }
@@ -416,6 +439,7 @@ function update() {
 
     player.update();
     world.update(player.mesh.position);
+    mechanicsManager.update(player.mesh.position);
     updateDynamicSky(elapsedTime);
     hoopManager.update(player.mesh.position, nightFactor);
 
@@ -453,6 +477,7 @@ function update() {
     if (currentGameState === GameState.GAME_OVER) return;
 
     updateHoopInteraction();
+    updateMechanicsInteraction();
     updateAirStreams();
 
     world.getActiveWaterMeshes().forEach(mesh => {
@@ -464,7 +489,8 @@ function update() {
         }
     });
 
-    score = Math.floor(Math.abs(player.mesh.position.z));
+    const baseScore = Math.floor(Math.abs(player.mesh.position.z));
+    score = Math.max(score, baseScore);
     uiManager.updateScoreAndSpeed(score, speed);
 }
 

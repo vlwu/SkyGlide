@@ -3,6 +3,7 @@ export class UIManager {
         this.scoreElement = document.getElementById('score');
         this.speedElement = document.getElementById('speed');
         this.highScoreElement = document.getElementById('high-score');
+        this.proximityBonusElement = document.getElementById('proximity-bonus');
 
         this.introOverlay = document.getElementById('intro-overlay');
         this.introHighScoreElement = document.getElementById('intro-high-score');
@@ -29,6 +30,8 @@ export class UIManager {
         this.sensitivitySlider = document.getElementById('sensitivity-slider');
         this.dayNightCycleSelect = document.getElementById('day-night-cycle-select');
 
+        this.proximityBonusTimeout = null;
+
 
         this.introOverlay.addEventListener('click', callbacks.onStartGame);
         this.gameOverOverlay.addEventListener('click', callbacks.onRestartGame);
@@ -43,8 +46,19 @@ export class UIManager {
     }
 
     updateScoreAndSpeed(score, speed) {
-        this.scoreElement.textContent = `Score: ${score}`;
+        this.scoreElement.textContent = `Score: ${Math.floor(score)}`;
         this.speedElement.textContent = `Speed: ${Math.floor(speed * 200)} km/h`;
+    }
+
+    showProximityBonus(bonus) {
+        if (this.proximityBonusTimeout) clearTimeout(this.proximityBonusTimeout);
+
+        this.proximityBonusElement.textContent = `+${Math.floor(bonus)} Proximity`;
+        this.proximityBonusElement.style.opacity = '1';
+
+        this.proximityBonusTimeout = setTimeout(() => {
+            this.proximityBonusElement.style.opacity = '0';
+        }, 1000);
     }
 
     updateHighScore(highScore) {
@@ -66,7 +80,7 @@ export class UIManager {
 
     showGameOver(visible, score, highScore) {
         if (visible) {
-            this.gameOverScoreElement.textContent = `Final Score: ${score}`;
+            this.gameOverScoreElement.textContent = `Final Score: ${Math.floor(score)}`;
             this.gameOverHighScoreElement.textContent = `High Score: ${highScore}`;
             this.gameOverOverlay.style.display = 'flex';
             setTimeout(() => this.gameOverOverlay.style.opacity = '1', 10);
@@ -78,7 +92,7 @@ export class UIManager {
 
     showPause(visible, score) {
         if (visible) {
-            this.pauseScoreElement.textContent = `Score: ${score}`;
+            this.pauseScoreElement.textContent = `Score: ${Math.floor(score)}`;
             this.pauseOverlay.style.display = 'flex';
             setTimeout(() => this.pauseOverlay.style.opacity = '1', 10);
         } else {

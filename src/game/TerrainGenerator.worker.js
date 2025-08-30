@@ -1,10 +1,13 @@
 import { createNoise2D } from 'simplex-noise';
-import { HOOP_CONFIG } from './config.js';
+import { HOOP_CONFIG, UPDRAFT_CONFIG } from './config.js';
 
 const MAX_HEIGHT = 160;
 const MOISTURE_NOISE_SCALE = 0.008;
 const TEMPERATURE_NOISE_SCALE = 0.005;
-const WATER_LEVEL = 0.22 * MAX_HEIGHT;
+const WATER_TABLE_NOISE_SCALE = 0.0001;
+const MIN_WATER_LEVEL_FACTOR = 0.18;
+const MAX_WATER_LEVEL_FACTOR = 0.28;
+
 
 const BIOMES = {
     SAND: { color: { r: 0.99, g: 0.85, b: 0.21 } },
@@ -23,9 +26,10 @@ const BIOMES = {
 const elevationNoise = createNoise2D();
 const moistureNoise = createNoise2D();
 const temperatureNoise = createNoise2D();
+const waterTableNoise = createNoise2D();
 
-function getBiome(e, m, t) {
-    if (e < 0.24) {
+function getBiome(e, m, t, waterLevel) {
+    if (e < (waterLevel / MAX_HEIGHT) + 0.02) { // Adjusted water threshold
         if (t > 0.5 && m > 0.5) return BIOMES.SWAMP;
         return BIOMES.SAND;
     }
@@ -75,26 +79,49 @@ self.onmessage = function(e) {
     const colors = new Float32Array(vertexCount * 3);
     const foliageData = {};
     const hoopLocations = [];
+    const updraftLocations = [];
+
+    const waterTableNoiseVal = (waterTableNoise(xOffset * WATER_TABLE_NOISE_SCALE, zOffset * WATER_TABLE_NOISE_SCALE) + 1) / 2;
+    const waterTableHeight = (MIN_WATER_LEVEL_FACTOR + waterTableNoiseVal * (MAX_WATER_LEVEL_FACTOR - MIN_WATER_LEVEL_FACTOR)) * MAX_HEIGHT;
+
 
     for (let i = 0, z = -size / 2; z <= size / 2; z += segmentSize) {
         for (let x = -size / 2; x <= size / 2; x += segmentSize, i++) {
             const worldX = x + xOffset;
             const worldZ = z + zOffset;
 
+            const moisture = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
+            const temperature = (temperatureNoise(worldX * TEMPERATURE_NOISE_SCALE, worldZ * TEMPERATURE_NOISE_SCALE) + 1) / 2;
 
             const baseElevation = getOctaveNoise(worldX, worldZ, 4, 0.5, 2, 0.0015, 1);
-
-
             const mountainNoise = getOctaveNoise(worldX, worldZ, 6, 0.45, 2.2, 0.009, 1);
 
+            const prelimElevation = (baseElevation + 1) / 2;
+            const biome = getBiome(prelimElevation, moisture, temperature, waterTableHeight);
 
+            let combinedElevation;
 
-            let combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.8) : 0);
-
-
+            if (biome === BIOMES.ROCK || biome === BIOMES.SNOW) {
+                combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 1.5) : 0);
+            } else if (biome === BIOMES.GRASSLAND) {
+                 combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.2) : 0);
+            } else if (biome === BIOMES.SAVANNA) {
+                 combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.4) : 0);
+            }
+            else { // Default for Forest, Autumnal, Taiga etc.
+                combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.8) : 0);
+            }
 
             let elevation = (combinedElevation + 1) / 2;
-            elevation = Math.pow(elevation, 2.0);
+
+            if (biome === BIOMES.ROCK || biome === BIOMES.SNOW) {
+                 elevation = Math.pow(elevation, 2.8);
+            } else if (biome === BIOMES.SAVANNA) {
+                elevation = Math.pow(elevation, 1.1);
+            } else {
+                elevation = Math.pow(elevation, 2.0);
+            }
+
 
             const y = elevation * MAX_HEIGHT;
 
@@ -102,9 +129,6 @@ self.onmessage = function(e) {
             positions[i * 3 + 1] = y;
             positions[i * 3 + 2] = z;
 
-            const moisture = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
-            const temperature = (temperatureNoise(worldX * TEMPERATURE_NOISE_SCALE, worldZ * TEMPERATURE_NOISE_SCALE) + 1) / 2;
-            const biome = getBiome(elevation, moisture, temperature);
             colors[i * 3] = biome.color.r;
             colors[i * 3 + 1] = biome.color.g;
             colors[i * 3 + 2] = biome.color.b;
@@ -114,12 +138,16 @@ self.onmessage = function(e) {
             if (y > MAX_HEIGHT * 0.6 && Math.random() < 0.002) {
                 hoopLocations.push(worldX, finalTerrainY + HOOP_CONFIG.RADIUS * 3.0, worldZ);
             }
-            else if (y > WATER_LEVEL && y < WATER_LEVEL + 15 && Math.random() < 0.002) {
-                const waterWorldY = WATER_LEVEL - 25;
+            else if (y > waterTableHeight && y < waterTableHeight + 15 && Math.random() < 0.002) {
+                const waterWorldY = waterTableHeight - 25;
                 hoopLocations.push(worldX, waterWorldY + HOOP_CONFIG.RADIUS * 2.0, worldZ);
             }
-            else if (y > WATER_LEVEL + 15 && Math.random() < 0.0003) {
+            else if (y > waterTableHeight + 15 && Math.random() < 0.0003) {
                 hoopLocations.push(worldX, finalTerrainY + HOOP_CONFIG.RADIUS * 3.5, worldZ);
+            }
+
+            if ((biome === BIOMES.GRASSLAND || biome === BIOMES.SAVANNA) && Math.random() < UPDRAFT_CONFIG.GENERATION_CHANCE) {
+                updraftLocations.push(worldX, finalTerrainY, worldZ);
             }
         }
     }
@@ -135,17 +163,36 @@ self.onmessage = function(e) {
 
         const baseElevation = getOctaveNoise(worldX, worldZ, 4, 0.5, 2, 0.0015, 1);
         const mountainNoise = getOctaveNoise(worldX, worldZ, 6, 0.45, 2.2, 0.009, 1);
-        let combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.8) : 0);
-        let e = (combinedElevation + 1) / 2;
-        e = Math.pow(e, 2.0);
+        let prelim_e = (baseElevation + 1) / 2;
 
         const m = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
         const t = (temperatureNoise(worldX * TEMPERATURE_NOISE_SCALE, worldZ * TEMPERATURE_NOISE_SCALE) + 1) / 2;
-        const biome = getBiome(e, m, t);
+        const biome = getBiome(prelim_e, m, t, waterTableHeight);
 
         if (biome.foliage && Math.random() < biome.foliage.density) {
+            let combinedElevation;
+             if (biome === BIOMES.ROCK || biome === BIOMES.SNOW) {
+                combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 1.5) : 0);
+            } else if (biome === BIOMES.GRASSLAND) {
+                 combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.2) : 0);
+            } else if (biome === BIOMES.SAVANNA) {
+                 combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.4) : 0);
+            }
+            else {
+                combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.8) : 0);
+            }
+            let e = (combinedElevation + 1) / 2;
+
+            if (biome === BIOMES.ROCK || biome === BIOMES.SNOW) {
+                 e = Math.pow(e, 2.8);
+            } else if (biome === BIOMES.SAVANNA) {
+                e = Math.pow(e, 1.1);
+            } else {
+                e = Math.pow(e, 2.0);
+            }
+
             const y = e * MAX_HEIGHT;
-            if (y > WATER_LEVEL) {
+            if (y > waterTableHeight) {
                  const profileName = biome.foliage.profile;
                  if (!foliageData[profileName]) {
                      foliageData[profileName] = [];
@@ -156,7 +203,9 @@ self.onmessage = function(e) {
     }
 
     const hoopLocationsBuffer = new Float32Array(hoopLocations);
-    const transferable = [positions.buffer, colors.buffer, hoopLocationsBuffer.buffer];
+    const updraftLocationsBuffer = new Float32Array(updraftLocations);
+
+    const transferable = [positions.buffer, colors.buffer, hoopLocationsBuffer.buffer, updraftLocationsBuffer.buffer];
     const finalFoliageData = {};
 
     for (const profileName in foliageData) {
@@ -170,6 +219,8 @@ self.onmessage = function(e) {
         colors,
         foliageData: finalFoliageData,
         hoopLocations: hoopLocationsBuffer,
+        updraftLocations: updraftLocationsBuffer,
+        waterTableHeight,
         chunkId
     }, transferable);
 };

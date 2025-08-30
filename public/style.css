@@ -124,6 +124,16 @@ body, html {
     gap: 5px;
 }
 
+#proximity-bonus {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #ffc107;
+    text-shadow: 1px 1px 4px rgba(255, 100, 0, 0.7);
+    margin-top: 5px;
+    opacity: 0;
+    transition: opacity 1.0s ease-out;
+}
+
 
 #settings-overlay {
     position: absolute;
