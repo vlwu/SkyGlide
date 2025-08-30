@@ -9,9 +9,6 @@ import { MechanicsManager } from './MechanicsManager.js';
 import { AudioManager } from './AudioManager.js';
 import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG, HOOP_CONFIG, PROXIMITY_SCORING_CONFIG, UPDRAFT_CONFIG, WEATHER_CONFIG } from './config.js';
 
-// DO NOT import the audio files. They are loaded by URL from the 'public' folder.
-
-
 const GameState = {
     INTRO: 'INTRO',
     PLAYING: 'PLAYING',
@@ -31,7 +28,7 @@ let highScore = 0;
 let clock;
 let nightFactor = 0;
 let dayNightCycleSetting = 'cycle';
-let currentWeather = 'CLEAR'; // Can be 'CLEAR' or 'RAIN'
+let currentWeather = 'CLEAR';
 let weatherTimer = 0;
 
 
@@ -119,7 +116,7 @@ function init() {
     setupScene();
     setupAirStreams();
 
-    // Pass the string URL paths directly. Vite serves 'public' as the root '/'.
+
     audioManager.loadSound('wind', '/assets/sounds/wind.mp3', true, 0.2);
     audioManager.loadSound('wind_rush', '/assets/sounds/wind_rush.mp3', true, 0);
 
@@ -385,8 +382,8 @@ function updateWeatherState(elapsedTime) {
     if (weatherTimer <= 0) {
         if (currentWeather === 'RAIN') {
             currentWeather = 'CLEAR';
-            weatherTimer = Math.random() * 120 + 60; // Clear for 1-2 minutes
-        } else { // It's 'CLEAR'
+            weatherTimer = Math.random() * 120 + 60;
+        } else {
             currentWeather = 'RAIN';
             weatherTimer = Math.random() * (WEATHER_CONFIG.RAIN_DURATION_MAX_SECONDS - WEATHER_CONFIG.RAIN_DURATION_MIN_SECONDS) + WEATHER_CONFIG.RAIN_DURATION_MIN_SECONDS;
         }
@@ -401,9 +398,9 @@ function updateDynamicSky(elapsedTime) {
         const time = (elapsedTime % SKY_CONFIG.DAY_DURATION_SECONDS) / SKY_CONFIG.DAY_DURATION_SECONDS;
         skyEffectController.elevation = -90 * Math.cos(time * Math.PI * 2) + 0.1;
     } else if (dayNightCycleSetting === 'day') {
-        skyEffectController.elevation = 20;
+        skyEffectController.elevation = 40;
     } else {
-        skyEffectController.elevation = -5;
+        skyEffectController.elevation = -15;
     }
 
     const visualElevation = Math.max(skyEffectController.elevation, -5);
@@ -439,7 +436,7 @@ function updateDynamicSky(elapsedTime) {
         targetFogColor = new THREE.Color(0x87ceeb); targetLightColor = new THREE.Color(0xffffff);
         _targetWaterSurfaceColor.set(0x60BFFF);
         _targetWaterDepthColor.set(0x0A4D8F);
-    } else { // Night
+    } else {
         targetRayleigh = 0.1; targetTurbidity = 1; targetExposure = 0.15;
         targetFogColor = new THREE.Color(0x0a101a); targetLightColor = new THREE.Color(0xb0c4de);
         _targetWaterSurfaceColor.set(0x0B2136);
