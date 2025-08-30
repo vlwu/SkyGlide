@@ -71,7 +71,9 @@ export const PROXIMITY_SCORING_CONFIG = {
 
 export const UPDRAFT_CONFIG = {
     RADIUS: 15,
-    STRENGTH: 0.025,
+    HEIGHT: 110,
+    STRENGTH: 0.085,
+    DRAG: 0.96,
     PARTICLE_COUNT: 150,
     GENERATION_CHANCE: 0.0005,
 };

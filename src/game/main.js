@@ -292,7 +292,7 @@ function updateTerrainInteraction() {
     raycaster.set(player.mesh.position, _downVector);
     const downIntersects = raycaster.intersectObjects(terrainMeshes);
     if (downIntersects.length > 0) {
-        const distanceToGround = downIntersects[0].distance;
+        const distanceToGround = downIntersects.distance;
 
         if (distanceToGround < PROXIMITY_SCORING_CONFIG.MIN_DISTANCE) {
             setGameState(GameState.GAME_OVER);
@@ -309,7 +309,7 @@ function updateTerrainInteraction() {
 
     raycaster.set(player.mesh.position, player._forwardVector);
     const forwardIntersects = raycaster.intersectObjects(terrainMeshes);
-    if (forwardIntersects.length > 0 && forwardIntersects[0].distance < 2.0) {
+    if (forwardIntersects.length > 0 && forwardIntersects.distance < 2.0) {
         setGameState(GameState.GAME_OVER);
     }
 }
@@ -334,13 +334,23 @@ function updateHoopInteraction() {
 
 function updateMechanicsInteraction() {
     const activeUpdrafts = mechanicsManager.getActiveUpdrafts();
+    const playerPos = player.mesh.position;
+
     for (const updraft of activeUpdrafts) {
-        const distance = player.mesh.position.distanceTo(updraft.position);
-        if (distance < UPDRAFT_CONFIG.RADIUS) {
+        const dx = playerPos.x - updraft.position.x;
+        const dz = playerPos.z - updraft.position.z;
+        const horizontalDistanceSq = dx * dx + dz * dz;
+        const radiusSq = UPDRAFT_CONFIG.RADIUS * UPDRAFT_CONFIG.RADIUS;
+
+        const isWithinHeight = playerPos.y >= updraft.position.y && playerPos.y <= updraft.position.y + UPDRAFT_CONFIG.HEIGHT;
+
+        if (horizontalDistanceSq < radiusSq && isWithinHeight) {
             if (!updraft.playerInside) {
                 audioManager.playSound('updraft_whoosh');
                 updraft.playerInside = true;
             }
+            player.velocity.x *= UPDRAFT_CONFIG.DRAG;
+            player.velocity.z *= UPDRAFT_CONFIG.DRAG;
             player.velocity.y += UPDRAFT_CONFIG.STRENGTH;
         } else {
             if (updraft.playerInside) {

@@ -61,6 +61,7 @@ export class MechanicsManager {
             const x = locations[i];
             const y = locations[i + 1];
             const z = locations[i + 2];
+            const updraftPosition = new THREE.Vector3(x, y, z);
 
             const geometry = new THREE.BufferGeometry();
             const vertices = [];
@@ -90,7 +91,7 @@ export class MechanicsManager {
 
             this.activeUpdrafts.push({
                 mesh: particles,
-                position: new THREE.Vector3(x, y, z),
+                position: updraftPosition,
                 baseY: y,
                 velocities: particleVelocities,
                 playerInside: false,
