@@ -9,6 +9,9 @@ import { MechanicsManager } from './MechanicsManager.js';
 import { AudioManager } from './AudioManager.js';
 import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG, HOOP_CONFIG, PROXIMITY_SCORING_CONFIG, UPDRAFT_CONFIG, WEATHER_CONFIG } from './config.js';
 
+
+
+
 const GameState = {
     INTRO: 'INTRO',
     PLAYING: 'PLAYING',
@@ -212,17 +215,21 @@ function loadSettings() {
         invertMousePitch: localStorage.getItem('invertMousePitch') === 'true',
         mouseSensitivity: parseFloat(localStorage.getItem('mouseSensitivity') || '1.0'),
         dayNightCycle: localStorage.getItem('dayNightCycle') || 'cycle',
+        masterVolume: parseFloat(localStorage.getItem('masterVolume') || '0.5'),
     };
     dayNightCycleSetting = settings.dayNightCycle;
     uiManager.setInitialSettings(settings);
     inputManager.updateSettings('invertMousePitch', settings.invertMousePitch);
     inputManager.updateSettings('mouseSensitivity', settings.mouseSensitivity);
+    audioManager.setMasterVolume(settings.masterVolume);
 }
 
 function handleSettingChange(key, value) {
     localStorage.setItem(key, value);
     if (key === 'dayNightCycle') {
         dayNightCycleSetting = value;
+    } else if (key === 'masterVolume') {
+        audioManager.setMasterVolume(value);
     }
     inputManager.updateSettings(key, value);
 }

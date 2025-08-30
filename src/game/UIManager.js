@@ -29,6 +29,7 @@ export class UIManager {
         this.invertPitchToggle = document.getElementById('invert-pitch-toggle');
         this.sensitivitySlider = document.getElementById('sensitivity-slider');
         this.dayNightCycleSelect = document.getElementById('day-night-cycle-select');
+        this.volumeSlider = document.getElementById('volume-slider');
 
         this.proximityBonusTimeout = null;
 
@@ -43,6 +44,7 @@ export class UIManager {
         this.invertPitchToggle.addEventListener('change', (e) => callbacks.onSettingChange('invertMousePitch', e.target.checked));
         this.sensitivitySlider.addEventListener('input', (e) => callbacks.onSettingChange('mouseSensitivity', parseFloat(e.target.value)));
         this.dayNightCycleSelect.addEventListener('change', (e) => callbacks.onSettingChange('dayNightCycle', e.target.value));
+        this.volumeSlider.addEventListener('input', (e) => callbacks.onSettingChange('masterVolume', parseFloat(e.target.value)));
     }
 
     updateScoreAndSpeed(score, speed) {
@@ -119,6 +121,7 @@ export class UIManager {
         this.invertPitchToggle.checked = settings.invertMousePitch;
         this.sensitivitySlider.value = settings.mouseSensitivity;
         this.dayNightCycleSelect.value = settings.dayNightCycle || 'cycle';
+        this.volumeSlider.value = settings.masterVolume;
     }
 
     requestPointerLock() {
