@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { createNoise3D } from 'simplex-noise';
 import { HOOP_CONFIG } from './config.js';
 
 export class HoopManager {
@@ -8,11 +7,6 @@ export class HoopManager {
         this.activeHoops = [];
         this.hoopGroup = new THREE.Group();
         this.scene.add(this.hoopGroup);
-
-        this.noise = createNoise3D();
-        this.pathSeed = Math.random() * 1000;
-        this.lastNodePosition = new THREE.Vector3(0, HOOP_CONFIG.PATH_START_HEIGHT, -50);
-        this.pathDirection = new THREE.Vector3(0, 0, -1);
 
         this.hoopGeometry = new THREE.TorusGeometry(HOOP_CONFIG.RADIUS, HOOP_CONFIG.TUBE_RADIUS, 8, HOOP_CONFIG.SEGMENTS);
         this.hoopMaterial = new THREE.MeshStandardMaterial({
@@ -26,77 +20,64 @@ export class HoopManager {
         });
 
         this.comboCount = 0;
-
-        this.init();
+        this.addedHoops = new Set();
     }
 
-    init() {
+    addHoopLocations(locations) {
+        for (let i = 0; i < locations.length; i += 3) {
+            const x = locations[i];
+            const y = locations[i + 1];
+            const z = locations[i + 2];
 
-        for(let i = 0; i < HOOP_CONFIG.PATH_NODES * 2; i++) {
-            this.generateNextHoop();
+            const pos = new THREE.Vector3(x, y, z);
+            const key = `${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(pos.z)}`;
+
+            if (!this.addedHoops.has(key)) {
+                this.addedHoops.add(key);
+                this.createHoopAt(pos);
+            }
         }
     }
 
-    generateNextHoop() {
-        const noiseX = this.noise(this.lastNodePosition.x * 0.02, this.lastNodePosition.z * 0.02, this.pathSeed);
-        const noiseY = this.noise(this.lastNodePosition.z * 0.02, this.pathSeed, this.lastNodePosition.x * 0.02);
-
-        this.pathDirection.x += noiseX * 0.8;
-        this.pathDirection.y += noiseY * 0.5;
-        this.pathDirection.z += -0.2;
-
-        this.pathDirection.normalize();
-
-        const nextPosition = this.lastNodePosition.clone().add(this.pathDirection.clone().multiplyScalar(HOOP_CONFIG.NODE_DISTANCE));
-
-
-        nextPosition.y = THREE.MathUtils.clamp(nextPosition.y, 30, 250);
-
+    createHoopAt(position) {
         const hoopMesh = new THREE.Mesh(this.hoopGeometry, this.hoopMaterial.clone());
-        hoopMesh.position.copy(nextPosition);
-        hoopMesh.lookAt(this.lastNodePosition);
-        
-        const rollAngle = (Math.random() - 0.5) * 0.5;
-        hoopMesh.rotateZ(rollAngle);
+        hoopMesh.position.copy(position);
+
+        const randomYaw = Math.random() * Math.PI * 2;
+        const randomPitch = (Math.random() - 0.5) * 0.4;
+        const randomRoll = (Math.random() - 0.5) * 0.8;
+        hoopMesh.rotation.set(randomPitch, randomYaw, randomRoll);
 
         const hoop = {
             mesh: hoopMesh,
             passed: false,
             baseOpacity: this.hoopMaterial.opacity,
+            key: `${Math.round(position.x)},${Math.round(position.y)},${Math.round(position.z)}`
         };
 
         this.activeHoops.push(hoop);
         this.hoopGroup.add(hoopMesh);
-        this.lastNodePosition.copy(nextPosition);
     }
 
     update(playerPosition, nightFactor) {
-
-        if (this.activeHoops.length > 0) {
-            const lastHoop = this.activeHoops[this.activeHoops.length - 1];
-            if (playerPosition.distanceTo(lastHoop.mesh.position) < HOOP_CONFIG.NODE_DISTANCE * HOOP_CONFIG.GENERATION_THRESHOLD) {
-                for (let i = 0; i < HOOP_CONFIG.PATH_NODES; i++) {
-                    this.generateNextHoop();
-                }
+        const hoopsToKeep = [];
+        for (const hoop of this.activeHoops) {
+            if (playerPosition.z < hoop.mesh.position.z - 200) {
+                this.hoopGroup.remove(hoop.mesh);
+                this.addedHoops.delete(hoop.key);
+            } else {
+                hoopsToKeep.push(hoop);
             }
         }
+        this.activeHoops = hoopsToKeep;
 
-
-        while (this.activeHoops.length > 0 && playerPosition.z < this.activeHoops[0].mesh.position.z - 100) {
-            const oldHoop = this.activeHoops.shift();
-            this.hoopGroup.remove(oldHoop.mesh);
-
-        }
-
-        const firstUnpassedHoop = this.activeHoops.find(h => !h.passed);
-        if (firstUnpassedHoop && playerPosition.z < firstUnpassedHoop.mesh.position.z) {
+        const unpassedHoopBehind = this.activeHoops.find(h => !h.passed && playerPosition.z < h.mesh.position.z);
+        if (unpassedHoopBehind) {
             this.resetCombo();
         }
 
-
         const emissiveIntensity = THREE.MathUtils.smoothstep(nightFactor, 0.0, 0.5) * 2.0;
         this.hoopMaterial.emissiveIntensity = emissiveIntensity;
-
 
         this.activeHoops.forEach(hoop => {
             if (!hoop.passed) {
@@ -155,9 +136,7 @@ export class HoopManager {
     reset() {
         this.activeHoops.forEach(hoop => this.hoopGroup.remove(hoop.mesh));
         this.activeHoops = [];
-        this.lastNodePosition.set(0, HOOP_CONFIG.PATH_START_HEIGHT, -50);
-        this.pathDirection.set(0, 0, -1);
+        this.addedHoops.clear();
         this.comboCount = 0;
-        this.init();
     }
 }

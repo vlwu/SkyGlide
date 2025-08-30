@@ -108,8 +108,8 @@ function init() {
     setupAirStreams();
 
     player = new Player(scene);
-    world = new World(scene);
     hoopManager = new HoopManager(scene);
+    world = new World(scene, hoopManager);
     raycaster = new THREE.Raycaster();
     camera.lookAt(player.mesh.position);
 

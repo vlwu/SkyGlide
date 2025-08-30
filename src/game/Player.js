@@ -44,8 +44,8 @@ export class Player {
 
         const maxPitch = Math.PI / 2 - 0.1;
         this.targetRotation.x = Math.max(-maxPitch, Math.min(maxPitch, this.targetRotation.x));
-        this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, this.targetRotation.x, 0.05);
-        this.mesh.rotation.y = THREE.MathUtils.lerp(this.mesh.rotation.y, this.targetRotation.y, 0.05);
+        this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, this.targetRotation.x, 0.03);
+        this.mesh.rotation.y = THREE.MathUtils.lerp(this.mesh.rotation.y, this.targetRotation.y, 0.03);
 
 
         const yawDelta = this.mesh.rotation.y - this.previousYaw;

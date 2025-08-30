@@ -6,8 +6,9 @@ const CHUNK_SEGMENTS = 50;
 const VIEW_DISTANCE = 3;
 
 export class World {
-    constructor(scene) {
+    constructor(scene, hoopManager) {
         this.scene = scene;
+        this.hoopManager = hoopManager;
         this.activeChunks = new Map();
         this.currentPlayerChunkX = null;
         this.currentPlayerChunkZ = null;
@@ -23,6 +24,9 @@ export class World {
 
                 if (chunk && chunk instanceof TerrainChunk) {
                     chunk.buildMeshes(chunkData);
+                    if (this.hoopManager && chunkData.hoopLocations) {
+                        this.hoopManager.addHoopLocations(chunkData.hoopLocations);
+                    }
                 }
             }
         };

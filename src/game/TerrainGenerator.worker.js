@@ -1,4 +1,5 @@
 import { createNoise2D } from 'simplex-noise';
+import { HOOP_CONFIG } from './config.js';
 
 const MAX_HEIGHT = 160;
 const MOISTURE_NOISE_SCALE = 0.05;
@@ -24,27 +25,27 @@ const moistureNoise = createNoise2D();
 const temperatureNoise = createNoise2D();
 
 function getBiome(e, m, t) {
-    if (e < 0.24) { // Lowlands near water
+    if (e < 0.24) {
         if (t > 0.5 && m > 0.5) return BIOMES.SWAMP;
         return BIOMES.SAND;
     }
 
-    if (e > 0.75) { // High elevations
+    if (e > 0.75) {
         if (m < 0.5) return BIOMES.ROCK;
         return BIOMES.SNOW;
     }
 
-    if (t < 0.3) { // Cold regions
+    if (t < 0.3) {
          if (m > 0.4) return BIOMES.TAIGA;
          return BIOMES.TUNDRA;
     }
 
-    if (t > 0.7) { // Hot regions
+    if (t > 0.7) {
         if (m < 0.4) return BIOMES.SAVANNA;
-        return BIOMES.FOREST; // Tropical Forest
+        return BIOMES.FOREST;
     }
 
-    // Temperate regions
+
     if (m < 0.33) return BIOMES.GRASSLAND;
     if (m < 0.66) return BIOMES.AUTUMNAL_FOREST;
     return BIOMES.FOREST;
@@ -73,6 +74,7 @@ self.onmessage = function(e) {
     const positions = new Float32Array(vertexCount * 3);
     const colors = new Float32Array(vertexCount * 3);
     const foliageData = {};
+    const hoopLocations = [];
 
     for (let i = 0, z = -size / 2; z <= size / 2; z += segmentSize) {
         for (let x = -size / 2; x <= size / 2; x += segmentSize, i++) {
@@ -106,6 +108,19 @@ self.onmessage = function(e) {
             colors[i * 3] = biome.color.r;
             colors[i * 3 + 1] = biome.color.g;
             colors[i * 3 + 2] = biome.color.b;
+
+            const finalTerrainY = y - 25;
+
+            if (y > MAX_HEIGHT * 0.6 && Math.random() < 0.002) {
+                hoopLocations.push(worldX, finalTerrainY + HOOP_CONFIG.RADIUS * 1.5, worldZ);
+            }
+            else if (y > WATER_LEVEL && y < WATER_LEVEL + 15 && Math.random() < 0.002) {
+                const waterWorldY = WATER_LEVEL - 25;
+                hoopLocations.push(worldX, waterWorldY + HOOP_CONFIG.RADIUS, worldZ);
+            }
+            else if (y > WATER_LEVEL + 15 && Math.random() < 0.0003) {
+                hoopLocations.push(worldX, finalTerrainY + HOOP_CONFIG.RADIUS * 2.5, worldZ);
+            }
         }
     }
 
@@ -140,7 +155,8 @@ self.onmessage = function(e) {
         }
     }
 
-    const transferable = [positions.buffer, colors.buffer];
+    const hoopLocationsBuffer = new Float32Array(hoopLocations);
+    const transferable = [positions.buffer, colors.buffer, hoopLocationsBuffer.buffer];
     const finalFoliageData = {};
 
     for (const profileName in foliageData) {
@@ -153,6 +169,7 @@ self.onmessage = function(e) {
         positions,
         colors,
         foliageData: finalFoliageData,
+        hoopLocations: hoopLocationsBuffer,
         chunkId
     }, transferable);
 };
