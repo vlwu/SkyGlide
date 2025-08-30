@@ -51,6 +51,7 @@ export class AudioManager {
 
     resumeAll() {
         if (!this.isInitialized) return;
+        this.listener.context.resume();
         for (const soundKey in this.sounds) {
             const sound = this.sounds[soundKey];
 

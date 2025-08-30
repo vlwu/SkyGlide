@@ -29,7 +29,7 @@ const temperatureNoise = createNoise2D();
 const waterTableNoise = createNoise2D();
 
 function getBiome(e, m, t, waterLevel) {
-    if (e < (waterLevel / MAX_HEIGHT) + 0.02) { // Adjusted water threshold
+    if (e < (waterLevel / MAX_HEIGHT) + 0.02) {
         if (t > 0.5 && m > 0.5) return BIOMES.SWAMP;
         return BIOMES.SAND;
     }
@@ -69,6 +69,22 @@ function getOctaveNoise(x, z, octaves, persistence, lacunarity, initialFrequency
     return total / maxValue;
 }
 
+function calculateElevation(worldX, worldZ) {
+    const baseElevation = getOctaveNoise(worldX, worldZ, 4, 0.5, 2, 0.0015, 1);
+    const mountainNoise = getOctaveNoise(worldX, worldZ, 6, 0.45, 2.2, 0.009, 1);
+
+    const mountainMask = Math.max(0, (baseElevation - 0.1) / 0.9);
+    const smoothMountainMask = mountainMask * mountainMask * (3.0 - 2.0 * mountainMask);
+
+    const ridgedMountain = (1.0 - Math.abs(mountainNoise)) * 1.5 - 0.5;
+    const combinedElevation = baseElevation + (ridgedMountain * smoothMountainMask);
+
+    let finalElevation = (combinedElevation + 1) / 2;
+    finalElevation = Math.pow(finalElevation, 1.8);
+
+    return finalElevation * MAX_HEIGHT;
+}
+
 self.onmessage = function(e) {
     const { size, segments, xOffset, zOffset, chunkId } = e.data;
 
@@ -90,40 +106,12 @@ self.onmessage = function(e) {
             const worldX = x + xOffset;
             const worldZ = z + zOffset;
 
+            const y = calculateElevation(worldX, worldZ);
+            const normalizedY = y / MAX_HEIGHT;
+
             const moisture = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
             const temperature = (temperatureNoise(worldX * TEMPERATURE_NOISE_SCALE, worldZ * TEMPERATURE_NOISE_SCALE) + 1) / 2;
-
-            const baseElevation = getOctaveNoise(worldX, worldZ, 4, 0.5, 2, 0.0015, 1);
-            const mountainNoise = getOctaveNoise(worldX, worldZ, 6, 0.45, 2.2, 0.009, 1);
-
-            const prelimElevation = (baseElevation + 1) / 2;
-            const biome = getBiome(prelimElevation, moisture, temperature, waterTableHeight);
-
-            let combinedElevation;
-
-            if (biome === BIOMES.ROCK || biome === BIOMES.SNOW) {
-                combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 1.5) : 0);
-            } else if (biome === BIOMES.GRASSLAND) {
-                 combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.2) : 0);
-            } else if (biome === BIOMES.SAVANNA) {
-                 combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.4) : 0);
-            }
-            else { // Default for Forest, Autumnal, Taiga etc.
-                combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.8) : 0);
-            }
-
-            let elevation = (combinedElevation + 1) / 2;
-
-            if (biome === BIOMES.ROCK || biome === BIOMES.SNOW) {
-                 elevation = Math.pow(elevation, 2.8);
-            } else if (biome === BIOMES.SAVANNA) {
-                elevation = Math.pow(elevation, 1.1);
-            } else {
-                elevation = Math.pow(elevation, 2.0);
-            }
-
-
-            const y = elevation * MAX_HEIGHT;
+            const biome = getBiome(normalizedY, moisture, temperature, waterTableHeight);
 
             positions[i * 3] = x;
             positions[i * 3 + 1] = y;
@@ -161,37 +149,14 @@ self.onmessage = function(e) {
         const worldX = x + xOffset;
         const worldZ = z + zOffset;
 
-        const baseElevation = getOctaveNoise(worldX, worldZ, 4, 0.5, 2, 0.0015, 1);
-        const mountainNoise = getOctaveNoise(worldX, worldZ, 6, 0.45, 2.2, 0.009, 1);
-        let prelim_e = (baseElevation + 1) / 2;
+        const y = calculateElevation(worldX, worldZ);
+        const normalizedY = y / MAX_HEIGHT;
 
         const m = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
         const t = (temperatureNoise(worldX * TEMPERATURE_NOISE_SCALE, worldZ * TEMPERATURE_NOISE_SCALE) + 1) / 2;
-        const biome = getBiome(prelim_e, m, t, waterTableHeight);
+        const biome = getBiome(normalizedY, m, t, waterTableHeight);
 
         if (biome.foliage && Math.random() < biome.foliage.density) {
-            let combinedElevation;
-             if (biome === BIOMES.ROCK || biome === BIOMES.SNOW) {
-                combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 1.5) : 0);
-            } else if (biome === BIOMES.GRASSLAND) {
-                 combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.2) : 0);
-            } else if (biome === BIOMES.SAVANNA) {
-                 combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.4) : 0);
-            }
-            else {
-                combinedElevation = baseElevation + (baseElevation > 0 ? mountainNoise * (baseElevation * 0.8) : 0);
-            }
-            let e = (combinedElevation + 1) / 2;
-
-            if (biome === BIOMES.ROCK || biome === BIOMES.SNOW) {
-                 e = Math.pow(e, 2.8);
-            } else if (biome === BIOMES.SAVANNA) {
-                e = Math.pow(e, 1.1);
-            } else {
-                e = Math.pow(e, 2.0);
-            }
-
-            const y = e * MAX_HEIGHT;
             if (y > waterTableHeight) {
                  const profileName = biome.foliage.profile;
                  if (!foliageData[profileName]) {

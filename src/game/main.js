@@ -122,6 +122,7 @@ function init() {
 
     audioManager.loadSound('wind', '/assets/sounds/wind.mp3', true, 0.2);
     audioManager.loadSound('wind_rush', '/assets/sounds/wind_rush.mp3', true, 0);
+    audioManager.loadSound('updraft_whoosh', '/assets/sounds/updraft_whoosh.wav', false, 0.8);
 
     player = new Player(scene);
     hoopManager = new HoopManager(scene);
@@ -237,8 +238,6 @@ function handleSettingChange(key, value) {
 function startGame() {
     if (currentGameState !== GameState.INTRO) return;
     audioManager.init();
-    audioManager.playSound('wind');
-    audioManager.playSound('wind_rush');
     uiManager.showIntro(false);
     setGameState(GameState.PLAYING);
 }
@@ -338,7 +337,15 @@ function updateMechanicsInteraction() {
     for (const updraft of activeUpdrafts) {
         const distance = player.mesh.position.distanceTo(updraft.position);
         if (distance < UPDRAFT_CONFIG.RADIUS) {
+            if (!updraft.playerInside) {
+                audioManager.playSound('updraft_whoosh');
+                updraft.playerInside = true;
+            }
             player.velocity.y += UPDRAFT_CONFIG.STRENGTH;
+        } else {
+            if (updraft.playerInside) {
+                updraft.playerInside = false;
+            }
         }
     }
 }

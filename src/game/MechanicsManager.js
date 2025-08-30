@@ -31,7 +31,7 @@ export class MechanicsManager {
 
         for (let i = 0; i < WEATHER_CONFIG.RAIN_PARTICLE_COUNT; i++) {
             const x = Math.random() * WEATHER_CONFIG.RAIN_AREA_SIZE - WEATHER_CONFIG.RAIN_AREA_SIZE / 2;
-            const y = Math.random() * 200 + 100; // Start high up
+            const y = Math.random() * 200 + 100;
             const z = Math.random() * WEATHER_CONFIG.RAIN_AREA_SIZE - WEATHER_CONFIG.RAIN_AREA_SIZE / 2;
             vertices.push(x, y, z);
         }
@@ -43,7 +43,7 @@ export class MechanicsManager {
             size: 0.8,
             transparent: true,
             opacity: 0.6,
-            depthWrite: false, // Prevents weird rendering artifacts with other transparent objects
+            depthWrite: false,
         });
 
         this.rainParticles = new THREE.Points(geometry, material);
@@ -64,23 +64,18 @@ export class MechanicsManager {
 
             const geometry = new THREE.BufferGeometry();
             const vertices = [];
-            const velocities = [];
+            const particleVelocities = [];
 
             for (let i = 0; i < UPDRAFT_CONFIG.PARTICLE_COUNT; i++) {
-                vertices.push(
-                    x + (Math.random() - 0.5) * UPDRAFT_CONFIG.RADIUS,
-                    y + Math.random() * 100,
-                    z + (Math.random() - 0.5) * UPDRAFT_CONFIG.RADIUS
-                );
-                velocities.push(
-                    (Math.random() - 0.5) * 0.1,
-                    Math.random() * 0.2 + 0.2,
-                    (Math.random() - 0.5) * 0.1
-                );
+                vertices.push(x, y, z); // All particles start at the center
+                particleVelocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.3,
+                    Math.random() * 1.0 + 0.8,
+                    (Math.random() - 0.5) * 0.3
+                ));
             }
 
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            geometry.setAttribute('velocity', new THREE.Float32BufferAttribute(velocities, 3));
 
             const material = new THREE.PointsMaterial({
                 map: this.particleTexture,
@@ -97,27 +92,44 @@ export class MechanicsManager {
                 mesh: particles,
                 position: new THREE.Vector3(x, y, z),
                 baseY: y,
+                velocities: particleVelocities,
+                playerInside: false,
             });
         }
     }
 
     update(playerPos) {
-        // Animate Updrafts
+        const particleGravity = -0.02;
+
         this.activeUpdrafts.forEach(updraft => {
             const positions = updraft.mesh.geometry.attributes.position.array;
-            const velocities = updraft.mesh.geometry.attributes.velocity.array;
+            const velocities = updraft.velocities;
 
-            for (let i = 0; i < positions.length; i += 3) {
-                positions[i + 1] += velocities[i + 1];
+            for (let i = 0; i < velocities.length; i++) {
+                const i3 = i * 3;
 
-                if (positions[i + 1] > updraft.baseY + 120) {
-                    positions[i + 1] = updraft.baseY;
+                velocities[i].y += particleGravity;
+
+                positions[i3 + 0] += velocities[i].x;
+                positions[i3 + 1] += velocities[i].y;
+                positions[i3 + 2] += velocities[i].z;
+
+                if (positions[i3 + 1] < updraft.baseY) {
+                    positions[i3 + 0] = updraft.position.x;
+                    positions[i3 + 1] = updraft.position.y;
+                    positions[i3 + 2] = updraft.position.z;
+
+                    velocities[i].set(
+                        (Math.random() - 0.5) * 0.3,
+                        Math.random() * 1.0 + 0.8,
+                        (Math.random() - 0.5) * 0.3
+                    );
                 }
             }
             updraft.mesh.geometry.attributes.position.needsUpdate = true;
         });
 
-        // Animate Rain
+
         if (this.isRaining) {
             this.rainParticles.position.set(playerPos.x, playerPos.y, playerPos.z);
 
@@ -125,7 +137,7 @@ export class MechanicsManager {
             for (let i = 0; i < positions.length; i += 3) {
                 positions[i + 1] += WEATHER_CONFIG.RAIN_FALL_SPEED;
 
-                // If a particle has fallen below the player's view, recycle it to the top
+
                 if (positions[i + 1] < -50) {
                     positions[i + 1] = 200;
                 }
@@ -145,6 +157,6 @@ export class MechanicsManager {
             updraft.mesh.material.dispose();
         });
         this.activeUpdrafts = [];
-        this.updateWeather('CLEAR'); // Ensure rain is off on reset
+        this.updateWeather('CLEAR');
     }
 }
