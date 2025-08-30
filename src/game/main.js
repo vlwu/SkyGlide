@@ -6,7 +6,7 @@ import { UIManager } from './UIManager.js';
 import { InputManager } from './InputManager.js';
 import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG } from './config.js';
 
-// Game State Enum
+
 const GameState = {
     INTRO: 'INTRO',
     PLAYING: 'PLAYING',
@@ -25,7 +25,7 @@ let score = 0;
 let highScore = 0;
 let clock;
 
-// Pre-allocate objects for update loop performance
+
 const _cameraOffset = new THREE.Vector3();
 const _targetCameraPosition = new THREE.Vector3();
 const _lookAtPosition = new THREE.Vector3();
@@ -44,6 +44,8 @@ const _p1 = new THREE.Vector3();
 const _p2 = new THREE.Vector3();
 const _ribbonUp = new THREE.Vector3();
 const _currentWorldPos = new THREE.Vector3();
+let _targetWaterSurfaceColor = new THREE.Color(0x60BFFF);
+let _targetWaterDepthColor = new THREE.Color(0x0A4D8F);
 
 const skyEffectController = {
     turbidity: SKY_CONFIG.TURBIDITY,
@@ -55,7 +57,7 @@ const skyEffectController = {
 };
 
 function setGameState(newState) {
-    // --- Exit current state ---
+
     if (currentGameState === GameState.PAUSED) {
         uiManager.showPause(false);
     } else if (currentGameState === GameState.SETTINGS) {
@@ -64,7 +66,7 @@ function setGameState(newState) {
 
     currentGameState = newState;
 
-    // --- Enter new state ---
+
     if (currentGameState === GameState.PLAYING) {
         directionIndicator.visible = true;
         uiManager.requestPointerLock();
@@ -246,14 +248,14 @@ function updateTerrainInteraction() {
     const terrainMeshes = world.getActiveTerrainMeshes();
     if (terrainMeshes.length === 0) return;
 
-    // Downward collision check
+
     raycaster.set(player.mesh.position, _downVector);
     const downIntersects = raycaster.intersectObjects(terrainMeshes);
     if (downIntersects.length > 0) {
         const distanceToGround = downIntersects[0].distance;
         if (distanceToGround < 1.0) {
             setGameState(GameState.GAME_OVER);
-            return; // Stop further checks if already crashed
+            return;
         }
         if (distanceToGround < PLAYER_CONFIG.GROUND_EFFECT_DISTANCE) {
             const groundEffect = (1 - (distanceToGround / PLAYER_CONFIG.GROUND_EFFECT_DISTANCE)) * PLAYER_CONFIG.GROUND_EFFECT_STRENGTH;
@@ -261,7 +263,7 @@ function updateTerrainInteraction() {
         }
     }
 
-    // Forward collision check
+
     raycaster.set(player.mesh.position, player._forwardVector);
     const forwardIntersects = raycaster.intersectObjects(terrainMeshes);
     if (forwardIntersects.length > 0 && forwardIntersects[0].distance < 2.0) {
@@ -330,12 +332,18 @@ function updateDynamicSky(elapsedTime) {
         targetExposure = THREE.MathUtils.lerp(0.45, 0.4, sunsetFactor);
         targetFogColor = new THREE.Color(0xe88e3c);
         targetLightColor = new THREE.Color(0xffaa55);
+        _targetWaterSurfaceColor.set(0xFDB813);
+        _targetWaterDepthColor.set(0x9E4C00);
     } else if (isDay) {
         targetRayleigh = 3.5; targetTurbidity = 8; targetExposure = 0.45;
         targetFogColor = new THREE.Color(0x87ceeb); targetLightColor = new THREE.Color(0xffffff);
-    } else {
+        _targetWaterSurfaceColor.set(0x60BFFF);
+        _targetWaterDepthColor.set(0x0A4D8F);
+    } else { // Night
         targetRayleigh = 0.1; targetTurbidity = 1; targetExposure = 0.15;
-        targetFogColor = new THREE.Color(0x0a101a); targetLightColor = new THREE.Color(0xffffff);
+        targetFogColor = new THREE.Color(0x0a101a); targetLightColor = new THREE.Color(0xb0c4de);
+        _targetWaterSurfaceColor.set(0x0B2136);
+        _targetWaterDepthColor.set(0x030A14);
     }
 
     const lerpSpeed = 0.05;
@@ -343,11 +351,23 @@ function updateDynamicSky(elapsedTime) {
     uniforms['turbidity'].value = THREE.MathUtils.lerp(uniforms['turbidity'].value, targetTurbidity, lerpSpeed);
     renderer.toneMappingExposure = THREE.MathUtils.lerp(renderer.toneMappingExposure, targetExposure, lerpSpeed);
     scene.fog.color.lerp(targetFogColor, lerpSpeed);
+
     const lightIntensity = Math.max(0, skyEffectController.elevation) / 90;
-    directionalLight.intensity = lightIntensity * SCENE_CONFIG.DIRECTIONAL_LIGHT_INTENSITY;
+    const isNight = skyEffectController.elevation <= 0;
+
+    if (isNight) {
+        directionalLight.position.set(player.mesh.position.x, player.mesh.position.y + 100, player.mesh.position.z + 50);
+    } else {
+        directionalLight.position.copy(sun).multiplyScalar(50);
+    }
+    const targetDirectionalIntensity = isNight ? SCENE_CONFIG.MOONLIGHT_INTENSITY : lightIntensity * SCENE_CONFIG.DIRECTIONAL_LIGHT_INTENSITY;
+    directionalLight.intensity = THREE.MathUtils.lerp(directionalLight.intensity, targetDirectionalIntensity, lerpSpeed);
     directionalLight.color.lerp(targetLightColor, lerpSpeed);
-    hemisphereLight.intensity = lightIntensity * SCENE_CONFIG.HEMISPHERE_LIGHT_INTENSITY;
+
+    const targetHemisphereIntensity = Math.max(lightIntensity, SCENE_CONFIG.MIN_HEMISPHERE_INTENSITY) * SCENE_CONFIG.HEMISPHERE_LIGHT_INTENSITY;
+    hemisphereLight.intensity = THREE.MathUtils.lerp(hemisphereLight.intensity, targetHemisphereIntensity, lerpSpeed);
     hemisphereLight.color.lerp(targetFogColor, lerpSpeed);
+
     const starOpacity = THREE.MathUtils.clamp(1.0 - (skyEffectController.elevation + 5) / 10, 0, 1);
     starField.material.opacity = THREE.MathUtils.lerp(starField.material.opacity, starOpacity, lerpSpeed);
     starField.position.copy(player.mesh.position);
@@ -392,14 +412,16 @@ function update() {
     directionIndicator.position.lerp(_targetIndicatorPosition, 0.2);
 
     updateTerrainInteraction();
-    if (currentGameState === GameState.GAME_OVER) return; // Stop update if a crash was detected
+    if (currentGameState === GameState.GAME_OVER) return;
 
     updateAirStreams();
 
     world.getActiveWaterMeshes().forEach(mesh => {
         if (mesh.material.uniforms) {
             mesh.material.uniforms.u_time.value = elapsedTime;
-            mesh.material.uniforms.u_sunDirection.value.copy(sun).normalize();
+            mesh.material.uniforms.u_sunDirection.value.copy(directionalLight.position).normalize();
+            mesh.material.uniforms.u_surfaceColor.value.lerp(_targetWaterSurfaceColor, 0.05);
+            mesh.material.uniforms.u_depthColor.value.lerp(_targetWaterDepthColor, 0.05);
         }
     });
 

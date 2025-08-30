@@ -26,6 +26,8 @@ export const SCENE_CONFIG = {
     FOG_FAR: 800,
     HEMISPHERE_LIGHT_INTENSITY: 0.6,
     DIRECTIONAL_LIGHT_INTENSITY: 1.0,
+    MIN_HEMISPHERE_INTENSITY: 0.1,
+    MOONLIGHT_INTENSITY: 0.15,
 };
 
 export const AIRSTREAM_CONFIG = {
@@ -43,5 +45,5 @@ export const SKY_CONFIG = {
     MIE_DIRECTIONAL_G: 0.8,
     ELEVATION: 5,
     AZIMUTH: 180,
-    DAY_DURATION_SECONDS: 120, // How long a full day/night cycle takes
+    DAY_DURATION_SECONDS: 120,
 };
