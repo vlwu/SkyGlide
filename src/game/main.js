@@ -292,7 +292,7 @@ function updateTerrainInteraction() {
     raycaster.set(player.mesh.position, _downVector);
     const downIntersects = raycaster.intersectObjects(terrainMeshes);
     if (downIntersects.length > 0) {
-        const distanceToGround = downIntersects.distance;
+        const distanceToGround = downIntersects[0].distance;
 
         if (distanceToGround < PROXIMITY_SCORING_CONFIG.MIN_DISTANCE) {
             setGameState(GameState.GAME_OVER);
@@ -309,7 +309,7 @@ function updateTerrainInteraction() {
 
     raycaster.set(player.mesh.position, player._forwardVector);
     const forwardIntersects = raycaster.intersectObjects(terrainMeshes);
-    if (forwardIntersects.length > 0 && forwardIntersects.distance < 2.0) {
+    if (forwardIntersects.length > 0 && forwardIntersects[0].distance < 2.0) {
         setGameState(GameState.GAME_OVER);
     }
 }

@@ -42,9 +42,10 @@ export class TerrainChunk {
         this.zOffset = zOffset;
         this.mesh = null;
         this.waterMesh = null;
+        this.riverMesh = null;
     }
 
-    buildMeshes({ positions, colors, foliageData, waterTableHeight }) {
+    buildMeshes({ positions, colors, foliageData, waterTableHeight, riverData, waterfallData }) {
         const segments = Math.sqrt(positions.length / 3) - 1;
         const size = 200;
         const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
@@ -72,10 +73,8 @@ export class TerrainChunk {
         this.generateWater(size, waterTableHeight);
     }
 
-    generateWater(size, waterTableHeight) {
-        const waterGeometry = new THREE.PlaneGeometry(size, size, 100, 100);
-
-        const waterMaterial = new THREE.ShaderMaterial({
+    getWaterMaterial() {
+        return new THREE.ShaderMaterial({
             uniforms: {
                 u_time: { value: 0 },
                 u_sunDirection: { value: new THREE.Vector3(0, 1, 0) },
@@ -148,6 +147,12 @@ export class TerrainChunk {
             transparent: true,
             side: THREE.DoubleSide,
         });
+    }
+
+    generateWater(size, waterTableHeight) {
+        const waterGeometry = new THREE.PlaneGeometry(size, size, 100, 100);
+
+        const waterMaterial = this.getWaterMaterial();
 
         this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
         const waterLevel = -25 + waterTableHeight;
@@ -224,6 +229,12 @@ export class TerrainChunk {
             this.waterMesh.material.dispose();
             this.scene.remove(this.waterMesh);
             this.waterMesh = null;
+        }
+        if (this.riverMesh) {
+            this.riverMesh.geometry.dispose();
+            this.riverMesh.material.dispose();
+            this.scene.remove(this.riverMesh);
+            this.riverMesh = null;
         }
     }
 }

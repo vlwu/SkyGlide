@@ -31,9 +31,20 @@ export class World {
                     if (this.mechanicsManager && chunkData.updraftLocations) {
                         this.mechanicsManager.addUpdrafts(chunkData.updraftLocations);
                     }
+                    if (this.mechanicsManager && chunkData.waterfallData) {
+                        const { xOffset, zOffset } = this.getOffsetsFromChunkId(chunkData.chunkId);
+                        this.mechanicsManager.addWaterfalls(chunkData.waterfallData, chunkData.chunkId, xOffset, zOffset);
+                    }
                 }
             }
         };
+    }
+
+    getOffsetsFromChunkId(chunkId) {
+        const [chunkX, chunkZ] = chunkId.split(',').map(Number);
+        const xOffset = chunkX * CHUNK_SIZE;
+        const zOffset = chunkZ * CHUNK_SIZE;
+        return { xOffset, zOffset };
     }
 
     update(playerPosition) {
@@ -81,6 +92,7 @@ export class World {
 
         for (const [chunkId, chunk] of this.activeChunks.entries()) {
             if (!chunksToKeep.has(chunkId)) {
+                this.mechanicsManager.removeWaterfalls(chunkId);
                 chunk.dispose();
                 this.activeChunks.delete(chunkId);
             }

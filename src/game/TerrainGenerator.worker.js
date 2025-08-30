@@ -90,12 +90,15 @@ self.onmessage = function(e) {
 
     const segmentSize = size / segments;
     const vertexCount = (segments + 1) * (segments + 1);
+    const segmentsPlusOne = segments + 1;
 
     const positions = new Float32Array(vertexCount * 3);
     const colors = new Float32Array(vertexCount * 3);
     const foliageData = {};
     const hoopLocations = [];
     const updraftLocations = [];
+    const waterfallData = [];
+    const vertexElevations = new Float32Array(vertexCount);
 
     const waterTableNoiseVal = (waterTableNoise(xOffset * WATER_TABLE_NOISE_SCALE, zOffset * WATER_TABLE_NOISE_SCALE) + 1) / 2;
     const waterTableHeight = (MIN_WATER_LEVEL_FACTOR + waterTableNoiseVal * (MAX_WATER_LEVEL_FACTOR - MIN_WATER_LEVEL_FACTOR)) * MAX_HEIGHT;
@@ -107,6 +110,7 @@ self.onmessage = function(e) {
             const worldZ = z + zOffset;
 
             const y = calculateElevation(worldX, worldZ);
+            vertexElevations[i] = y;
             const normalizedY = y / MAX_HEIGHT;
 
             const moisture = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
@@ -140,6 +144,33 @@ self.onmessage = function(e) {
         }
     }
 
+    // Pass 2: Identify waterfalls on cliffs
+    for (let z = 0; z < segments; z++) {
+        for (let x = 0; x < segmentsPlusOne; x++) {
+            const current_idx = z * segmentsPlusOne + x;
+            const below_idx = (z + 1) * segmentsPlusOne + x;
+
+            const y_current = vertexElevations[current_idx];
+            const y_below = vertexElevations[below_idx];
+
+            const heightDiff = y_current - y_below;
+
+            // New, more reliable condition for waterfalls
+            if (heightDiff > 25 && y_current < MAX_HEIGHT * 0.7) { // On steep cliffs below the snow line
+                const worldX = positions[current_idx * 3] + xOffset;
+                const worldZ = positions[current_idx * 3 + 2] + zOffset;
+                const moisture = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
+
+                // Waterfalls are more likely in moist areas
+                if (moisture > 0.6 && Math.random() < 0.2) { // Increased probability to 20%
+                    const waterfallHeight = y_current - y_below;
+                    const vX = positions[current_idx * 3];
+                    const vZ = positions[current_idx * 3 + 2];
+                    waterfallData.push(vX, y_current, vZ, waterfallHeight);
+                }
+            }
+        }
+    }
 
     const treeCount = 500;
     for (let i = 0; i < treeCount; i++) {
@@ -169,8 +200,9 @@ self.onmessage = function(e) {
 
     const hoopLocationsBuffer = new Float32Array(hoopLocations);
     const updraftLocationsBuffer = new Float32Array(updraftLocations);
+    const waterfallDataBuffer = new Float32Array(waterfallData);
 
-    const transferable = [positions.buffer, colors.buffer, hoopLocationsBuffer.buffer, updraftLocationsBuffer.buffer];
+    const transferable = [positions.buffer, colors.buffer, hoopLocationsBuffer.buffer, updraftLocationsBuffer.buffer, waterfallDataBuffer.buffer];
     const finalFoliageData = {};
 
     for (const profileName in foliageData) {
@@ -185,6 +217,7 @@ self.onmessage = function(e) {
         foliageData: finalFoliageData,
         hoopLocations: hoopLocationsBuffer,
         updraftLocations: updraftLocationsBuffer,
+        waterfallData: waterfallDataBuffer,
         waterTableHeight,
         chunkId
     }, transferable);
