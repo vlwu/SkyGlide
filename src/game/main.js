@@ -26,6 +26,7 @@ let score = 0;
 let highScore = 0;
 let clock;
 let nightFactor = 0;
+let dayNightCycleSetting = 'cycle';
 
 
 const _cameraOffset = new THREE.Vector3();
@@ -197,7 +198,9 @@ function loadSettings() {
     const settings = {
         invertMousePitch: localStorage.getItem('invertMousePitch') === 'true',
         mouseSensitivity: parseFloat(localStorage.getItem('mouseSensitivity') || '1.0'),
+        dayNightCycle: localStorage.getItem('dayNightCycle') || 'cycle',
     };
+    dayNightCycleSetting = settings.dayNightCycle;
     uiManager.setInitialSettings(settings);
     inputManager.updateSettings('invertMousePitch', settings.invertMousePitch);
     inputManager.updateSettings('mouseSensitivity', settings.mouseSensitivity);
@@ -205,6 +208,9 @@ function loadSettings() {
 
 function handleSettingChange(key, value) {
     localStorage.setItem(key, value);
+    if (key === 'dayNightCycle') {
+        dayNightCycleSetting = value;
+    }
     inputManager.updateSettings(key, value);
 }
 
@@ -335,8 +341,16 @@ function updateAirStreams() {
 
 function updateDynamicSky(elapsedTime) {
     const uniforms = sky.material.uniforms;
-    const time = (elapsedTime % SKY_CONFIG.DAY_DURATION_SECONDS) / SKY_CONFIG.DAY_DURATION_SECONDS;
-    skyEffectController.elevation = -90 * Math.cos(time * Math.PI * 2) + 0.1;
+
+    if (dayNightCycleSetting === 'cycle') {
+        const time = (elapsedTime % SKY_CONFIG.DAY_DURATION_SECONDS) / SKY_CONFIG.DAY_DURATION_SECONDS;
+        skyEffectController.elevation = -90 * Math.cos(time * Math.PI * 2) + 0.1;
+    } else if (dayNightCycleSetting === 'day') {
+        skyEffectController.elevation = 20;
+    } else { // night
+        skyEffectController.elevation = -5;
+    }
+
     const visualElevation = Math.max(skyEffectController.elevation, -5);
     const phi = THREE.MathUtils.degToRad(90 - visualElevation);
     const theta = THREE.MathUtils.degToRad(skyEffectController.azimuth);

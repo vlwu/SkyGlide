@@ -12,6 +12,7 @@
         <h1>SkyGlide</h1>
         <p>Move your mouse or use arrow keys to steer</p>
         <p id="intro-high-score">High Score: 0</p>
+        <p>Click to Start</p>
     </div>
     <div id="score-container">
         <span id="score">Score: 0</span>
@@ -38,6 +39,14 @@
             <div class="settings-option">
                 <span>Fullscreen</span>
                 <button id="fullscreen-button" class="settings-action-button">Toggle</button>
+            </div>
+            <div class="settings-option">
+                <span>Day/Night Cycle</span>
+                <select id="day-night-cycle-select" class="settings-select">
+                    <option value="cycle">Cycle</option>
+                    <option value="day">Always Day</option>
+                    <option value="night">Always Night</option>
+                </select>
             </div>
             <div class="settings-option">
                 <span>Invert Mouse Pitch</span>

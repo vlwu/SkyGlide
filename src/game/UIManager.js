@@ -18,17 +18,18 @@ export class UIManager {
 
         this.gameContainer = document.getElementById('game-container');
 
-        // Buttons
+
         const resumeButton = document.getElementById('resume-button');
         const settingsButton = document.getElementById('settings-button');
         const backFromSettingsButton = document.getElementById('back-from-settings-button');
         const fullscreenButton = document.getElementById('fullscreen-button');
 
-        // Settings Toggles
+
         this.invertPitchToggle = document.getElementById('invert-pitch-toggle');
         this.sensitivitySlider = document.getElementById('sensitivity-slider');
+        this.dayNightCycleSelect = document.getElementById('day-night-cycle-select');
 
-        // Event Listeners
+
         this.introOverlay.addEventListener('click', callbacks.onStartGame);
         this.gameOverOverlay.addEventListener('click', callbacks.onRestartGame);
         resumeButton.addEventListener('click', callbacks.onTogglePause);
@@ -38,6 +39,7 @@ export class UIManager {
 
         this.invertPitchToggle.addEventListener('change', (e) => callbacks.onSettingChange('invertMousePitch', e.target.checked));
         this.sensitivitySlider.addEventListener('input', (e) => callbacks.onSettingChange('mouseSensitivity', parseFloat(e.target.value)));
+        this.dayNightCycleSelect.addEventListener('change', (e) => callbacks.onSettingChange('dayNightCycle', e.target.value));
     }
 
     updateScoreAndSpeed(score, speed) {
@@ -94,7 +96,7 @@ export class UIManager {
             this.settingsOverlay.style.opacity = '0';
             setTimeout(() => {
                 this.settingsOverlay.style.display = 'none';
-                this.showPause(true); // Assumes we always return to pause menu
+                this.showPause(true);
             }, 500);
         }
     }
@@ -102,6 +104,7 @@ export class UIManager {
     setInitialSettings(settings) {
         this.invertPitchToggle.checked = settings.invertMousePitch;
         this.sensitivitySlider.value = settings.mouseSensitivity;
+        this.dayNightCycleSelect.value = settings.dayNightCycle || 'cycle';
     }
 
     requestPointerLock() {

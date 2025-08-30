@@ -175,6 +175,17 @@ body, html {
     font-weight: 300;
 }
 
+.settings-select {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 1rem;
+    font-weight: 400;
+    color: white;
+    background-color: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 5px 10px;
+    border-radius: 4px;
+}
+
 .switch {
     position: relative;
     display: inline-block;
