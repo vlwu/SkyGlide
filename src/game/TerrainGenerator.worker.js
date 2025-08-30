@@ -145,29 +145,25 @@ self.onmessage = function(e) {
     }
 
     // Pass 2: Identify waterfalls on cliffs
-    for (let z = 0; z < segments; z++) {
-        for (let x = 0; x < segmentsPlusOne; x++) {
-            const current_idx = z * segmentsPlusOne + x;
-            const below_idx = (z + 1) * segmentsPlusOne + x;
+    for (let z_idx = 0; z_idx < segments; z_idx++) {
+        for (let x_idx = 0; x_idx < segmentsPlusOne; x_idx++) {
+            const current_i = z_idx * segmentsPlusOne + x_idx;
+            const below_i = (z_idx + 1) * segmentsPlusOne + x_idx;
 
-            const y_current = vertexElevations[current_idx];
-            const y_below = vertexElevations[below_idx];
-
+            const y_current = vertexElevations[current_i];
+            const y_below = vertexElevations[below_i];
             const heightDiff = y_current - y_below;
 
-            // New, more reliable condition for waterfalls
-            if (heightDiff > 25 && y_current < MAX_HEIGHT * 0.7) { // On steep cliffs below the snow line
-                const worldX = positions[current_idx * 3] + xOffset;
-                const worldZ = positions[current_idx * 3 + 2] + zOffset;
-                const moisture = (moistureNoise(worldX * MOISTURE_NOISE_SCALE, worldZ * MOISTURE_NOISE_SCALE) + 1) / 2;
+            if (heightDiff > 15 && y_current < MAX_HEIGHT * 0.8) {
+                const topX = positions[current_i * 3] + xOffset;
+                const topY = y_current - 25;
+                const topZ = positions[current_i * 3 + 2] + zOffset;
 
-                // Waterfalls are more likely in moist areas
-                if (moisture > 0.6 && Math.random() < 0.2) { // Increased probability to 20%
-                    const waterfallHeight = y_current - y_below;
-                    const vX = positions[current_idx * 3];
-                    const vZ = positions[current_idx * 3 + 2];
-                    waterfallData.push(vX, y_current, vZ, waterfallHeight);
-                }
+                const bottomX = positions[below_i * 3] + xOffset;
+                const bottomY = y_below - 25;
+                const bottomZ = positions[below_i * 3 + 2] + zOffset;
+
+                waterfallData.push(topX, topY, topZ, bottomX, bottomY, bottomZ);
             }
         }
     }

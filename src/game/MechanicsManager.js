@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { UPDRAFT_CONFIG, WEATHER_CONFIG } from './config.js';
 
-const WATERFALL_PARTICLE_COUNT = 100;
-const WATERFALL_WIDTH = 8;
+const WATERFALL_PARTICLE_COUNT = 150;
+const WATERFALL_WIDTH = 10;
+const SPLASH_PARTICLE_COUNT = 100;
 
 export class MechanicsManager {
     constructor(scene) {
@@ -10,6 +11,7 @@ export class MechanicsManager {
         this.activeUpdrafts = [];
         this.activeWaterfalls = new Map();
         this.particleTexture = this.createParticleTexture();
+        this.noiseTexture = this.createNoiseTexture();
         this.rainParticles = null;
         this.isRaining = false;
 
@@ -27,6 +29,69 @@ export class MechanicsManager {
         context.fillStyle = gradient;
         context.fillRect(0, 0, 64, 64);
         return new THREE.CanvasTexture(canvas);
+    }
+
+    createNoiseTexture() {
+        const canvas = document.createElement('canvas');
+        const size = 128;
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext('2d');
+        const imageData = context.createImageData(size, size);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+            const lum = Math.floor(Math.random() * 255);
+            imageData.data[i] = lum;
+            imageData.data[i + 1] = lum;
+            imageData.data[i + 2] = lum;
+            imageData.data[i + 3] = 255;
+        }
+        context.putImageData(imageData, 0, 0);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        return texture;
+    }
+
+
+    createWaterfallMaterial() {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                u_time: { value: 0 },
+                u_noiseTexture: { value: this.noiseTexture },
+                u_falloff: { value: 0.2 },
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float u_time;
+                uniform sampler2D u_noiseTexture;
+                uniform float u_falloff;
+                varying vec2 vUv;
+
+                void main() {
+                    vec2 uv = vUv;
+                    float speed = 2.0;
+                    uv.y -= u_time * speed;
+
+                    float noise = texture2D(u_noiseTexture, uv * vec2(1.0, 4.0)).r;
+                    noise = pow(noise, 2.5);
+
+                    float edgeFade = smoothstep(0.0, u_falloff, vUv.x) * (1.0 - smoothstep(1.0 - u_falloff, 1.0, vUv.x));
+
+                    float alpha = noise * edgeFade * 0.4;
+
+                    gl_FragColor = vec4(vec3(0.8, 0.9, 1.0), alpha);
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+        });
     }
 
     createRainSystem() {
@@ -103,46 +168,64 @@ export class MechanicsManager {
         }
     }
 
-    addWaterfalls(locations, chunkId, xOffset, zOffset) {
+    addWaterfalls(locations, chunkId) {
         const newWaterfalls = [];
-        for (let i = 0; i < locations.length; i += 4) {
-            const x = locations[i];
-            const y = locations[i + 1];
-            const z = locations[i + 2];
-            const height = locations[i + 3];
+        for (let i = 0; i < locations.length; i += 6) {
+            const topPos = new THREE.Vector3(locations[i], locations[i + 1], locations[i + 2]);
+            const bottomPos = new THREE.Vector3(locations[i + 3], locations[i + 4], locations[i + 5]);
 
-            const geometry = new THREE.BufferGeometry();
-            const vertices = [];
-            const velocities = [];
+            // 1. Create the flowing water mesh with custom geometry
+            const flowGeometry = new THREE.BufferGeometry();
 
-            for (let j = 0; j < WATERFALL_PARTICLE_COUNT; j++) {
-                vertices.push(
-                    x + (Math.random() - 0.5) * WATERFALL_WIDTH,
-                    y - Math.random() * height,
-                    z
-                );
-                velocities.push(new THREE.Vector3(0, -Math.random() * 0.5 - 0.5, 0));
+            const horizontalDir = new THREE.Vector2(bottomPos.x - topPos.x, bottomPos.z - topPos.z).normalize();
+            const sideDir = new THREE.Vector2(horizontalDir.y, -horizontalDir.x);
+            const sideVec = new THREE.Vector3(sideDir.x, 0, sideDir.y).multiplyScalar(WATERFALL_WIDTH / 2);
+
+            const v_tl = new THREE.Vector3().copy(topPos).sub(sideVec);
+            const v_tr = new THREE.Vector3().copy(topPos).add(sideVec);
+            const v_bl = new THREE.Vector3().copy(bottomPos).sub(sideVec);
+            const v_br = new THREE.Vector3().copy(bottomPos).add(sideVec);
+
+            const positions = new Float32Array([
+                v_tl.x, v_tl.y, v_tl.z, v_tr.x, v_tr.y, v_tr.z,
+                v_bl.x, v_bl.y, v_bl.z, v_br.x, v_br.y, v_br.z,
+            ]);
+
+            const uvs = new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]);
+            const indices = new Uint16Array([0, 2, 1, 2, 3, 1]);
+
+            flowGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            flowGeometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+            flowGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
+            flowGeometry.computeVertexNormals();
+
+            const flowMaterial = this.createWaterfallMaterial();
+            const flowMesh = new THREE.Mesh(flowGeometry, flowMaterial);
+            this.scene.add(flowMesh);
+
+            // 2. Create the splash particle system at the bottom
+            const splashGeometry = new THREE.BufferGeometry();
+            const splashVertices = [];
+            const splashVelocities = [];
+            for (let j = 0; j < SPLASH_PARTICLE_COUNT; j++) {
+                splashVertices.push(0, 0, 0);
+                splashVelocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.8, Math.random() * 1.5, (Math.random() - 0.5) * 0.8
+                ));
             }
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-
-            const material = new THREE.PointsMaterial({
-                color: 0xffffff,
-                size: 0.5,
-                transparent: true,
-                opacity: 0.5,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
+            splashGeometry.setAttribute('position', new THREE.Float32BufferAttribute(splashVertices, 3));
+            const splashMaterial = new THREE.PointsMaterial({
+                map: this.particleTexture, size: 3, transparent: true,
+                opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false,
             });
-
-            const particles = new THREE.Points(geometry, material);
-            particles.position.set(xOffset, -25, zOffset);
-            this.scene.add(particles);
+            const splashParticles = new THREE.Points(splashGeometry, splashMaterial);
+            splashParticles.position.copy(bottomPos);
+            this.scene.add(splashParticles);
 
             newWaterfalls.push({
-                mesh: particles,
-                velocities,
-                top: y,
-                height,
+                flowMesh,
+                splashParticles,
+                splashVelocities,
             });
         }
         if (newWaterfalls.length > 0) {
@@ -150,20 +233,25 @@ export class MechanicsManager {
         }
     }
 
+
     removeWaterfalls(chunkId) {
         if (this.activeWaterfalls.has(chunkId)) {
             const waterfalls = this.activeWaterfalls.get(chunkId);
             waterfalls.forEach(waterfall => {
-                this.scene.remove(waterfall.mesh);
-                waterfall.mesh.geometry.dispose();
-                waterfall.mesh.material.dispose();
+                this.scene.remove(waterfall.flowMesh);
+                waterfall.flowMesh.geometry.dispose();
+                waterfall.flowMesh.material.dispose();
+
+                this.scene.remove(waterfall.splashParticles);
+                waterfall.splashParticles.geometry.dispose();
+                waterfall.splashParticles.material.dispose();
             });
             this.activeWaterfalls.delete(chunkId);
         }
     }
 
-    update(playerPos) {
-        const particleGravity = -0.02;
+    update(playerPos, elapsedTime) {
+        const particleGravity = -0.05;
 
         this.activeUpdrafts.forEach(updraft => {
             const positions = updraft.mesh.geometry.attributes.position.array;
@@ -171,9 +259,7 @@ export class MechanicsManager {
 
             for (let i = 0; i < velocities.length; i++) {
                 const i3 = i * 3;
-
-                velocities[i].y += particleGravity;
-
+                velocities[i].y += -0.02; // Gravity for updraft particles
                 positions[i3 + 0] += velocities[i].x;
                 positions[i3 + 1] += velocities[i].y;
                 positions[i3 + 2] += velocities[i].z;
@@ -182,7 +268,6 @@ export class MechanicsManager {
                     positions[i3 + 0] = updraft.position.x;
                     positions[i3 + 1] = updraft.position.y;
                     positions[i3 + 2] = updraft.position.z;
-
                     velocities[i].set(
                         (Math.random() - 0.5) * 0.3,
                         Math.random() * 1.0 + 0.8,
@@ -195,17 +280,34 @@ export class MechanicsManager {
 
         for (const waterfalls of this.activeWaterfalls.values()) {
             waterfalls.forEach(waterfall => {
-                const positions = waterfall.mesh.geometry.attributes.position.array;
-                const bottom = waterfall.top - waterfall.height;
-                for (let i = 0; i < positions.length; i += 3) {
-                    positions[i + 1] += waterfall.velocities[i / 3].y;
-                    if (positions[i + 1] < bottom) {
-                        positions[i + 1] = waterfall.top; // Reset to top
+                // Animate the flowing water shader
+                waterfall.flowMesh.material.uniforms.u_time.value = elapsedTime;
+
+                // Animate the splash particles
+                const positions = waterfall.splashParticles.geometry.attributes.position.array;
+                const velocities = waterfall.splashVelocities;
+                for (let i = 0; i < velocities.length; i++) {
+                    const i3 = i * 3;
+                    velocities[i].y += particleGravity;
+                    positions[i3 + 0] += velocities[i].x;
+                    positions[i3 + 1] += velocities[i].y;
+                    positions[i3 + 2] += velocities[i].z;
+
+                    if (positions[i3 + 1] < 0) { // Reset particle when it falls below the base
+                        positions[i3 + 0] = 0;
+                        positions[i3 + 1] = 0;
+                        positions[i3 + 2] = 0;
+                        velocities[i].set(
+                            (Math.random() - 0.5) * 0.8,
+                             Math.random() * 1.5,
+                            (Math.random() - 0.5) * 0.8
+                        );
                     }
                 }
-                waterfall.mesh.geometry.attributes.position.needsUpdate = true;
+                waterfall.splashParticles.geometry.attributes.position.needsUpdate = true;
             });
         }
+
 
         if (this.isRaining) {
             this.rainParticles.position.set(playerPos.x, playerPos.y, playerPos.z);
@@ -213,7 +315,6 @@ export class MechanicsManager {
             const positions = this.rainParticles.geometry.attributes.position.array;
             for (let i = 0; i < positions.length; i += 3) {
                 positions[i + 1] += WEATHER_CONFIG.RAIN_FALL_SPEED;
-
 
                 if (positions[i + 1] < -50) {
                     positions[i + 1] = 200;

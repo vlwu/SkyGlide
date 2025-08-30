@@ -504,7 +504,7 @@ function update() {
 
     player.update();
     world.update(player.mesh.position);
-    mechanicsManager.update(player.mesh.position);
+    mechanicsManager.update(player.mesh.position, elapsedTime);
     updateDynamicSky(elapsedTime);
     hoopManager.update(player.mesh.position, nightFactor);
 

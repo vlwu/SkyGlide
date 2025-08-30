@@ -32,8 +32,7 @@ export class World {
                         this.mechanicsManager.addUpdrafts(chunkData.updraftLocations);
                     }
                     if (this.mechanicsManager && chunkData.waterfallData) {
-                        const { xOffset, zOffset } = this.getOffsetsFromChunkId(chunkData.chunkId);
-                        this.mechanicsManager.addWaterfalls(chunkData.waterfallData, chunkData.chunkId, xOffset, zOffset);
+                        this.mechanicsManager.addWaterfalls(chunkData.waterfallData, chunkData.chunkId);
                     }
                 }
             }
