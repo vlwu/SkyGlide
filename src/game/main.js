@@ -4,7 +4,8 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { Player } from './Player.js';
 import { UIManager } from './UIManager.js';
 import { InputManager } from './InputManager.js';
-import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG } from './config.js';
+import { HoopManager } from './HoopManager.js';
+import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG, HOOP_CONFIG } from './config.js';
 
 
 const GameState = {
@@ -16,7 +17,7 @@ const GameState = {
 };
 let currentGameState = GameState.INTRO;
 
-let scene, camera, renderer, player, world, raycaster, sky, sun, directionIndicator, starField, hemisphereLight, directionalLight, uiManager, inputManager;
+let scene, camera, renderer, player, world, raycaster, sky, sun, directionIndicator, starField, hemisphereLight, directionalLight, uiManager, inputManager, hoopManager;
 let airStreams = [];
 const STREAM_SEGMENTS = AIRSTREAM_CONFIG.SEGMENTS;
 const STREAM_WIDTH = AIRSTREAM_CONFIG.WIDTH;
@@ -24,6 +25,7 @@ const STREAM_WIDTH = AIRSTREAM_CONFIG.WIDTH;
 let score = 0;
 let highScore = 0;
 let clock;
+let nightFactor = 0;
 
 
 const _cameraOffset = new THREE.Vector3();
@@ -107,6 +109,7 @@ function init() {
 
     player = new Player(scene);
     world = new World(scene);
+    hoopManager = new HoopManager(scene);
     raycaster = new THREE.Raycaster();
     camera.lookAt(player.mesh.position);
 
@@ -239,6 +242,7 @@ function restartGame() {
     });
     updateAirStreams();
     world.reset();
+    hoopManager.reset();
     score = 0;
     uiManager.showGameOver(false);
     setGameState(GameState.PLAYING);
@@ -268,6 +272,15 @@ function updateTerrainInteraction() {
     const forwardIntersects = raycaster.intersectObjects(terrainMeshes);
     if (forwardIntersects.length > 0 && forwardIntersects[0].distance < 2.0) {
         setGameState(GameState.GAME_OVER);
+    }
+}
+
+function updateHoopInteraction() {
+    const collidedHoop = hoopManager.checkCollisions(player.mesh.position);
+    if (collidedHoop) {
+        hoopManager.handleCollision(collidedHoop);
+        player.applyBoost(HOOP_CONFIG.SPEED_BOOST);
+        score += HOOP_CONFIG.SCORE_BONUS;
     }
 }
 
@@ -339,7 +352,7 @@ function updateDynamicSky(elapsedTime) {
         targetFogColor = new THREE.Color(0x87ceeb); targetLightColor = new THREE.Color(0xffffff);
         _targetWaterSurfaceColor.set(0x60BFFF);
         _targetWaterDepthColor.set(0x0A4D8F);
-    } else { // Night
+    } else {
         targetRayleigh = 0.1; targetTurbidity = 1; targetExposure = 0.15;
         targetFogColor = new THREE.Color(0x0a101a); targetLightColor = new THREE.Color(0xb0c4de);
         _targetWaterSurfaceColor.set(0x0B2136);
@@ -369,6 +382,7 @@ function updateDynamicSky(elapsedTime) {
     hemisphereLight.color.lerp(targetFogColor, lerpSpeed);
 
     const starOpacity = THREE.MathUtils.clamp(1.0 - (skyEffectController.elevation + 5) / 10, 0, 1);
+    nightFactor = starOpacity;
     starField.material.opacity = THREE.MathUtils.lerp(starField.material.opacity, starOpacity, lerpSpeed);
     starField.position.copy(player.mesh.position);
 }
@@ -380,6 +394,7 @@ function update() {
     player.update();
     world.update(player.mesh.position);
     updateDynamicSky(elapsedTime);
+    hoopManager.update(player.mesh.position, nightFactor);
 
     const yawDelta = player.mesh.rotation.y - player.previousYaw;
 
@@ -414,6 +429,7 @@ function update() {
     updateTerrainInteraction();
     if (currentGameState === GameState.GAME_OVER) return;
 
+    updateHoopInteraction();
     updateAirStreams();
 
     world.getActiveWaterMeshes().forEach(mesh => {
