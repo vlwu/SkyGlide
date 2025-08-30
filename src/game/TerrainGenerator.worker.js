@@ -2,8 +2,8 @@ import { createNoise2D } from 'simplex-noise';
 import { HOOP_CONFIG } from './config.js';
 
 const MAX_HEIGHT = 160;
-const MOISTURE_NOISE_SCALE = 0.05;
-const TEMPERATURE_NOISE_SCALE = 0.025;
+const MOISTURE_NOISE_SCALE = 0.008;
+const TEMPERATURE_NOISE_SCALE = 0.005;
 const WATER_LEVEL = 0.22 * MAX_HEIGHT;
 
 const BIOMES = {
@@ -112,14 +112,14 @@ self.onmessage = function(e) {
             const finalTerrainY = y - 25;
 
             if (y > MAX_HEIGHT * 0.6 && Math.random() < 0.002) {
-                hoopLocations.push(worldX, finalTerrainY + HOOP_CONFIG.RADIUS * 1.5, worldZ);
+                hoopLocations.push(worldX, finalTerrainY + HOOP_CONFIG.RADIUS * 3.0, worldZ);
             }
             else if (y > WATER_LEVEL && y < WATER_LEVEL + 15 && Math.random() < 0.002) {
                 const waterWorldY = WATER_LEVEL - 25;
-                hoopLocations.push(worldX, waterWorldY + HOOP_CONFIG.RADIUS, worldZ);
+                hoopLocations.push(worldX, waterWorldY + HOOP_CONFIG.RADIUS * 2.0, worldZ);
             }
             else if (y > WATER_LEVEL + 15 && Math.random() < 0.0003) {
-                hoopLocations.push(worldX, finalTerrainY + HOOP_CONFIG.RADIUS * 2.5, worldZ);
+                hoopLocations.push(worldX, finalTerrainY + HOOP_CONFIG.RADIUS * 3.5, worldZ);
             }
         }
     }
