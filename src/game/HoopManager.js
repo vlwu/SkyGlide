@@ -25,33 +25,39 @@ export class HoopManager {
             opacity: 0.7
         });
 
+        this.comboCount = 0;
+
         this.init();
     }
 
     init() {
-        // Generate initial path
+
         for(let i = 0; i < HOOP_CONFIG.PATH_NODES * 2; i++) {
             this.generateNextHoop();
         }
     }
 
     generateNextHoop() {
-        const noiseX = this.noise(this.lastNodePosition.x * HOOP_CONFIG.PATH_JITTER_SCALE, this.lastNodePosition.z * HOOP_CONFIG.PATH_JITTER_SCALE, this.pathSeed);
-        const noiseY = this.noise(this.lastNodePosition.z * HOOP_CONFIG.PATH_JITTER_SCALE, this.pathSeed, this.lastNodePosition.x * HOOP_CONFIG.PATH_JITTER_SCALE);
+        const noiseX = this.noise(this.lastNodePosition.x * 0.02, this.lastNodePosition.z * 0.02, this.pathSeed);
+        const noiseY = this.noise(this.lastNodePosition.z * 0.02, this.pathSeed, this.lastNodePosition.x * 0.02);
 
-        this.pathDirection.x += noiseX * 0.1;
-        this.pathDirection.z += -0.1; // Ensure it generally moves forward
-        this.pathDirection.y += noiseY * 0.1;
+        this.pathDirection.x += noiseX * 0.8;
+        this.pathDirection.y += noiseY * 0.5;
+        this.pathDirection.z += -0.2;
+
         this.pathDirection.normalize();
 
         const nextPosition = this.lastNodePosition.clone().add(this.pathDirection.clone().multiplyScalar(HOOP_CONFIG.NODE_DISTANCE));
-        
-        // Clamp height
-        nextPosition.y = Math.max(30, nextPosition.y); // Don't go into the ground
 
-        const hoopMesh = new THREE.Mesh(this.hoopGeometry, this.hoopMaterial);
+
+        nextPosition.y = THREE.MathUtils.clamp(nextPosition.y, 30, 250);
+
+        const hoopMesh = new THREE.Mesh(this.hoopGeometry, this.hoopMaterial.clone());
         hoopMesh.position.copy(nextPosition);
         hoopMesh.lookAt(this.lastNodePosition);
+        
+        const rollAngle = (Math.random() - 0.5) * 0.5;
+        hoopMesh.rotateZ(rollAngle);
 
         const hoop = {
             mesh: hoopMesh,
@@ -65,7 +71,7 @@ export class HoopManager {
     }
 
     update(playerPosition, nightFactor) {
-        // Generate new hoops if player is close to the end
+
         if (this.activeHoops.length > 0) {
             const lastHoop = this.activeHoops[this.activeHoops.length - 1];
             if (playerPosition.distanceTo(lastHoop.mesh.position) < HOOP_CONFIG.NODE_DISTANCE * HOOP_CONFIG.GENERATION_THRESHOLD) {
@@ -75,21 +81,27 @@ export class HoopManager {
             }
         }
 
-        // Remove old hoops
+
         while (this.activeHoops.length > 0 && playerPosition.z < this.activeHoops[0].mesh.position.z - 100) {
             const oldHoop = this.activeHoops.shift();
             this.hoopGroup.remove(oldHoop.mesh);
-            // No need to dispose geometry/material as they are shared
+
         }
 
-        // Update visuals
-        const emissiveIntensity = THREE.MathUtils.smoothstep(nightFactor, 0.0, 0.5) * 2.0; // More intense glow as it gets dark
-        if (this.hoopMaterial.emissiveIntensity !== emissiveIntensity) {
-            this.hoopMaterial.emissiveIntensity = emissiveIntensity;
+        const firstUnpassedHoop = this.activeHoops.find(h => !h.passed);
+        if (firstUnpassedHoop && playerPosition.z < firstUnpassedHoop.mesh.position.z) {
+            this.resetCombo();
         }
 
-        // Animate passed hoops
+
+        const emissiveIntensity = THREE.MathUtils.smoothstep(nightFactor, 0.0, 0.5) * 2.0;
+        this.hoopMaterial.emissiveIntensity = emissiveIntensity;
+
+
         this.activeHoops.forEach(hoop => {
+            if (!hoop.passed) {
+                hoop.mesh.material.emissiveIntensity = emissiveIntensity;
+            }
             if (hoop.passed && hoop.mesh.material.opacity > 0) {
                 hoop.mesh.material.opacity -= 0.05;
                 hoop.mesh.scale.multiplyScalar(1.02);
@@ -110,12 +122,34 @@ export class HoopManager {
     }
 
     handleCollision(hoop) {
-        if (hoop.passed) return;
+        if (hoop.passed) return -1;
         hoop.passed = true;
-        
-        // Create a new material instance to animate opacity independently
-        hoop.mesh.material = this.hoopMaterial.clone();
-        hoop.mesh.material.color.set(0x00ff88);
+
+        this.comboCount++;
+
+        const comboColors = [
+            0x00ffff,
+            0x00ff88,
+            0xffff00,
+            0xff8800,
+            0xff00ff,
+        ];
+        let color = comboColors[0];
+        if (this.comboCount >= 15) color = comboColors[4];
+        else if (this.comboCount >= 10) color = comboColors[3];
+        else if (this.comboCount >= 5) color = comboColors[2];
+        else if (this.comboCount >= 1) color = comboColors[1];
+
+        hoop.mesh.material.color.set(color);
+        hoop.mesh.material.emissive.set(color);
+
+        return this.comboCount;
+    }
+
+    resetCombo() {
+        if (this.comboCount > 0) {
+            this.comboCount = 0;
+        }
     }
 
     reset() {
@@ -123,6 +157,7 @@ export class HoopManager {
         this.activeHoops = [];
         this.lastNodePosition.set(0, HOOP_CONFIG.PATH_START_HEIGHT, -50);
         this.pathDirection.set(0, 0, -1);
+        this.comboCount = 0;
         this.init();
     }
 }

@@ -49,16 +49,16 @@ export const SKY_CONFIG = {
 };
 
 export const HOOP_CONFIG = {
-    RADIUS: 5,
-    TUBE_RADIUS: 0.3,
+    RADIUS: 10,
+    TUBE_RADIUS: 0.6,
     SEGMENTS: 16,
-    PATH_NODES: 20, // Number of hoops in a single path segment
-    NODE_DISTANCE: 40, // Distance between hoops
-    GENERATION_THRESHOLD: 10, // Generate new path when player is this many hoops away from the end
+    PATH_NODES: 20,
+    NODE_DISTANCE: 80,
+    GENERATION_THRESHOLD: 10,
     SPEED_BOOST: 0.05,
     SCORE_BONUS: 100,
     COLOR: 0x00ffff,
     EMISSIVE_COLOR: 0x00ffff,
-    PATH_JITTER_SCALE: 0.02, // how windy the path is
+    PATH_JITTER_SCALE: 0.02,
     PATH_START_HEIGHT: 100,
 };

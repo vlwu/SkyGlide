@@ -278,9 +278,18 @@ function updateTerrainInteraction() {
 function updateHoopInteraction() {
     const collidedHoop = hoopManager.checkCollisions(player.mesh.position);
     if (collidedHoop) {
-        hoopManager.handleCollision(collidedHoop);
-        player.applyBoost(HOOP_CONFIG.SPEED_BOOST);
-        score += HOOP_CONFIG.SCORE_BONUS;
+        const combo = hoopManager.handleCollision(collidedHoop);
+
+        if (combo > 0) {
+            const scoreMultiplier = Math.min(1 + (combo * 0.5), 10);
+            const speedBoostMultiplier = Math.min(1 + (combo * 0.2), 3);
+
+            const scoreBonus = Math.floor(HOOP_CONFIG.SCORE_BONUS * scoreMultiplier);
+            const speedBoost = HOOP_CONFIG.SPEED_BOOST * speedBoostMultiplier;
+
+            player.applyBoost(speedBoost);
+            score += scoreBonus;
+        }
     }
 }
 
