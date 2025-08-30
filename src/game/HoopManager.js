@@ -12,7 +12,7 @@ export class HoopManager {
         this.hoopMaterial = new THREE.MeshStandardMaterial({
             color: HOOP_CONFIG.COLOR,
             emissive: HOOP_CONFIG.EMISSIVE_COLOR,
-            emissiveIntensity: 0,
+            emissiveIntensity: 2.0, // Always glow brightly
             metalness: 0.2,
             roughness: 0.5,
             transparent: true,
@@ -76,13 +76,9 @@ export class HoopManager {
             this.resetCombo();
         }
 
-        const emissiveIntensity = THREE.MathUtils.smoothstep(nightFactor, 0.0, 0.5) * 2.0;
-        this.hoopMaterial.emissiveIntensity = emissiveIntensity;
+        // The emissive intensity is now constant, so no per-frame update is needed.
 
         this.activeHoops.forEach(hoop => {
-            if (!hoop.passed) {
-                hoop.mesh.material.emissiveIntensity = emissiveIntensity;
-            }
             if (hoop.passed && hoop.mesh.material.opacity > 0) {
                 hoop.mesh.material.opacity -= 0.05;
                 hoop.mesh.scale.multiplyScalar(1.02);
@@ -115,11 +111,11 @@ export class HoopManager {
             0xff8800,
             0xff00ff,
         ];
-        let color = comboColors[0];
-        if (this.comboCount >= 15) color = comboColors[4];
-        else if (this.comboCount >= 10) color = comboColors[3];
-        else if (this.comboCount >= 5) color = comboColors[2];
-        else if (this.comboCount >= 1) color = comboColors[1];
+        let color = comboColors;
+        if (this.comboCount >= 15) color = comboColors;
+        else if (this.comboCount >= 10) color = comboColors;
+        else if (this.comboCount >= 5) color = comboColors;
+        else if (this.comboCount >= 1) color = comboColors;
 
         hoop.mesh.material.color.set(color);
         hoop.mesh.material.emissive.set(color);
