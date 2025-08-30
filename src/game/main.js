@@ -6,7 +6,10 @@ import { UIManager } from './UIManager.js';
 import { InputManager } from './InputManager.js';
 import { HoopManager } from './HoopManager.js';
 import { MechanicsManager } from './MechanicsManager.js';
-import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG, HOOP_CONFIG, PROXIMITY_SCORING_CONFIG, UPDRAFT_CONFIG } from './config.js';
+import { AudioManager } from './AudioManager.js';
+import { CAMERA_CONFIG, SCENE_CONFIG, AIRSTREAM_CONFIG, SKY_CONFIG, PLAYER_CONFIG, HOOP_CONFIG, PROXIMITY_SCORING_CONFIG, UPDRAFT_CONFIG, WEATHER_CONFIG } from './config.js';
+
+// DO NOT import the audio files. They are loaded by URL from the 'public' folder.
 
 
 const GameState = {
@@ -18,7 +21,7 @@ const GameState = {
 };
 let currentGameState = GameState.INTRO;
 
-let scene, camera, renderer, player, world, raycaster, sky, sun, directionIndicator, starField, hemisphereLight, directionalLight, uiManager, inputManager, hoopManager, mechanicsManager;
+let scene, camera, renderer, player, world, raycaster, sky, sun, directionIndicator, starField, hemisphereLight, directionalLight, uiManager, inputManager, hoopManager, mechanicsManager, audioManager;
 let airStreams = [];
 const STREAM_SEGMENTS = AIRSTREAM_CONFIG.SEGMENTS;
 const STREAM_WIDTH = AIRSTREAM_CONFIG.WIDTH;
@@ -28,6 +31,8 @@ let highScore = 0;
 let clock;
 let nightFactor = 0;
 let dayNightCycleSetting = 'cycle';
+let currentWeather = 'CLEAR'; // Can be 'CLEAR' or 'RAIN'
+let weatherTimer = 0;
 
 
 const _cameraOffset = new THREE.Vector3();
@@ -74,10 +79,12 @@ function setGameState(newState) {
     if (currentGameState === GameState.PLAYING) {
         directionIndicator.visible = true;
         uiManager.requestPointerLock();
+        if (audioManager) audioManager.resumeAll();
     } else if (currentGameState === GameState.PAUSED) {
         uiManager.showPause(true, score);
         document.exitPointerLock();
         directionIndicator.visible = false;
+        if (audioManager) audioManager.pauseAll();
     } else if (currentGameState === GameState.SETTINGS) {
         uiManager.showSettings(true);
     } else if (currentGameState === GameState.GAME_OVER) {
@@ -89,6 +96,7 @@ function setGameState(newState) {
         uiManager.showGameOver(true, score, highScore);
         document.exitPointerLock();
         directionIndicator.visible = false;
+        if (audioManager) audioManager.pauseAll();
     }
 }
 
@@ -100,6 +108,8 @@ function init() {
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 2, 5);
 
+    audioManager = new AudioManager(camera);
+
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -108,6 +118,10 @@ function init() {
 
     setupScene();
     setupAirStreams();
+
+    // Pass the string URL paths directly. Vite serves 'public' as the root '/'.
+    audioManager.loadSound('wind', '/assets/sounds/wind.mp3', true, 0.2);
+    audioManager.loadSound('wind_rush', '/assets/sounds/wind_rush.mp3', true, 0);
 
     player = new Player(scene);
     hoopManager = new HoopManager(scene);
@@ -218,6 +232,9 @@ function handleSettingChange(key, value) {
 
 function startGame() {
     if (currentGameState !== GameState.INTRO) return;
+    audioManager.init();
+    audioManager.playSound('wind');
+    audioManager.playSound('wind_rush');
     uiManager.showIntro(false);
     setGameState(GameState.PLAYING);
 }
@@ -362,6 +379,21 @@ function updateAirStreams() {
     });
 }
 
+function updateWeatherState(elapsedTime) {
+    weatherTimer -= clock.getDelta();
+
+    if (weatherTimer <= 0) {
+        if (currentWeather === 'RAIN') {
+            currentWeather = 'CLEAR';
+            weatherTimer = Math.random() * 120 + 60; // Clear for 1-2 minutes
+        } else { // It's 'CLEAR'
+            currentWeather = 'RAIN';
+            weatherTimer = Math.random() * (WEATHER_CONFIG.RAIN_DURATION_MAX_SECONDS - WEATHER_CONFIG.RAIN_DURATION_MIN_SECONDS) + WEATHER_CONFIG.RAIN_DURATION_MIN_SECONDS;
+        }
+        mechanicsManager.updateWeather(currentWeather);
+    }
+}
+
 function updateDynamicSky(elapsedTime) {
     const uniforms = sky.material.uniforms;
 
@@ -370,7 +402,7 @@ function updateDynamicSky(elapsedTime) {
         skyEffectController.elevation = -90 * Math.cos(time * Math.PI * 2) + 0.1;
     } else if (dayNightCycleSetting === 'day') {
         skyEffectController.elevation = 20;
-    } else { // night
+    } else {
         skyEffectController.elevation = -5;
     }
 
@@ -384,7 +416,16 @@ function updateDynamicSky(elapsedTime) {
     const isDay = skyEffectController.elevation > 10;
     let targetRayleigh, targetTurbidity, targetExposure, targetFogColor, targetLightColor;
 
-    if (isSunset) {
+    if (currentWeather === 'RAIN') {
+        targetRayleigh = 0.5;
+        targetTurbidity = 40;
+        targetExposure = 0.3;
+        targetFogColor = new THREE.Color(0x7a8ca1);
+        targetLightColor = new THREE.Color(0x9ab2d1);
+        _targetWaterSurfaceColor.set(0x3a4c61);
+        _targetWaterDepthColor.set(0x1e2836);
+    }
+    else if (isSunset) {
         const sunsetFactor = 1 - (skyEffectController.elevation + 5) / 15;
         targetRayleigh = THREE.MathUtils.lerp(3.5, 20, sunsetFactor);
         targetTurbidity = THREE.MathUtils.lerp(8, 15, sunsetFactor);
@@ -398,7 +439,7 @@ function updateDynamicSky(elapsedTime) {
         targetFogColor = new THREE.Color(0x87ceeb); targetLightColor = new THREE.Color(0xffffff);
         _targetWaterSurfaceColor.set(0x60BFFF);
         _targetWaterDepthColor.set(0x0A4D8F);
-    } else {
+    } else { // Night
         targetRayleigh = 0.1; targetTurbidity = 1; targetExposure = 0.15;
         targetFogColor = new THREE.Color(0x0a101a); targetLightColor = new THREE.Color(0xb0c4de);
         _targetWaterSurfaceColor.set(0x0B2136);
@@ -436,6 +477,9 @@ function updateDynamicSky(elapsedTime) {
 function update() {
     const elapsedTime = clock.getElapsedTime();
     const speed = player.velocity.length();
+
+    updateWeatherState(elapsedTime);
+    audioManager.updateWindSound(speed);
 
     player.update();
     world.update(player.mesh.position);

@@ -75,3 +75,12 @@ export const UPDRAFT_CONFIG = {
     PARTICLE_COUNT: 50,
     GENERATION_CHANCE: 0.0005,
 };
+
+export const WEATHER_CONFIG = {
+    RAIN_PARTICLE_COUNT: 5000,
+    RAIN_AREA_SIZE: 400,
+    RAIN_FALL_SPEED: -8.0,
+    CHANCE_TO_RAIN: 0.0005, // Chance per frame to start raining
+    RAIN_DURATION_MIN_SECONDS: 20,
+    RAIN_DURATION_MAX_SECONDS: 45,
+};

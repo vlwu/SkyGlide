@@ -1,11 +1,15 @@
 import * as THREE from 'three';
-import { UPDRAFT_CONFIG } from './config.js';
+import { UPDRAFT_CONFIG, WEATHER_CONFIG } from './config.js';
 
 export class MechanicsManager {
     constructor(scene) {
         this.scene = scene;
         this.activeUpdrafts = [];
         this.particleTexture = this.createParticleTexture();
+        this.rainParticles = null;
+        this.isRaining = false;
+
+        this.createRainSystem();
     }
 
     createParticleTexture() {
@@ -19,6 +23,37 @@ export class MechanicsManager {
         context.fillStyle = gradient;
         context.fillRect(0, 0, 64, 64);
         return new THREE.CanvasTexture(canvas);
+    }
+
+    createRainSystem() {
+        const geometry = new THREE.BufferGeometry();
+        const vertices = [];
+
+        for (let i = 0; i < WEATHER_CONFIG.RAIN_PARTICLE_COUNT; i++) {
+            const x = Math.random() * WEATHER_CONFIG.RAIN_AREA_SIZE - WEATHER_CONFIG.RAIN_AREA_SIZE / 2;
+            const y = Math.random() * 200 + 100; // Start high up
+            const z = Math.random() * WEATHER_CONFIG.RAIN_AREA_SIZE - WEATHER_CONFIG.RAIN_AREA_SIZE / 2;
+            vertices.push(x, y, z);
+        }
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+
+        const material = new THREE.PointsMaterial({
+            color: 0xaaaaee,
+            size: 0.8,
+            transparent: true,
+            opacity: 0.6,
+            depthWrite: false, // Prevents weird rendering artifacts with other transparent objects
+        });
+
+        this.rainParticles = new THREE.Points(geometry, material);
+        this.rainParticles.visible = false;
+        this.scene.add(this.rainParticles);
+    }
+
+    updateWeather(weatherState) {
+        this.isRaining = (weatherState === 'RAIN');
+        this.rainParticles.visible = this.isRaining;
     }
 
     addUpdrafts(locations) {
@@ -39,7 +74,7 @@ export class MechanicsManager {
                 );
                 velocities.push(
                     (Math.random() - 0.5) * 0.1,
-                    Math.random() * 0.2 + 0.2, // Move upwards
+                    Math.random() * 0.2 + 0.2,
                     (Math.random() - 0.5) * 0.1
                 );
             }
@@ -67,20 +102,36 @@ export class MechanicsManager {
     }
 
     update(playerPos) {
+        // Animate Updrafts
         this.activeUpdrafts.forEach(updraft => {
             const positions = updraft.mesh.geometry.attributes.position.array;
             const velocities = updraft.mesh.geometry.attributes.velocity.array;
 
             for (let i = 0; i < positions.length; i += 3) {
-                positions[i + 1] += velocities[i + 1]; // Update y position
+                positions[i + 1] += velocities[i + 1];
 
-                // Reset particle if it goes too high
                 if (positions[i + 1] > updraft.baseY + 120) {
                     positions[i + 1] = updraft.baseY;
                 }
             }
             updraft.mesh.geometry.attributes.position.needsUpdate = true;
         });
+
+        // Animate Rain
+        if (this.isRaining) {
+            this.rainParticles.position.set(playerPos.x, playerPos.y, playerPos.z);
+
+            const positions = this.rainParticles.geometry.attributes.position.array;
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i + 1] += WEATHER_CONFIG.RAIN_FALL_SPEED;
+
+                // If a particle has fallen below the player's view, recycle it to the top
+                if (positions[i + 1] < -50) {
+                    positions[i + 1] = 200;
+                }
+            }
+            this.rainParticles.geometry.attributes.position.needsUpdate = true;
+        }
     }
 
     getActiveUpdrafts() {
@@ -94,5 +145,6 @@ export class MechanicsManager {
             updraft.mesh.material.dispose();
         });
         this.activeUpdrafts = [];
+        this.updateWeather('CLEAR'); // Ensure rain is off on reset
     }
 }

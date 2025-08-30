@@ -1,7 +1,7 @@
 export class InputManager {
     constructor(player, gameActions) {
         this.player = player;
-        this.gameActions = gameActions; // { onTogglePause, onPointerLockChange }
+        this.gameActions = gameActions;
         this.invertMousePitch = false;
         this.mouseSensitivity = 1.0;
 
@@ -24,8 +24,8 @@ export class InputManager {
     }
 
     onKeyDown(event) {
-        if (this.gameActions.isSettingsOpen() && event.key === 'Escape') {
-            this.gameActions.toggleSettings(false);
+        if (this.gameActions.getGameState() === 'SETTINGS' && event.key === 'Escape') {
+            this.gameActions.setGameState('PAUSED');
             return;
         }
 
@@ -34,7 +34,8 @@ export class InputManager {
             return;
         }
 
-        if (this.gameActions.isPaused() || this.gameActions.isGameOver()) return;
+        const gameState = this.gameActions.getGameState();
+        if (gameState === 'PAUSED' || gameState === 'GAME_OVER' || gameState === 'SETTINGS') return;
 
         if (event.key === 'ArrowLeft') this.player.targetRotation.y += 0.5;
         else if (event.key === 'ArrowRight') this.player.targetRotation.y -= 0.5;
