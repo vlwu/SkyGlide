@@ -113,8 +113,10 @@ export class Player {
     checkGrounded() {
         // Check slightly below feet
         const checkY = this.position.y - 0.05;
-        // Check center point below feet for ground status
-        if (this.velocity.y <= 0 && this.checkIntersection(new THREE.Vector3(this.position.x, checkY, this.position.z))) {
+        // Check area below feet for ground status (using same radius as physics)
+        const feetPoint = new THREE.Vector3(this.position.x, checkY, this.position.z);
+        
+        if (this.velocity.y <= 0 && this.checkPoints([feetPoint])) {
             this.onGround = true;
             if (this.state === 'FALLING') this.state = 'WALKING';
         } else {
@@ -246,7 +248,9 @@ export class Player {
             if (this.checkCollisionBody(nextPos)) {
                 if (this.velocity.y < 0) {
                     // Landing
-                    this.position.y = Math.ceil(this.position.y - 0.01); 
+                    // Snap to top of the block hit.
+                    // Block is at floor(feet_y). Top is floor(feet_y) + 1.
+                    this.position.y = Math.floor(nextPos.y + 0.1) + 1; 
                     this.velocity.y = 0;
                     this.onGround = true;
                     if(this.state === 'FLYING' || this.state === 'FALLING') this.state = 'WALKING';
