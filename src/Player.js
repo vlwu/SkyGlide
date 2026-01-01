@@ -110,8 +110,10 @@ export class Player {
         const inputDir = new THREE.Vector3(0,0,0);
         if (this.keys.forward) inputDir.add(forward);
         if (this.keys.backward) inputDir.sub(forward);
-        if (this.keys.right) inputDir.sub(right); // WASD standard
-        if (this.keys.left) inputDir.add(right);
+        
+        // Fixed: Right adds the right vector, Left subtracts it
+        if (this.keys.right) inputDir.add(right);
+        if (this.keys.left) inputDir.sub(right);
 
         if (inputDir.length() > 0) inputDir.normalize();
 
@@ -145,8 +147,6 @@ export class Player {
 
         // Activate Elytra
         if (this.keys.jump && !this.onGround) {
-            // Need debouncing or check if pressed fresh? 
-            // For now, simple transition: if falling and space held/pressed.
             this.state = 'FLYING';
             // Slight boost to forward momentum to start glide
             const lookDir = new THREE.Vector3(
@@ -171,42 +171,32 @@ export class Player {
         const horizontalSpeed = Math.sqrt(this.velocity.x**2 + this.velocity.z**2);
         
         // 1. Gravity (Weaker than normal falling)
-        // Minecraft uses ~0.08/tick. We scale for dt.
         this.velocity.y -= 5.0 * dt; 
 
         // 2. Pitch-based Lift & Drag calculations
-        // Pitch in MC: 0=Horizon, +90=Down, -90=Up.
-        // Here: pitch > 0 is Up, pitch < 0 is Down (Three.js standard).
-        // Let's invert pitch for calculation to match logic:
-        // angleOfAttack: 0 = horizon. + = Down. - = Up.
         const angleOfAttack = -this.pitch; 
-
         const cosPitch = Math.cos(angleOfAttack);
         const cosPitchSq = cosPitch * cosPitch;
 
         // 3. Lift (Convert horizontal speed to vertical)
-        // Only if not stalling (stalling happens if looking too far up)
         if (cosPitchSq > 0) {
             const lift = horizontalSpeed * horizontalSpeed * 0.05 * cosPitchSq * dt;
-            // Apply lift upward
             this.velocity.y += lift;
         }
 
         // 4. Dive Acceleration (Convert Potential to Kinetic)
-        // If looking down (angleOfAttack > 0), add speed
         if (angleOfAttack > 0) {
             const diveForce = angleOfAttack * 20 * dt;
             this.velocity.add(lookDir.clone().multiplyScalar(diveForce));
         }
 
         // 5. Drag
-        const dragCoeff = 0.99 ** (dt * 60); // Scale 0.99/tick to dt
+        const dragCoeff = 0.99 ** (dt * 60); 
         this.velocity.x *= dragCoeff;
         this.velocity.z *= dragCoeff;
-        this.velocity.y *= 0.98 ** (dt * 60); // Vertical drag slightly higher
+        this.velocity.y *= 0.98 ** (dt * 60); 
 
         // 6. Minimum Glide (Prevent hover)
-        // If vertical velocity is positive (going up), drag it down faster
         if (this.velocity.y > 0) {
              this.velocity.y -= 2.0 * dt;
         }
@@ -234,7 +224,6 @@ export class Player {
         }
 
         // Horizontal collision (Wall smack)
-        // Check head level for forward collision
         const headX = Math.round(this.position.x + this.velocity.x * 0.1);
         const headZ = Math.round(this.position.z + this.velocity.z * 0.1);
         const currY = Math.round(this.position.y);
@@ -246,7 +235,7 @@ export class Player {
             
             // If flying fast, this is where damage would happen
             if (this.state === 'FLYING') {
-                this.state = 'FALLING'; // Drop out of flight
+                this.state = 'FALLING'; 
             }
         }
     }

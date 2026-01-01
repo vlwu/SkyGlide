@@ -26,6 +26,7 @@ export class Chunk {
         const startX = this.x * this.size;
         const startZ = this.z * this.size;
         const tunnelRadius = 8;
+        const spawnRadius = 20; // Radius for clearing start area
 
         // Pass 1: Generate voxel data
         for (let x = 0; x < this.size; x++) {
@@ -43,7 +44,14 @@ export class Chunk {
                         continue;
                     }
 
-                    // 2. Check tunnel proximity
+                    // 2. Clear Spawn Area (Spherical safety zone)
+                    const distToSpawn = Math.sqrt(wx**2 + (wy - 14)**2 + wz**2);
+                    if (distToSpawn < spawnRadius) {
+                        this.data[x][y][z] = false;
+                        continue;
+                    }
+
+                    // 3. Check tunnel proximity
                     let isPathClear = false;
                     const pathPos = this.racePath.getPointAtZ(wz);
 
@@ -60,7 +68,7 @@ export class Chunk {
                         continue;
                     }
 
-                    // 3. Noise generation
+                    // 4. Noise generation
                     const density = noise3D(wx * this.scale, wy * this.scale, wz * this.scale);
                     this.data[x][y][z] = (density > 0.2 || y === 0);
                 }
@@ -108,7 +116,6 @@ export class Chunk {
         if (positions.length === 0) return;
 
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        // Use a default white material so instance colors show up correctly
         const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
         this.mesh = new THREE.InstancedMesh(geometry, material, positions.length);
