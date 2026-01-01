@@ -10,12 +10,16 @@ export class Player {
         this.state = 'WALKING';
 
         // Physics vectors
-        this.position = new THREE.Vector3(0, 16, 0); // Start above platform (Platform is Y=14)
+        this.position = new THREE.Vector3(0, 16, 0); 
         this.velocity = new THREE.Vector3(0, 0, 0);
         
         // Orientation
         this.pitch = 0; 
         this.yaw = Math.PI; 
+
+        // Camera smoothing
+        this.currentEyeHeight = 1.6;
+        this.targetEyeHeight = 1.6;
 
         // Input State
         this.keys = {
@@ -23,6 +27,8 @@ export class Player {
             left: false, right: false,
             jump: false
         };
+        // Track the frame the key was pressed
+        this.jumpPressedThisFrame = false; 
 
         this.dims = { height: 1.8, radius: 0.3 };
         this.onGround = false;
@@ -47,7 +53,12 @@ export class Player {
                 case 'KeyS': this.keys.backward = pressed; break;
                 case 'KeyA': this.keys.left = pressed; break;
                 case 'KeyD': this.keys.right = pressed; break;
-                case 'Space': this.keys.jump = pressed; break;
+                case 'Space': 
+                    if (pressed && !this.keys.jump) {
+                        this.jumpPressedThisFrame = true;
+                    }
+                    this.keys.jump = pressed; 
+                    break;
             }
         };
 
@@ -66,15 +77,31 @@ export class Player {
             case 'FLYING': this.handleFlying(dt); break;
         }
 
+        // Reset one-shot input
+        this.jumpPressedThisFrame = false;
+
         // 2. Physics & Collision
         this.resolvePhysics(dt);
 
-        // 3. Update Camera
-        this.camera.position.copy(this.position);
+        // 3. Update Camera with Smooth Transition
+        this.updateCamera(dt);
+    }
+
+    updateCamera(dt) {
+        // Determine target height based on state
         if (this.state === 'WALKING' || this.state === 'FALLING') {
-            this.camera.position.y += 1.6; // Eye height
+            this.targetEyeHeight = 1.6;
+        } else if (this.state === 'FLYING') {
+            this.targetEyeHeight = 0.4; // Lower eye level when horizontal
         }
-        
+
+        // Smoothly interpolate current height to target
+        const lerpSpeed = 5.0;
+        this.currentEyeHeight += (this.targetEyeHeight - this.currentEyeHeight) * lerpSpeed * dt;
+
+        this.camera.position.copy(this.position);
+        this.camera.position.y += this.currentEyeHeight;
+
         const lookDir = new THREE.Vector3(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
@@ -85,7 +112,7 @@ export class Player {
 
     checkGrounded() {
         // Check slightly below feet
-        const checkY = this.position.y - 0.1;
+        const checkY = this.position.y - 0.05;
         // Check center point below feet for ground status
         if (this.velocity.y <= 0 && this.checkIntersection(new THREE.Vector3(this.position.x, checkY, this.position.z))) {
             this.onGround = true;
@@ -98,7 +125,7 @@ export class Player {
     handleWalking(dt) {
         const speed = 10;
         const friction = 10;
-        const jumpForce = 9;
+        const jumpForce = 11;
         const gravity = 25;
 
         // Apply friction
@@ -118,17 +145,23 @@ export class Player {
         if (inputDir.length() > 0) inputDir.normalize();
 
         this.velocity.add(inputDir.multiplyScalar(speed * friction * dt));
-        this.velocity.y -= gravity * dt;
 
-        if (this.keys.jump && this.onGround) {
-            this.velocity.y = jumpForce;
-            this.onGround = false;
-            this.position.y += 0.1; // Lift slightly to break ground contact
-        }
-
-        // Only switch to falling if we are definitely not grounded and moving down significantly
-        if (!this.onGround && this.velocity.y < -1.0) {
-            this.state = 'FALLING';
+        // Jitter Fix: Stop gravity if strictly on ground and not jumping
+        if (this.onGround) {
+            this.velocity.y = 0;
+            
+            // Jump Logic: Only if on ground
+            if (this.jumpPressedThisFrame) {
+                this.velocity.y = jumpForce;
+                this.onGround = false;
+                this.position.y += 0.1; // Lift slightly to break ground contact
+                this.state = 'FALLING'; // Immediate state switch
+            }
+        } else {
+            // Apply gravity if we walked off a ledge
+            this.velocity.y -= gravity * dt;
+            // Switch to falling if moving down fast enough
+            if (this.velocity.y < -1.0) this.state = 'FALLING';
         }
     }
 
@@ -141,14 +174,17 @@ export class Player {
         const forward = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)).normalize();
         if (this.keys.forward) this.velocity.add(forward.multiplyScalar(airSpeed * dt));
 
-        if (this.keys.jump && !this.onGround && this.velocity.y < -2) {
+        // Flight Activation: Only if Jump key pressed THIS frame while in air
+        if (this.jumpPressedThisFrame && !this.onGround) {
             this.state = 'FLYING';
+            // Boost forward
             const lookDir = new THREE.Vector3(
                 Math.sin(this.yaw) * Math.cos(this.pitch),
                 Math.sin(this.pitch),
                 Math.cos(this.yaw) * Math.cos(this.pitch)
             );
             this.velocity.add(lookDir.multiplyScalar(15));
+            this.velocity.y = Math.max(this.velocity.y, 2); // Small vertical bump
         }
     }
 
@@ -204,27 +240,28 @@ export class Player {
         // Y Axis
         nextPos = this.position.clone();
         nextPos.y += this.velocity.y * dt;
-        if (this.checkCollisionBody(nextPos)) {
-            if (this.velocity.y < 0) {
-                // Landing
-                // Fix: Snap to the top of the block (Ceiling of the coordinate)
-                this.position.y = Math.ceil(this.position.y - 0.01); 
-                this.velocity.y = 0;
-                this.onGround = true;
-                if(this.state === 'FLYING' || this.state === 'FALLING') this.state = 'WALKING';
+        
+        // Only check Y collision if actually moving vertically
+        if (Math.abs(this.velocity.y) > 0.001) {
+            if (this.checkCollisionBody(nextPos)) {
+                if (this.velocity.y < 0) {
+                    // Landing
+                    this.position.y = Math.ceil(this.position.y - 0.01); 
+                    this.velocity.y = 0;
+                    this.onGround = true;
+                    if(this.state === 'FLYING' || this.state === 'FALLING') this.state = 'WALKING';
+                } else {
+                    // Ceiling
+                    this.position.y = Math.floor(nextPos.y) - 0.2; 
+                    this.velocity.y = 0;
+                }
             } else {
-                // Ceiling
-                this.position.y = Math.floor(nextPos.y) - 0.2; // Push down
-                this.velocity.y = 0;
+                this.position.y = nextPos.y;
             }
-        } else {
-            this.position.y = nextPos.y;
         }
     }
 
-    // Check if the player's body volume intersects any blocks
     checkCollisionBody(pos) {
-        // Check feet (slightly up to avoid floor friction), mid, and head
         const points = [
             pos.clone().setY(pos.y + 0.1),
             pos.clone().setY(pos.y + this.dims.height * 0.5),
@@ -233,7 +270,6 @@ export class Player {
         return this.checkPoints(points);
     }
 
-    // Check strict ground intersection (below feet)
     checkIntersection(pos) {
         return this.world.getBlock(pos.x, pos.y, pos.z);
     }
