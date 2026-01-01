@@ -1,19 +1,73 @@
 body {
   margin: 0;
-  overflow: hidden; /* Prevent scrollbars */
+  overflow: hidden;
   background-color: #000;
+  user-select: none; /* Prevent text selection */
 }
 
 canvas {
-  display: block; /* Remove canvas margin */
+  display: block;
 }
 
 #ui-layer {
   position: absolute;
   top: 0;
   left: 0;
-  pointer-events: none; /* Pass events to game */
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#debug-info {
+  position: absolute;
+  top: 10px;
+  left: 10px;
   color: white;
   font-family: monospace;
-  padding: 10px;
+  text-shadow: 1px 1px 0 #000;
+}
+
+/* Pause Menu Styles */
+#pause-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(5px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-family: monospace;
+  z-index: 100;
+}
+
+#pause-menu h1 {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 5px;
+}
+
+#pause-menu p {
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+  animation: pulse 2s infinite;
+}
+
+.controls-hint {
+    background: rgba(255,255,255,0.1);
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    line-height: 1.6;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
 }
