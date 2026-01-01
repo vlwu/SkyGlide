@@ -2,7 +2,7 @@ body {
   margin: 0;
   overflow: hidden;
   background-color: #000;
-  user-select: none; /* Prevent text selection */
+  user-select: none;
 }
 
 canvas {
@@ -22,12 +22,46 @@ canvas {
   position: absolute;
   top: 10px;
   left: 10px;
-  color: white;
+  color: rgba(255, 255, 255, 0.5);
   font-family: monospace;
-  text-shadow: 1px 1px 0 #000;
+  font-size: 0.8rem;
 }
 
-/* Pause Menu Styles */
+/* HUD Styles */
+#hud {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.hud-item {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 8px 15px;
+    border-radius: 4px;
+    border-right: 3px solid #00d2ff;
+    color: white;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    gap: 10px;
+    min-width: 150px;
+    justify-content: space-between;
+}
+
+.hud-item .label {
+    font-weight: bold;
+    color: #aaa;
+    font-size: 0.8rem;
+}
+
+.hud-item .value {
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
 #pause-menu {
   position: absolute;
   top: 0;

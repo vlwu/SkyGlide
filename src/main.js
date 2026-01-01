@@ -9,11 +9,14 @@ const RENDER_DISTANCE = 200;
 
 // UI references
 const pauseMenu = document.getElementById('pause-menu');
+const hudAlt = document.getElementById('hud-alt');
+const hudSpeed = document.getElementById('hud-speed');
+const hudState = document.getElementById('hud-state');
 
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB);
-scene.fog = new THREE.Fog(0x87CEEB, 10, RENDER_DISTANCE);
+scene.fog = new THREE.Fog(0x87CEEB, 20, RENDER_DISTANCE);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
@@ -49,19 +52,32 @@ function onPointerLockChange() {
 
 document.addEventListener('pointerlockchange', onPointerLockChange);
 
-// Request pointer lock on click
 document.body.addEventListener('click', () => {
     if (!isGameActive) {
         document.body.requestPointerLock();
     }
 });
 
-// Resize handler
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// UI Update
+function updateHUD() {
+    if (!isGameActive) return;
+    
+    // Altitude
+    hudAlt.textContent = Math.round(player.position.y);
+    
+    // Speed (horizontal + vertical magnitude)
+    const speed = Math.round(player.velocity.length() * 10) / 10;
+    hudSpeed.textContent = speed.toFixed(1);
+    
+    // State
+    hudState.textContent = player.state;
+}
 
 // Game loop
 const clock = new THREE.Clock();
@@ -69,13 +85,12 @@ const clock = new THREE.Clock();
 function animate() {
     requestAnimationFrame(animate);
 
-    // Update physics only when active
     if (isGameActive) {
-        const dt = Math.min(clock.getDelta(), 0.1); // Limit delta time
+        const dt = Math.min(clock.getDelta(), 0.1); 
         player.update(dt);
         worldManager.update(player.position);
+        updateHUD();
     } else {
-        // Flush clock when paused
         clock.getDelta(); 
     }
 

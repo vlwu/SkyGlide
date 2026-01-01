@@ -7,17 +7,32 @@
   </head>
   <body>
     <div id="ui-layer">
-        <div id="debug-info">SkyGlide Dev Build 0.2</div>
+        <div id="debug-info">SkyGlide Dev Build 0.3</div>
+        
+        <!-- HUD -->
+        <div id="hud">
+            <div class="hud-item">
+                <span class="label">ALTITUDE</span>
+                <span class="value" id="hud-alt">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="label">SPEED</span>
+                <span class="value" id="hud-speed">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="label">STATE</span>
+                <span class="value" id="hud-state">WALKING</span>
+            </div>
+        </div>
     </div>
     
-    <!-- New Pause Menu -->
     <div id="pause-menu">
         <h1>PAUSED</h1>
         <p>Click anywhere to resume flight</p>
         <div class="controls-hint">
-            Mouse to Steer<br>
-            Look Down to Dive (Speed)<br>
-            Look Up to Glide (Altitude)
+            WASD to Move<br>
+            SPACE to Jump / Open Wings<br>
+            Mouse to Steer
         </div>
     </div>
 

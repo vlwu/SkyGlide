@@ -10,24 +10,22 @@ export class Player {
         this.state = 'WALKING';
 
         // Physics vectors
-        this.position = new THREE.Vector3(0, 16, 0); // Start slightly above platform
+        this.position = new THREE.Vector3(0, 16, 0); // Feet position
         this.velocity = new THREE.Vector3(0, 0, 0);
         
-        // Orientation (radians)
-        this.pitch = 0; // X axis rotation (Up/Down)
-        this.yaw = Math.PI; // Y axis rotation (Left/Right) - Face -Z start
+        // Orientation
+        this.pitch = 0; 
+        this.yaw = Math.PI; 
 
         // Input State
         this.keys = {
-            forward: false,
-            backward: false,
-            left: false,
-            right: false,
+            forward: false, backward: false,
+            left: false, right: false,
             jump: false
         };
 
-        // Constants
         this.dims = { height: 1.8, radius: 0.3 };
+        this.onGround = false;
         
         this.initInput();
     }
@@ -39,7 +37,6 @@ export class Player {
             const sensitivity = 0.002;
             this.yaw -= e.movementX * sensitivity;
             this.pitch -= e.movementY * sensitivity;
-            // Clamp pitch straight up/down
             this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
         });
 
@@ -59,184 +56,210 @@ export class Player {
     }
 
     update(dt) {
+        // 0. Explicit Ground Check
+        this.checkGrounded();
+
         // 1. Process Logic based on State
         switch(this.state) {
-            case 'WALKING':
-                this.handleWalking(dt);
-                break;
-            case 'FALLING':
-                this.handleFalling(dt);
-                break;
-            case 'FLYING':
-                this.handleFlying(dt);
-                break;
+            case 'WALKING': this.handleWalking(dt); break;
+            case 'FALLING': this.handleFalling(dt); break;
+            case 'FLYING': this.handleFlying(dt); break;
         }
 
-        // 2. Integration
-        this.position.add(this.velocity.clone().multiplyScalar(dt));
+        // 2. Physics & Collision
+        this.resolvePhysics(dt);
 
-        // 3. Collision Resolution (Simple)
-        this.resolveCollision();
-
-        // 4. Update Camera
+        // 3. Update Camera
         this.camera.position.copy(this.position);
-        // Eye level offset
-        if (this.state === 'WALKING') this.camera.position.y += 1.6; 
+        if (this.state === 'WALKING' || this.state === 'FALLING') {
+            this.camera.position.y += 1.6; // Eye height
+        }
         
-        // Look direction
         const lookDir = new THREE.Vector3(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         );
-        const lookTarget = this.camera.position.clone().add(lookDir);
-        this.camera.lookAt(lookTarget);
+        this.camera.lookAt(this.camera.position.clone().add(lookDir));
+    }
+
+    checkGrounded() {
+        // Check slightly below feet
+        const checkY = this.position.y - 0.1;
+        // We use a small epsilon for X/Z to ensure we don't fall through cracks
+        if (this.velocity.y <= 0 && this.checkIntersection(new THREE.Vector3(this.position.x, checkY, this.position.z))) {
+            this.onGround = true;
+            if (this.state === 'FALLING') this.state = 'WALKING';
+        } else {
+            this.onGround = false;
+        }
     }
 
     handleWalking(dt) {
         const speed = 10;
         const friction = 10;
-        const jumpForce = 8;
-        const gravity = 20;
+        const jumpForce = 9;
+        const gravity = 25;
 
         // Apply friction
         this.velocity.x -= this.velocity.x * friction * dt;
         this.velocity.z -= this.velocity.z * friction * dt;
 
-        // Input Vector
+        // Input
         const forward = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)).normalize();
         const right = new THREE.Vector3(Math.sin(this.yaw - Math.PI/2), 0, Math.cos(this.yaw - Math.PI/2)).normalize();
         
         const inputDir = new THREE.Vector3(0,0,0);
         if (this.keys.forward) inputDir.add(forward);
         if (this.keys.backward) inputDir.sub(forward);
-        
-        // Fixed: Right adds the right vector, Left subtracts it
         if (this.keys.right) inputDir.add(right);
         if (this.keys.left) inputDir.sub(right);
 
         if (inputDir.length() > 0) inputDir.normalize();
 
-        // Accelerate
         this.velocity.add(inputDir.multiplyScalar(speed * friction * dt));
-
-        // Gravity
         this.velocity.y -= gravity * dt;
 
-        // Jump
         if (this.keys.jump && this.onGround) {
             this.velocity.y = jumpForce;
             this.onGround = false;
+            // Lift off ground slightly to prevent immediate snap-back
+            this.position.y += 0.1;
         }
 
-        // Check for falling
-        if (this.velocity.y < -0.1 && !this.onGround) {
+        // Only switch to falling if we are definitely not grounded and moving down significantly
+        if (!this.onGround && this.velocity.y < -1.0) {
             this.state = 'FALLING';
         }
     }
 
     handleFalling(dt) {
-        const gravity = 20;
+        const gravity = 25;
         this.velocity.y -= gravity * dt;
 
-        // Air control (minimal)
-        const airSpeed = 2;
+        // Air control
+        const airSpeed = 5;
         const forward = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)).normalize();
-        
         if (this.keys.forward) this.velocity.add(forward.multiplyScalar(airSpeed * dt));
 
-        // Activate Elytra
-        if (this.keys.jump && !this.onGround) {
+        if (this.keys.jump && !this.onGround && this.velocity.y < -2) {
             this.state = 'FLYING';
-            // Slight boost to forward momentum to start glide
             const lookDir = new THREE.Vector3(
                 Math.sin(this.yaw) * Math.cos(this.pitch),
                 Math.sin(this.pitch),
                 Math.cos(this.yaw) * Math.cos(this.pitch)
             );
-            this.velocity.add(lookDir.multiplyScalar(10));
+            this.velocity.add(lookDir.multiplyScalar(15));
         }
     }
 
     handleFlying(dt) {
-        // Minecraft Elytra Physics Model
-        
-        // Direction vectors
         const lookDir = new THREE.Vector3(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
-
-        const horizontalSpeed = Math.sqrt(this.velocity.x**2 + this.velocity.z**2);
+        const speed = this.velocity.length();
         
-        // 1. Gravity (Weaker than normal falling)
         this.velocity.y -= 5.0 * dt; 
 
-        // 2. Pitch-based Lift & Drag calculations
         const angleOfAttack = -this.pitch; 
         const cosPitch = Math.cos(angleOfAttack);
-        const cosPitchSq = cosPitch * cosPitch;
-
-        // 3. Lift (Convert horizontal speed to vertical)
-        if (cosPitchSq > 0) {
-            const lift = horizontalSpeed * horizontalSpeed * 0.05 * cosPitchSq * dt;
+        
+        if (cosPitch > 0) {
+            const lift = speed * speed * 0.05 * (cosPitch * cosPitch) * dt;
             this.velocity.y += lift;
         }
 
-        // 4. Dive Acceleration (Convert Potential to Kinetic)
         if (angleOfAttack > 0) {
-            const diveForce = angleOfAttack * 20 * dt;
+            const diveForce = angleOfAttack * 30 * dt;
             this.velocity.add(lookDir.clone().multiplyScalar(diveForce));
         }
 
-        // 5. Drag
-        const dragCoeff = 0.99 ** (dt * 60); 
-        this.velocity.x *= dragCoeff;
-        this.velocity.z *= dragCoeff;
-        this.velocity.y *= 0.98 ** (dt * 60); 
+        this.velocity.multiplyScalar(0.995 ** (dt * 60));
 
-        // 6. Minimum Glide (Prevent hover)
-        if (this.velocity.y > 0) {
-             this.velocity.y -= 2.0 * dt;
+        if (speed < 5) this.state = 'FALLING';
+    }
+
+    resolvePhysics(dt) {
+        // X Axis
+        let nextPos = this.position.clone();
+        nextPos.x += this.velocity.x * dt;
+        if (this.checkCollisionBody(nextPos)) {
+            this.velocity.x = 0;
+            if (this.state === 'FLYING') this.crash();
+        } else {
+            this.position.x = nextPos.x;
+        }
+
+        // Z Axis
+        nextPos = this.position.clone();
+        nextPos.z += this.velocity.z * dt;
+        if (this.checkCollisionBody(nextPos)) {
+            this.velocity.z = 0;
+            if (this.state === 'FLYING') this.crash();
+        } else {
+            this.position.z = nextPos.z;
+        }
+
+        // Y Axis
+        nextPos = this.position.clone();
+        nextPos.y += this.velocity.y * dt;
+        if (this.checkCollisionBody(nextPos)) {
+            if (this.velocity.y < 0) {
+                // Landing
+                this.position.y = Math.floor(this.position.y); // Snap to integer grid
+                this.velocity.y = 0;
+                this.onGround = true;
+                if(this.state === 'FLYING' || this.state === 'FALLING') this.state = 'WALKING';
+            } else {
+                // Ceiling
+                this.position.y = Math.floor(nextPos.y) + 0.9; // Push down slightly
+                this.velocity.y = 0;
+            }
+        } else {
+            this.position.y = nextPos.y;
         }
     }
 
-    resolveCollision() {
-        // Reset ground flag
-        this.onGround = false;
+    // Check if the player's body volume intersects any blocks
+    checkCollisionBody(pos) {
+        // Check feet (slightly up to avoid floor friction), mid, and head
+        const points = [
+            pos.clone().setY(pos.y + 0.1),
+            pos.clone().setY(pos.y + this.dims.height * 0.5),
+            pos.clone().setY(pos.y + this.dims.height - 0.1)
+        ];
+        return this.checkPoints(points);
+    }
 
-        // Check feet position
-        const feetX = Math.round(this.position.x);
-        const feetY = Math.round(this.position.y - 1.5); // Check below feet
-        const feetZ = Math.round(this.position.z);
+    // Check strict ground intersection (below feet)
+    checkIntersection(pos) {
+        // We only check the point exactly
+        return this.world.getBlock(pos.x, pos.y, pos.z);
+    }
 
-        // Ground collision
-        if (this.world.getBlock(feetX, feetY, feetZ)) {
-            // If moving down, land
-            if (this.velocity.y < 0) {
-                // Snap to block top
-                this.position.y = feetY + 1.5; 
-                this.velocity.y = 0;
-                this.onGround = true;
-                this.state = 'WALKING';
+    checkPoints(points) {
+        const r = this.dims.radius;
+        const offsets = [
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(r, 0, 0), new THREE.Vector3(-r, 0, 0),
+            new THREE.Vector3(0, 0, r), new THREE.Vector3(0, 0, -r)
+        ];
+
+        for (let p of points) {
+            for (let off of offsets) {
+                const checkPos = p.clone().add(off);
+                if (this.world.getBlock(checkPos.x, checkPos.y, checkPos.z)) {
+                    return true;
+                }
             }
         }
+        return false;
+    }
 
-        // Horizontal collision (Wall smack)
-        const headX = Math.round(this.position.x + this.velocity.x * 0.1);
-        const headZ = Math.round(this.position.z + this.velocity.z * 0.1);
-        const currY = Math.round(this.position.y);
-
-        if (this.world.getBlock(headX, currY, headZ)) {
-            // Simple stop
-            this.velocity.x = 0;
-            this.velocity.z = 0;
-            
-            // If flying fast, this is where damage would happen
-            if (this.state === 'FLYING') {
-                this.state = 'FALLING'; 
-            }
-        }
+    crash() {
+        this.state = 'FALLING';
+        this.velocity.multiplyScalar(0.2);
     }
 }
