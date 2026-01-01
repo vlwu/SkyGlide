@@ -7,104 +7,113 @@ export class Player {
         this.world = world;
 
         // Physics state
-        // Start at (0, 15, 0) to match RacePath generation safe zone
         this.position = new THREE.Vector3(0, 15, 0);
         this.velocity = new THREE.Vector3(0, 0, 0);
         
-        // Rotation state (radians)
+        // Orientation
         this.pitch = 0;
         this.yaw = Math.PI; 
+        
+        // Dynamic banking
         this.roll = 0;
+        this.targetRoll = 0;
 
-        // Physics constants
+        // Settings
+        this.sensitivity = 0.002;
         this.gravity = 9.8;
         this.glideRatio = 1.5;
         this.drag = 0.99;
         this.liftFactor = 0.02;
-        this.turnSpeed = 2.0;
         
-        this.inputs = {
-            up: false,
-            down: false,
-            left: false,
-            right: false
-        };
-
         this.initInput();
     }
 
     initInput() {
-        window.addEventListener('keydown', (e) => this.handleKey(e, true));
-        window.addEventListener('keyup', (e) => this.handleKey(e, false));
+        // We only care about mouse movement. 
+        // Pointer lock status is handled by main.js, but we check it here for safety.
+        document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
     }
 
-    handleKey(e, isPressed) {
-        switch(e.code) {
-            case 'ArrowUp':
-            case 'KeyW': this.inputs.up = isPressed; break;
-            case 'ArrowDown':
-            case 'KeyS': this.inputs.down = isPressed; break;
-            case 'ArrowLeft':
-            case 'KeyA': this.inputs.left = isPressed; break;
-            case 'ArrowRight':
-            case 'KeyD': this.inputs.right = isPressed; break;
-        }
+    handleMouseMove(e) {
+        if (document.pointerLockElement !== document.body) return;
+
+        // Pitch (Up/Down) - Invert Y for natural "pull back to go up" feel?
+        // Standard FPS: Up is Up. 
+        // Flight Sim: Down is Up.
+        // Let's stick to Standard FPS for web accessibility, or "Look where you want to go".
+        this.pitch -= e.movementY * this.sensitivity;
+        
+        // Yaw (Left/Right)
+        this.yaw -= e.movementX * this.sensitivity;
+
+        // Calculate Banking (Roll) based on horizontal intensity
+        // -0.5 max roll to left, +0.5 max roll to right
+        this.targetRoll = -e.movementX * 0.1; 
+        
+        // Clamp Pitch (Avoid flipping upside down for now)
+        this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch));
     }
 
     update(dt) {
-        // Update orientation
-        if (this.inputs.up) this.pitch += this.turnSpeed * dt;
-        if (this.inputs.down) this.pitch -= this.turnSpeed * dt;
-        if (this.inputs.left) this.yaw += this.turnSpeed * dt;
-        if (this.inputs.right) this.yaw -= this.turnSpeed * dt;
-
-        this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch));
-
+        // Calculate direction vector
         const direction = new THREE.Vector3(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         );
 
-        // Physics Forces
+        // --- Physics Forces ---
+        
+        // 1. Gravity
         this.velocity.y -= this.gravity * dt;
 
+        // 2. Gliding (Diving gains speed)
         if (this.pitch < 0) {
             const diveForce = -this.pitch * this.glideRatio * dt * 10;
             this.velocity.add(direction.clone().multiplyScalar(diveForce));
         }
 
+        // 3. Lift (Speed keeps you up)
         const speed = this.velocity.length();
         const lift = speed * speed * this.liftFactor * dt;
         
+        // Only apply lift if not diving strictly
         if (this.pitch > -0.5) {
              this.velocity.y += lift; 
         }
 
+        // 4. Drag
         this.velocity.multiplyScalar(this.drag);
 
-        // Calculate potential new position
+        // --- Position Update ---
         const moveStep = this.velocity.clone().multiplyScalar(dt);
         const nextPos = this.position.clone().add(moveStep);
 
-        // Collision Detection
-        // Check the integer voxel at the target position
+        // --- Collision ---
         if (this.world.getBlock(Math.round(nextPos.x), Math.round(nextPos.y), Math.round(nextPos.z))) {
-            // Collision response: Stop immediately (Crash)
-            // In a real game, this would trigger "Game Over"
             this.velocity.set(0, 0, 0);
             console.log("CRASH!");
         } else {
-            // Safe to move
             this.position.copy(nextPos);
         }
 
-        // Camera Sync
+        // --- Camera Sync ---
         this.camera.position.copy(this.position);
+        
         const lookTarget = this.position.clone().add(direction);
         this.camera.lookAt(lookTarget);
 
-        const targetRoll = (this.inputs.left ? 0.3 : 0) + (this.inputs.right ? -0.3 : 0);
-        this.camera.rotation.z = THREE.MathUtils.lerp(this.camera.rotation.z, targetRoll, 0.1);
+        // Smoothly interpolate roll
+        // targetRoll decays to 0 if mouse stops moving (handled in handleMouseMove logic?)
+        // Actually, movementX is 0 when mouse stops.
+        // So we need to constantly decay targetRoll in update if no input?
+        // Better approach: handleMouseMove sets targetRoll.
+        // But if mouse stops, handleMouseMove doesn't fire.
+        // So we need to decay targetRoll manually every frame.
+        
+        this.targetRoll = THREE.MathUtils.lerp(this.targetRoll, 0, 5 * dt);
+        this.roll = THREE.MathUtils.lerp(this.roll, this.targetRoll, 5 * dt);
+
+        this.camera.rotation.z = this.roll;
     }
 }
