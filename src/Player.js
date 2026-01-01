@@ -10,7 +10,7 @@ export class Player {
         this.state = 'WALKING';
 
         // Physics vectors
-        this.position = new THREE.Vector3(0, 16, 0); // Feet position
+        this.position = new THREE.Vector3(0, 16, 0); // Start above platform (Platform is Y=14)
         this.velocity = new THREE.Vector3(0, 0, 0);
         
         // Orientation
@@ -86,7 +86,7 @@ export class Player {
     checkGrounded() {
         // Check slightly below feet
         const checkY = this.position.y - 0.1;
-        // We use a small epsilon for X/Z to ensure we don't fall through cracks
+        // Check center point below feet for ground status
         if (this.velocity.y <= 0 && this.checkIntersection(new THREE.Vector3(this.position.x, checkY, this.position.z))) {
             this.onGround = true;
             if (this.state === 'FALLING') this.state = 'WALKING';
@@ -123,8 +123,7 @@ export class Player {
         if (this.keys.jump && this.onGround) {
             this.velocity.y = jumpForce;
             this.onGround = false;
-            // Lift off ground slightly to prevent immediate snap-back
-            this.position.y += 0.1;
+            this.position.y += 0.1; // Lift slightly to break ground contact
         }
 
         // Only switch to falling if we are definitely not grounded and moving down significantly
@@ -208,13 +207,14 @@ export class Player {
         if (this.checkCollisionBody(nextPos)) {
             if (this.velocity.y < 0) {
                 // Landing
-                this.position.y = Math.floor(this.position.y); // Snap to integer grid
+                // Fix: Snap to the top of the block (Ceiling of the coordinate)
+                this.position.y = Math.ceil(this.position.y - 0.01); 
                 this.velocity.y = 0;
                 this.onGround = true;
                 if(this.state === 'FLYING' || this.state === 'FALLING') this.state = 'WALKING';
             } else {
                 // Ceiling
-                this.position.y = Math.floor(nextPos.y) + 0.9; // Push down slightly
+                this.position.y = Math.floor(nextPos.y) - 0.2; // Push down
                 this.velocity.y = 0;
             }
         } else {
@@ -235,7 +235,6 @@ export class Player {
 
     // Check strict ground intersection (below feet)
     checkIntersection(pos) {
-        // We only check the point exactly
         return this.world.getBlock(pos.x, pos.y, pos.z);
     }
 
