@@ -1,8 +1,8 @@
 import './style.css';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Chunk } from './world/Chunk.js';
 import { RacePath } from './world/RacePath.js';
+import { Player } from './Player.js';
 
 // --- CONFIGURATION ---
 const RENDER_DISTANCE = 200; // Fog distance
@@ -45,9 +45,7 @@ const axesHelper = new THREE.AxesHelper(5);
 scene.add(axesHelper);
 
 // --- 6. CONTROLS ---
-// OrbitControls allow us to drag the mouse to look around (Temporary until we add Elytra)
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; // Smooth motion
+const player = new Player(scene, camera);
 
 // --- 7. WORLD GENERATION ---
 const racePath = new RacePath(scene);
@@ -67,15 +65,19 @@ window.addEventListener('resize', () => {
 });
 
 // --- 9. THE GAME LOOP ---
+const clock = new THREE.Clock();
+
 function animate() {
     requestAnimationFrame(animate);
+  
+    // Get time since last frame
+    const dt = clock.getDelta();
 
     // Update controls
-    controls.update();
+    player.update(dt);
 
     // Render the scene
     renderer.render(scene, camera);
 }
 
-// Start the loop
 animate();
