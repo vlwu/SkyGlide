@@ -1,6 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Chunk } from './world/Chunk.js';
 
 // --- CONFIGURATION ---
 const RENDER_DISTANCE = 200; // Fog distance
@@ -47,14 +48,23 @@ scene.add(axesHelper);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; // Smooth motion
 
-// --- 7. HANDLE RESIZE ---
+// --- 7. WORLD GENERATION ---
+const chunks = [];
+// Create a 3x3 grid of chunks centered at 0,0
+for(let x = -1; x <= 1; x++) {
+    for(let z = -1; z <= 1; z++) {
+        chunks.push(new Chunk(x, z, scene));
+    }
+}
+
+// --- 8. HANDLE RESIZE ---
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// --- 8. THE GAME LOOP ---
+// --- 9. THE GAME LOOP ---
 function animate() {
     requestAnimationFrame(animate);
 
