@@ -37,7 +37,13 @@ export class Chunk {
                     const wy = y;
                     const wz = startZ + z;
 
-                    // Check tunnel proximity
+                    // 1. Generate Spawn Platform (3x3 at 0,14,0)
+                    if (wy === 14 && Math.abs(wx) <= 1 && Math.abs(wz) <= 1) {
+                        this.data[x][y][z] = true;
+                        continue;
+                    }
+
+                    // 2. Check tunnel proximity
                     let isPathClear = false;
                     const pathPos = this.racePath.getPointAtZ(wz);
 
@@ -54,9 +60,8 @@ export class Chunk {
                         continue;
                     }
 
+                    // 3. Noise generation
                     const density = noise3D(wx * this.scale, wy * this.scale, wz * this.scale);
-                    
-                    // Set solid based on noise threshold or floor
                     this.data[x][y][z] = (density > 0.2 || y === 0);
                 }
             }
@@ -84,9 +89,7 @@ export class Chunk {
         this.buildMesh(visiblePositions);
     }
 
-    // Check if block has exposed face
     isVisible(x, y, z) {
-        // Return true if neighbor is air or boundary
         if (x === 0 || x === this.size - 1) return true;
         if (y === 0 || y === this.height - 1) return true;
         if (z === 0 || z === this.size - 1) return true;
@@ -105,20 +108,33 @@ export class Chunk {
         if (positions.length === 0) return;
 
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshLambertMaterial({ color: 0x888888 });
+        // Use a default white material so instance colors show up correctly
+        const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
         this.mesh = new THREE.InstancedMesh(geometry, material, positions.length);
         this.mesh.castShadow = true;
         this.mesh.receiveShadow = true;
 
         const dummy = new THREE.Object3D();
+        const color = new THREE.Color();
 
         for (let i = 0; i < positions.length; i++) {
             const pos = positions[i];
             dummy.position.set(pos.x, pos.y, pos.z);
             dummy.updateMatrix();
             this.mesh.setMatrixAt(i, dummy.matrix);
+
+            // Color logic: Gold for platform, Gray for terrain
+            if (pos.y === 14 && Math.abs(pos.x) <= 1 && Math.abs(pos.z) <= 1) {
+                color.setHex(0xFFD700); // Gold
+            } else {
+                color.setHex(0x888888); // Gray
+            }
+            this.mesh.setColorAt(i, color);
         }
+
+        this.mesh.instanceMatrix.needsUpdate = true;
+        if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
 
         this.scene.add(this.mesh);
     }
