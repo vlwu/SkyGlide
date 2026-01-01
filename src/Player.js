@@ -11,7 +11,7 @@ export class Player {
         
         // Rotation state (radians)
         this.pitch = 0;
-        this.yaw = 0;
+        this.yaw = Math.PI; // Fix: Face Negative Z (into the screen)
         this.roll = 0;
 
         // Physics constants

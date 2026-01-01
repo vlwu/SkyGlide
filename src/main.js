@@ -1,6 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
-import { Chunk } from './world/Chunk.js';
+import { WorldManager } from './world/WorldManager.js';
 import { RacePath } from './world/RacePath.js';
 import { Player } from './Player.js';
 
@@ -19,6 +19,8 @@ const camera = new THREE.PerspectiveCamera(
     0.1,
     1000
 );
+// Initial camera position will be overridden by Player.update(),
+// but setting it here provides a safe default.
 camera.position.set(0, 20, 20);
 
 // Renderer setup
@@ -35,25 +37,12 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(50, 100, 50);
 scene.add(dirLight);
 
-// Debug helpers
-const gridHelper = new THREE.GridHelper(100, 100);
-scene.add(gridHelper);
-
-const axesHelper = new THREE.AxesHelper(5);
-scene.add(axesHelper);
-
 // Controls
 const player = new Player(scene, camera);
 
 // World generation
 const racePath = new RacePath(scene);
-
-const chunks = [];
-for(let x = -2; x <= 2; x++) {
-    for(let z = -5; z <= 1; z++) { 
-        chunks.push(new Chunk(x, z, scene, racePath)); 
-    }
-}
+const worldManager = new WorldManager(scene, racePath);
 
 // Resize handler
 window.addEventListener('resize', () => {
@@ -71,6 +60,8 @@ function animate() {
     const dt = clock.getDelta();
 
     player.update(dt);
+    worldManager.update(player.position); // Logic: Infinite terrain
+
     renderer.render(scene, camera);
 }
 
