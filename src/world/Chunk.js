@@ -16,27 +16,29 @@ export class Chunk {
         
         this.mesh = null;
         
-        // Generate on creation
+        // Data storage for culling check [x][y][z]
+        this.data = []; 
+
         this.generate();
     }
 
     generate() {
-        const blockPositions = [];
         const startX = this.x * this.size;
         const startZ = this.z * this.size;
-
-        // Tunnel configuration
         const tunnelRadius = 8;
 
+        // 1. Pass: Generate Data
         for (let x = 0; x < this.size; x++) {
+            this.data[x] = [];
             for (let y = 0; y < this.height; y++) {
+                this.data[x][y] = [];
                 for (let z = 0; z < this.size; z++) {
-                    
                     const wx = startX + x;
                     const wy = y;
                     const wz = startZ + z;
 
                     // Tunnel carving logic
+                    let isPathClear = false;
                     const pathPos = this.racePath.getPointAtZ(wz);
 
                     if (pathPos) {
@@ -44,41 +46,78 @@ export class Chunk {
                             (wx - pathPos.x) ** 2 + 
                             (wy - pathPos.y) ** 2
                         );
-                        
-                        // Skip block if too close to tunnel
-                        if (dist < tunnelRadius) continue;
+                        if (dist < tunnelRadius) isPathClear = true;
+                    }
+
+                    if (isPathClear) {
+                        this.data[x][y][z] = false;
+                        continue;
                     }
 
                     const density = noise3D(wx * this.scale, wy * this.scale, wz * this.scale);
+                    
+                    // Solid if density high OR floor
+                    this.data[x][y][z] = (density > 0.2 || y === 0);
+                }
+            }
+        }
 
-                    // Threshold density for block placement; ensure floor at y=0
-                    if (density > 0.2 || y === 0) {
-                        blockPositions.push({ x: wx, y: wy, z: wz });
+        // 2. Pass: Build Visible Mesh (Face Culling)
+        const visiblePositions = [];
+        
+        for (let x = 0; x < this.size; x++) {
+            for (let y = 0; y < this.height; y++) {
+                for (let z = 0; z < this.size; z++) {
+                    // Skip empty blocks
+                    if (!this.data[x][y][z]) continue;
+
+                    // Check neighbors to see if exposed
+                    if (this.isVisible(x, y, z)) {
+                        visiblePositions.push({
+                            x: startX + x,
+                            y: y,
+                            z: startZ + z
+                        });
                     }
                 }
             }
         }
 
-        this.buildMesh(blockPositions);
+        this.buildMesh(visiblePositions);
+    }
+
+    // Returns true if any neighbor is Transparent/Air or Out of Bounds
+    isVisible(x, y, z) {
+        // Check 6 faces. If any face touches "Air" or boundary, it's visible.
+        // Optimally, we would check neighbor chunks, but for now, 
+        // assuming chunk borders are visible is safer/easier than complex neighbor lookups.
+        
+        if (x === 0 || x === this.size - 1) return true;
+        if (y === 0 || y === this.height - 1) return true;
+        if (z === 0 || z === this.size - 1) return true;
+
+        if (!this.data[x+1][y][z]) return true;
+        if (!this.data[x-1][y][z]) return true;
+        if (!this.data[x][y+1][z]) return true;
+        if (!this.data[x][y-1][z]) return true;
+        if (!this.data[x][y][z+1]) return true;
+        if (!this.data[x][y][z-1]) return true;
+
+        return false;
     }
 
     buildMesh(positions) {
         if (positions.length === 0) return;
 
-        // Geometry: reused box
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        
-        // Material: basic Lambert
         const material = new THREE.MeshLambertMaterial({ color: 0x888888 });
 
-        // InstancedMesh for performance
         this.mesh = new THREE.InstancedMesh(geometry, material, positions.length);
         this.mesh.castShadow = true;
         this.mesh.receiveShadow = true;
 
         const dummy = new THREE.Object3D();
 
-        // Position instances
         for (let i = 0; i < positions.length; i++) {
             const pos = positions[i];
             dummy.position.set(pos.x, pos.y, pos.z);
