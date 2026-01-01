@@ -6,12 +6,12 @@ export class RacePath {
         this.points = [];
         this.curve = null;
         
-        // Fast lookup: Map<IntegerZ, Vector3>
-        // Allows O(1) access to find the track position at any Z coordinate
+        // Lookup: Map<IntegerZ, Vector3>
+        // O(1) access for track position at Z
         this.pathLookup = new Map();
         
         // Configuration
-        this.segmentCount = 100; // Increased length for more gameplay
+        this.segmentCount = 100;
         this.forwardStep = -50; 
         
         this.generate();
@@ -22,9 +22,14 @@ export class RacePath {
         this.points.push(currentPos.clone());
 
         for (let i = 0; i < this.segmentCount; i++) {
+            // Move forward
             const z = currentPos.z + this.forwardStep;
+            
+            // Apply X/Y offsets
             const x = currentPos.x + (Math.random() - 0.5) * 80; 
             let y = currentPos.y + (Math.random() - 0.5) * 40; 
+            
+            // Clamp height
             y = Math.max(10, Math.min(50, y));
 
             const nextPos = new THREE.Vector3(x, y, z);
@@ -35,22 +40,19 @@ export class RacePath {
         this.curve = new THREE.CatmullRomCurve3(this.points);
         this.curve.tension = 0.5;
 
-        // --- NEW: Generate Lookup Table ---
-        // We scan the curve at high resolution and store the positions
+        // Generate lookup table
         const curveLength = this.curve.getLength();
-        const divisions = Math.floor(curveLength); // One point per unit roughly
+        const divisions = Math.floor(curveLength);
         const spacedPoints = this.curve.getSpacedPoints(divisions);
 
         spacedPoints.forEach(point => {
-            // We use Math.round to snap to the nearest integer Z
-            // This lets the chunk look it up instantly
+            // Snap to nearest integer Z for instant lookup
             this.pathLookup.set(Math.round(point.z), point);
         });
 
         this.drawDebugLine();
     }
 
-    // The method Chunks will call
     getPointAtZ(z) {
         return this.pathLookup.get(Math.round(z));
     }

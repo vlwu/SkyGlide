@@ -1,18 +1,18 @@
 body {
   margin: 0;
-  overflow: hidden; /* Prevents scrollbars */
+  overflow: hidden; /* Prevent scrollbars */
   background-color: #000;
 }
 
 canvas {
-  display: block; /* Removes tiny bottom margin on canvas */
+  display: block; /* Remove canvas margin */
 }
 
 #ui-layer {
   position: absolute;
   top: 0;
   left: 0;
-  pointer-events: none; /* Lets clicks pass through to the game */
+  pointer-events: none; /* Pass events to game */
   color: white;
   font-family: monospace;
   padding: 10px;
