@@ -4,13 +4,14 @@ import { createNoise3D } from 'simplex-noise';
 const noise3D = createNoise3D();
 
 export class Chunk {
-    constructor(x, z, scene) {
+    constructor(x, z, scene, racePath) {
         this.x = x; // Chunk coordinate X
         this.z = z; // Chunk coordinate Z
         this.scene = scene;
+        this.racePath = racePath;
         
         this.size = 16;   // Width/Depth of a chunk
-        this.height = 32; // Height of the world for now
+        this.height = 64; 
         this.scale = 0.1; // Noise scale (smaller = smoother terrain)
         
         this.mesh = null;
@@ -21,26 +22,38 @@ export class Chunk {
 
     generate() {
         const blockPositions = [];
-
-        // 1. Calculate world position offset
         const startX = this.x * this.size;
         const startZ = this.z * this.size;
 
-        // 2. Loop through every block in the chunk
+        // TUNNEL CONFIG
+        const tunnelRadius = 8;
+
         for (let x = 0; x < this.size; x++) {
             for (let y = 0; y < this.height; y++) {
                 for (let z = 0; z < this.size; z++) {
                     
-                    // Get the absolute world position
                     const wx = startX + x;
                     const wy = y;
                     const wz = startZ + z;
 
-                    // 3. Generate 3D Noise value (-1 to 1)
+                    // TUNNEL CARVING
+                    // 1. Get the track position at this Z
+                    const pathPos = this.racePath.getPointAtZ(wz);
+
+                    // 2. Calculate distance to the track (if it exists here)
+                    if (pathPos) {
+                        const dist = Math.sqrt(
+                            (wx - pathPos.x) ** 2 + 
+                            (wy - pathPos.y) ** 2
+                        );
+                        
+                        // 3. If too close, force AIR (skip this block)
+                        if (dist < tunnelRadius) continue;
+                    }
+                    // ---------------------------
+
                     const density = noise3D(wx * this.scale, wy * this.scale, wz * this.scale);
 
-                    // 4. Threshold: If density > 0.2, place a block
-                    // We also force a floor at y=0 so you don't fall forever yet
                     if (density > 0.2 || y === 0) {
                         blockPositions.push({ x: wx, y: wy, z: wz });
                     }
