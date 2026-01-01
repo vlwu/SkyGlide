@@ -6,11 +6,9 @@ export class RacePath {
         this.points = [];
         this.curve = null;
         
-        // Lookup: Map<IntegerZ, Vector3>
-        // O(1) access for track position at Z
+        // Z-coordinate lookup table
         this.pathLookup = new Map();
         
-        // Configuration
         this.segmentCount = 100;
         this.forwardStep = -50; 
         
@@ -22,10 +20,10 @@ export class RacePath {
         this.points.push(currentPos.clone());
 
         for (let i = 0; i < this.segmentCount; i++) {
-            // Move forward
+            // Step Z
             const z = currentPos.z + this.forwardStep;
             
-            // Apply X/Y offsets
+            // Apply random offset
             const x = currentPos.x + (Math.random() - 0.5) * 80; 
             let y = currentPos.y + (Math.random() - 0.5) * 40; 
             
@@ -46,7 +44,7 @@ export class RacePath {
         const spacedPoints = this.curve.getSpacedPoints(divisions);
 
         spacedPoints.forEach(point => {
-            // Snap to nearest integer Z for instant lookup
+            // Map integer Z to curve point
             this.pathLookup.set(Math.round(point.z), point);
         });
 

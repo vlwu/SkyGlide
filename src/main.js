@@ -7,7 +7,7 @@ import { Player } from './Player.js';
 // Configuration
 const RENDER_DISTANCE = 200;
 
-// UI Elements
+// UI references
 const pauseMenu = document.getElementById('pause-menu');
 
 // Scene setup
@@ -34,7 +34,7 @@ const racePath = new RacePath(scene);
 const worldManager = new WorldManager(scene, racePath);
 const player = new Player(scene, camera, worldManager);
 
-// Input / Game State Handling
+// State management
 let isGameActive = false;
 
 function onPointerLockChange() {
@@ -49,7 +49,7 @@ function onPointerLockChange() {
 
 document.addEventListener('pointerlockchange', onPointerLockChange);
 
-// Click anywhere to start
+// Request pointer lock on click
 document.body.addEventListener('click', () => {
     if (!isGameActive) {
         document.body.requestPointerLock();
@@ -69,13 +69,13 @@ const clock = new THREE.Clock();
 function animate() {
     requestAnimationFrame(animate);
 
-    // Always render, but only update physics if active
+    // Update physics only when active
     if (isGameActive) {
-        const dt = Math.min(clock.getDelta(), 0.1); // Cap dt to prevent jumps on resume
+        const dt = Math.min(clock.getDelta(), 0.1); // Limit delta time
         player.update(dt);
         worldManager.update(player.position);
     } else {
-        // Stop the clock accumulating time while paused
+        // Flush clock when paused
         clock.getDelta(); 
     }
 

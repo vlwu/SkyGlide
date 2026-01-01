@@ -16,7 +16,7 @@ export class Chunk {
         
         this.mesh = null;
         
-        // Data storage for culling check [x][y][z]
+        // Voxel data: [x][y][z]
         this.data = []; 
 
         this.generate();
@@ -27,7 +27,7 @@ export class Chunk {
         const startZ = this.z * this.size;
         const tunnelRadius = 8;
 
-        // 1. Pass: Generate Data
+        // Pass 1: Generate voxel data
         for (let x = 0; x < this.size; x++) {
             this.data[x] = [];
             for (let y = 0; y < this.height; y++) {
@@ -37,7 +37,7 @@ export class Chunk {
                     const wy = y;
                     const wz = startZ + z;
 
-                    // Tunnel carving logic
+                    // Check tunnel proximity
                     let isPathClear = false;
                     const pathPos = this.racePath.getPointAtZ(wz);
 
@@ -56,22 +56,20 @@ export class Chunk {
 
                     const density = noise3D(wx * this.scale, wy * this.scale, wz * this.scale);
                     
-                    // Solid if density high OR floor
+                    // Set solid based on noise threshold or floor
                     this.data[x][y][z] = (density > 0.2 || y === 0);
                 }
             }
         }
 
-        // 2. Pass: Build Visible Mesh (Face Culling)
+        // Pass 2: Build mesh with face culling
         const visiblePositions = [];
         
         for (let x = 0; x < this.size; x++) {
             for (let y = 0; y < this.height; y++) {
                 for (let z = 0; z < this.size; z++) {
-                    // Skip empty blocks
                     if (!this.data[x][y][z]) continue;
 
-                    // Check neighbors to see if exposed
                     if (this.isVisible(x, y, z)) {
                         visiblePositions.push({
                             x: startX + x,
@@ -86,12 +84,9 @@ export class Chunk {
         this.buildMesh(visiblePositions);
     }
 
-    // Returns true if any neighbor is Transparent/Air or Out of Bounds
+    // Check if block has exposed face
     isVisible(x, y, z) {
-        // Check 6 faces. If any face touches "Air" or boundary, it's visible.
-        // Optimally, we would check neighbor chunks, but for now, 
-        // assuming chunk borders are visible is safer/easier than complex neighbor lookups.
-        
+        // Return true if neighbor is air or boundary
         if (x === 0 || x === this.size - 1) return true;
         if (y === 0 || y === this.height - 1) return true;
         if (z === 0 || z === this.size - 1) return true;

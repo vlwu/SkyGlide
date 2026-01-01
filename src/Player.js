@@ -6,15 +6,16 @@ export class Player {
         this.camera = camera;
         this.world = world;
 
-        // Physics state
+        // State
+        // Initialize position in safe zone
         this.position = new THREE.Vector3(0, 15, 0);
         this.velocity = new THREE.Vector3(0, 0, 0);
         
-        // Orientation
+        // Orientation (radians)
         this.pitch = 0;
         this.yaw = Math.PI; 
         
-        // Dynamic banking
+        // Roll mechanics
         this.roll = 0;
         this.targetRoll = 0;
 
@@ -29,88 +30,77 @@ export class Player {
     }
 
     initInput() {
-        // We only care about mouse movement. 
-        // Pointer lock status is handled by main.js, but we check it here for safety.
+        // Mouse input listener
         document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
     }
 
     handleMouseMove(e) {
         if (document.pointerLockElement !== document.body) return;
 
-        // Pitch (Up/Down) - Invert Y for natural "pull back to go up" feel?
-        // Standard FPS: Up is Up. 
-        // Flight Sim: Down is Up.
-        // Let's stick to Standard FPS for web accessibility, or "Look where you want to go".
+        // Pitch control
         this.pitch -= e.movementY * this.sensitivity;
         
-        // Yaw (Left/Right)
+        // Yaw control
         this.yaw -= e.movementX * this.sensitivity;
 
-        // Calculate Banking (Roll) based on horizontal intensity
-        // -0.5 max roll to left, +0.5 max roll to right
+        // Calculate roll target from mouse velocity
         this.targetRoll = -e.movementX * 0.1; 
         
-        // Clamp Pitch (Avoid flipping upside down for now)
+        // Clamp pitch
         this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch));
     }
 
     update(dt) {
-        // Calculate direction vector
+        // Compute direction
         const direction = new THREE.Vector3(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         );
 
-        // --- Physics Forces ---
+        // Physics
         
-        // 1. Gravity
+        // Apply gravity
         this.velocity.y -= this.gravity * dt;
 
-        // 2. Gliding (Diving gains speed)
+        // Dive acceleration
         if (this.pitch < 0) {
             const diveForce = -this.pitch * this.glideRatio * dt * 10;
             this.velocity.add(direction.clone().multiplyScalar(diveForce));
         }
 
-        // 3. Lift (Speed keeps you up)
+        // Lift generation
         const speed = this.velocity.length();
         const lift = speed * speed * this.liftFactor * dt;
         
-        // Only apply lift if not diving strictly
+        // Apply lift unless diving steep
         if (this.pitch > -0.5) {
              this.velocity.y += lift; 
         }
 
-        // 4. Drag
+        // Apply drag
         this.velocity.multiplyScalar(this.drag);
 
-        // --- Position Update ---
+        // Integration
         const moveStep = this.velocity.clone().multiplyScalar(dt);
         const nextPos = this.position.clone().add(moveStep);
 
-        // --- Collision ---
+        // Collision detection
         if (this.world.getBlock(Math.round(nextPos.x), Math.round(nextPos.y), Math.round(nextPos.z))) {
+            // Halt on collision
             this.velocity.set(0, 0, 0);
             console.log("CRASH!");
         } else {
             this.position.copy(nextPos);
         }
 
-        // --- Camera Sync ---
+        // Camera synchronization
         this.camera.position.copy(this.position);
         
         const lookTarget = this.position.clone().add(direction);
         this.camera.lookAt(lookTarget);
 
-        // Smoothly interpolate roll
-        // targetRoll decays to 0 if mouse stops moving (handled in handleMouseMove logic?)
-        // Actually, movementX is 0 when mouse stops.
-        // So we need to constantly decay targetRoll in update if no input?
-        // Better approach: handleMouseMove sets targetRoll.
-        // But if mouse stops, handleMouseMove doesn't fire.
-        // So we need to decay targetRoll manually every frame.
-        
+        // Interpolate roll
         this.targetRoll = THREE.MathUtils.lerp(this.targetRoll, 0, 5 * dt);
         this.roll = THREE.MathUtils.lerp(this.roll, this.targetRoll, 5 * dt);
 

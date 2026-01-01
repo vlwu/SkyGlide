@@ -7,10 +7,11 @@ export class WorldManager {
         this.chunkSize = chunkSize;
         this.renderDistance = renderDistance; 
 
-        this.chunks = new Map(); 
+        this.chunks = new Map(); // Active chunks map
     }
 
     update(playerPos) {
+        // Determine player chunk coordinates
         const centerChunkX = Math.floor(playerPos.x / this.chunkSize);
         const centerChunkZ = Math.floor(playerPos.z / this.chunkSize);
 
@@ -21,6 +22,7 @@ export class WorldManager {
                 const chunkX = centerChunkX + x;
                 const chunkZ = centerChunkZ + z;
                 
+                // Restrict generation width
                 if (Math.abs(chunkX) > 4) continue; 
 
                 const key = `${chunkX},${chunkZ}`;
@@ -32,6 +34,7 @@ export class WorldManager {
             }
         }
 
+        // Unload distant chunks
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 chunk.dispose();
@@ -45,7 +48,7 @@ export class WorldManager {
         this.chunks.set(key, chunk);
     }
 
-    // Returns true if the block at world coordinates (x,y,z) is solid
+    // Check block solidity at world coordinates
     getBlock(x, y, z) {
         const cx = Math.floor(x / this.chunkSize);
         const cz = Math.floor(z / this.chunkSize);
@@ -53,10 +56,10 @@ export class WorldManager {
         const key = `${cx},${cz}`;
         const chunk = this.chunks.get(key);
         
-        // If chunk isn't loaded, assume safe (or dangerous? Safe prevents getting stuck on boundaries)
+        // Treat unloaded chunks as empty
         if (!chunk) return false; 
         
-        // Calculate local coordinates relative to chunk origin
+        // Convert to local chunk coordinates
         const startX = cx * this.chunkSize;
         const startZ = cz * this.chunkSize;
 
@@ -64,12 +67,11 @@ export class WorldManager {
         const ly = Math.floor(y); 
         const lz = Math.floor(z) - startZ;
         
-        // Check bounds
+        // Validate bounds
         if (ly < 0 || ly >= chunk.height) return false;
-        if (lx < 0 || lx >= this.chunkSize) return false; // Should not happen with correct math
+        if (lx < 0 || lx >= this.chunkSize) return false;
         if (lz < 0 || lz >= this.chunkSize) return false;
 
-        // chunk.data is [x][y][z]
         if (!chunk.data[lx] || !chunk.data[lx][ly]) return false;
         
         return chunk.data[lx][ly][lz];
