@@ -5,6 +5,7 @@ import { RacePath } from './world/RacePath.js';
 import { Player } from './Player.js';
 import { UIManager } from './ui/UIManager.js';
 import { FPSCounter } from './ui/FPSCounter.js';
+import { settingsManager } from './settings/SettingsManager.js';
 
 // Configuration
 const RENDER_DISTANCE = 200;
@@ -35,15 +36,13 @@ const player = new Player(scene, camera, worldManager);
 const uiManager = new UIManager(player);
 const fpsCounter = new FPSCounter();
 
-// Pointer Lock State Handling
+// Pointer Lock
 document.addEventListener('pointerlockchange', () => {
     if (document.pointerLockElement === document.body) {
-        // Lock engaged -> Ensure we are in HUD mode
         if (uiManager.activeScreen !== 'HUD') {
             uiManager.showScreen('HUD');
         }
     } else {
-        // Lock disengaged -> Pause (unless we are on the start menu)
         if (uiManager.activeScreen === 'HUD') {
             uiManager.onGamePause();
         }
@@ -58,27 +57,45 @@ window.addEventListener('resize', () => {
 
 // Game loop
 const clock = new THREE.Clock();
+let lastFrameTime = 0;
 
-function animate() {
+function animate(time) {
     requestAnimationFrame(animate);
+
+    const fpsLimit = settingsManager.get('fpsLimit');
+
+    // FPS Limiter Logic
+    // 0 = VSync (Native)
+    // 999 = Unlimited (Native/Max)
+    // Between 0 and 999 = Custom Cap (30, 60, 120)
+    if (fpsLimit > 0 && fpsLimit < 999) {
+        const interval = 1000 / fpsLimit;
+        const delta = time - lastFrameTime;
+        
+        if (delta < interval) return;
+
+        // Adjust for timer drift
+        lastFrameTime = time - (delta % interval);
+    } else {
+        lastFrameTime = time;
+    }
 
     const dt = Math.min(clock.getDelta(), 0.1); 
     
-    // FPS
     fpsCounter.update();
 
     if (uiManager.activeScreen === 'HUD') {
-        // Game Playing
         player.update(dt);
         worldManager.update(player.position);
-        uiManager.update();
+        
+        // Fix: Call hud.update directly since UIManager.update was removed
+        uiManager.hud.update(player);
     } else {
-        // Main Menu / Pause: Cinematic Rotation
-        // Slowly rotate camera around player position
-        const time = Date.now() * 0.0001;
+        // Cinematic Camera Rotation (Main Menu / Pause)
+        const t = Date.now() * 0.0001;
         const radius = 20;
-        camera.position.x = player.position.x + Math.sin(time) * radius;
-        camera.position.z = player.position.z + Math.cos(time) * radius;
+        camera.position.x = player.position.x + Math.sin(t) * radius;
+        camera.position.z = player.position.z + Math.cos(t) * radius;
         camera.position.y = player.position.y + 10;
         camera.lookAt(player.position);
     }
@@ -86,4 +103,4 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-animate();
+animate(0);

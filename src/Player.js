@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { settingsManager } from './settings/SettingsManager.js';
 
 export class Player {
     constructor(scene, camera, world) {
@@ -54,25 +55,25 @@ export class Player {
             this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
         });
 
-        const setKey = (code, pressed) => {
-            switch(code) {
-                case 'KeyW': this.keys.forward = pressed; break;
-                case 'KeyS': this.keys.backward = pressed; break;
-                case 'KeyA': this.keys.left = pressed; break;
-                case 'KeyD': this.keys.right = pressed; break;
-                case 'Space': 
-                    if (pressed && !this.keys.jump) {
-                        this.jumpPressedThisFrame = true;
-                    }
-                    this.keys.jump = pressed; 
-                    break;
+        const updateKey = (code, pressed) => {
+            const keys = settingsManager.settings.keys;
+            if (code === keys.forward) this.keys.forward = pressed;
+            if (code === keys.backward) this.keys.backward = pressed;
+            if (code === keys.left) this.keys.left = pressed;
+            if (code === keys.right) this.keys.right = pressed;
+            if (code === keys.jump) {
+                if (pressed && !this.keys.jump) {
+                    this.jumpPressedThisFrame = true;
+                }
+                this.keys.jump = pressed;
             }
         };
 
-        document.addEventListener('keydown', (e) => setKey(e.code, true));
-        document.addEventListener('keyup', (e) => setKey(e.code, false));
+        document.addEventListener('keydown', (e) => updateKey(e.code, true));
+        document.addEventListener('keyup', (e) => updateKey(e.code, false));
     }
 
+    // ... [Rest of the file remains exactly the same as previous optimizations] ...
     update(dt) {
         this.checkGrounded();
 
@@ -86,7 +87,7 @@ export class Player {
         this.resolvePhysics(dt);
         this.updateCamera(dt);
     }
-
+    
     updateCamera(dt) {
         if (this.state === 'WALKING' || this.state === 'FALLING') {
             this.targetEyeHeight = 1.6;
@@ -109,12 +110,8 @@ export class Player {
     }
 
     checkGrounded() {
-        // Optimized check using minimal vector allocation
         const feetY = this.position.y - 0.05;
-        // Reusing _tempVec for the check position
         this._tempVec.set(this.position.x, feetY, this.position.z);
-        
-        // Pass array directly to checkPoints
         if (this.velocity.y <= 0 && this.checkPoints([this._tempVec])) {
             this.onGround = true;
             if (this.state === 'FALLING') this.state = 'WALKING';
@@ -187,31 +184,23 @@ export class Player {
         ).normalize();
 
         const speed = this.velocity.length();
-        
         this.velocity.y -= 5.0 * dt; 
-
         const angleOfAttack = -this.pitch; 
         const cosPitch = Math.cos(angleOfAttack);
-        
         if (cosPitch > 0) {
             const lift = speed * speed * 0.05 * (cosPitch * cosPitch) * dt;
             this.velocity.y += lift;
         }
-
         if (angleOfAttack > 0) {
             const diveForce = angleOfAttack * 30 * dt;
             this.velocity.add(this._lookDir.clone().multiplyScalar(diveForce));
         }
-
-        // Optimized decay
         const decay = Math.pow(0.995, dt * 60);
         this.velocity.multiplyScalar(decay);
-
         if (speed < 5) this.state = 'FALLING';
     }
 
     resolvePhysics(dt) {
-        // X Axis
         this._nextPos.copy(this.position);
         this._nextPos.x += this.velocity.x * dt;
         if (this.checkCollisionBody(this._nextPos)) {
@@ -221,7 +210,6 @@ export class Player {
             this.position.x = this._nextPos.x;
         }
 
-        // Z Axis
         this._nextPos.copy(this.position);
         this._nextPos.z += this.velocity.z * dt;
         if (this.checkCollisionBody(this._nextPos)) {
@@ -231,7 +219,6 @@ export class Player {
             this.position.z = this._nextPos.z;
         }
 
-        // Y Axis
         this._nextPos.copy(this.position);
         this._nextPos.y += this.velocity.y * dt;
         
@@ -253,26 +240,17 @@ export class Player {
     }
 
     checkCollisionBody(pos) {
-        // Check 3 vertical points (feet, center, head)
-        // We reuse the _tempVec to avoid allocation
-        const points = [];
-        
         this._tempVec.copy(pos).setY(pos.y + 0.1);
         if(this.checkPoint(this._tempVec)) return true;
-
         this._tempVec.copy(pos).setY(pos.y + this.dims.height * 0.5);
         if(this.checkPoint(this._tempVec)) return true;
-
         this._tempVec.copy(pos).setY(pos.y + this.dims.height - 0.1);
         if(this.checkPoint(this._tempVec)) return true;
-
         return false;
     }
 
-    // New optimized single point check
     checkPoint(p) {
         for (let off of this._checkOffsets) {
-            // Manually add offset without creating new Vector
             const cx = p.x + off.x;
             const cy = p.y + off.y;
             const cz = p.z + off.z;
@@ -283,7 +261,6 @@ export class Player {
         return false;
     }
 
-    // Keep legacy array support for GroundCheck
     checkPoints(points) {
         for (let p of points) {
             if (this.checkPoint(p)) return true;

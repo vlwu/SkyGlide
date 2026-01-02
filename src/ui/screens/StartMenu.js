@@ -9,7 +9,10 @@ export class StartMenu {
                 <h1 class="game-title">SKY<span class="highlight">GLIDE</span></h1>
                 <p class="subtitle">High Velocity Voxel Flight</p>
                 
-                <button id="btn-start" class="btn-primary">INITIATE FLIGHT</button>
+                <div class="button-group">
+                    <button id="btn-start" class="btn-primary">INITIATE FLIGHT</button>
+                    <button id="btn-settings-start" class="btn-secondary">SETTINGS</button>
+                </div>
                 
                 <div class="controls-preview">
                     <span>WASD to Steer</span> • <span>SPACE to Jump/Fly</span>
@@ -17,10 +20,14 @@ export class StartMenu {
             </div>
         `;
 
-        // Attach event listener to the button, not the whole screen
         this.element.querySelector('#btn-start').addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent bubbling issues
+            e.stopPropagation();
             this.uiManager.onGameStart();
+        });
+
+        this.element.querySelector('#btn-settings-start').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.uiManager.showScreen('SETTINGS');
         });
 
         document.getElementById('ui-layer').appendChild(this.element);

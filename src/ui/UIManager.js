@@ -1,6 +1,7 @@
 import { StartMenu } from './screens/StartMenu.js';
 import { HUD } from './screens/HUD.js';
 import { PauseMenu } from './screens/PauseMenu.js';
+import { SettingsMenu } from './screens/SettingsMenu.js';
 
 export class UIManager {
     constructor(player) {
@@ -11,11 +12,13 @@ export class UIManager {
         this.startMenu = new StartMenu(this);
         this.hud = new HUD(this);
         this.pauseMenu = new PauseMenu(this);
+        this.settingsMenu = new SettingsMenu(this);
 
-        this.screens = [this.startMenu, this.hud, this.pauseMenu];
+        this.screens = [this.startMenu, this.hud, this.pauseMenu, this.settingsMenu];
         
-        // Default State
         this.activeScreen = null;
+        this.previousScreen = null; // For "Back" functionality
+        
         this.showScreen('START');
     }
 
@@ -23,7 +26,19 @@ export class UIManager {
         // Hide all screens first
         this.screens.forEach(s => s.hide());
 
-        switch(screenName) {
+        // Update History (unless we are just going back)
+        if (screenName !== 'BACK') {
+            if (this.activeScreen && this.activeScreen !== screenName) {
+                 // Don't save HUD in history for settings (HUD -> Settings makes no sense usually)
+                 if (this.activeScreen === 'START' || this.activeScreen === 'PAUSE') {
+                     this.previousScreen = this.activeScreen;
+                 }
+            }
+        }
+
+        const target = screenName === 'BACK' ? this.previousScreen : screenName;
+
+        switch(target) {
             case 'START':
                 this.startMenu.show();
                 this.activeScreen = 'START';
@@ -36,14 +51,15 @@ export class UIManager {
                 this.pauseMenu.show();
                 this.activeScreen = 'PAUSE';
                 break;
+            case 'SETTINGS':
+                this.settingsMenu.show();
+                this.activeScreen = 'SETTINGS';
+                break;
         }
     }
 
-    // Call this from main loop
-    update() {
-        if (this.activeScreen === 'HUD') {
-            this.hud.update(this.player);
-        }
+    goBack() {
+        this.showScreen('BACK');
     }
 
     onGameStart() {

@@ -6,17 +6,25 @@ export class PauseMenu {
         
         this.element.innerHTML = `
             <h1>PAUSED</h1>
-            <p>Click to Resume</p>
+            
+            <div class="button-group-vertical">
+                <button id="btn-resume" class="btn-primary">RESUME</button>
+                <button id="btn-settings-pause" class="btn-secondary">SETTINGS</button>
+            </div>
+
             <div class="controls-hint">
-                WASD - Move<br>
-                SPACE - Fly<br>
-                MOUSE - Look
+                Click RESUME or press ESC
             </div>
         `;
 
-        // Click anywhere to resume
-        this.element.addEventListener('click', () => {
+        this.element.querySelector('#btn-resume').addEventListener('click', (e) => {
+            e.stopPropagation();
             this.uiManager.onGameResume();
+        });
+
+        this.element.querySelector('#btn-settings-pause').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.uiManager.showScreen('SETTINGS');
         });
 
         document.getElementById('ui-layer').appendChild(this.element);
