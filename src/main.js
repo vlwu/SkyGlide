@@ -3,15 +3,11 @@ import * as THREE from 'three';
 import { WorldManager } from './world/WorldManager.js';
 import { RacePath } from './world/RacePath.js';
 import { Player } from './Player.js';
+import { UIManager } from './ui/UIManager.js';
+import { FPSCounter } from './ui/FPSCounter.js';
 
 // Configuration
 const RENDER_DISTANCE = 200;
-
-// UI references
-const pauseMenu = document.getElementById('pause-menu');
-const hudAlt = document.getElementById('hud-alt');
-const hudSpeed = document.getElementById('hud-speed');
-const hudState = document.getElementById('hud-state');
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -19,7 +15,6 @@ scene.background = new THREE.Color(0x87CEEB);
 scene.fog = new THREE.Fog(0x87CEEB, 20, RENDER_DISTANCE);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -27,7 +22,6 @@ document.body.appendChild(renderer.domElement);
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
-
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(50, 100, 50);
 scene.add(dirLight);
@@ -37,24 +31,22 @@ const racePath = new RacePath(scene);
 const worldManager = new WorldManager(scene, racePath);
 const player = new Player(scene, camera, worldManager);
 
-// State management
-let isGameActive = false;
+// UI Systems
+const uiManager = new UIManager(player);
+const fpsCounter = new FPSCounter();
 
-function onPointerLockChange() {
+// Pointer Lock State Handling
+document.addEventListener('pointerlockchange', () => {
     if (document.pointerLockElement === document.body) {
-        isGameActive = true;
-        pauseMenu.style.display = 'none';
+        // Lock engaged -> Ensure we are in HUD mode
+        if (uiManager.activeScreen !== 'HUD') {
+            uiManager.showScreen('HUD');
+        }
     } else {
-        isGameActive = false;
-        pauseMenu.style.display = 'flex';
-    }
-}
-
-document.addEventListener('pointerlockchange', onPointerLockChange);
-
-document.body.addEventListener('click', () => {
-    if (!isGameActive) {
-        document.body.requestPointerLock();
+        // Lock disengaged -> Pause (unless we are on the start menu)
+        if (uiManager.activeScreen === 'HUD') {
+            uiManager.onGamePause();
+        }
     }
 });
 
@@ -64,34 +56,31 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// UI Update
-function updateHUD() {
-    if (!isGameActive) return;
-    
-    // Altitude
-    hudAlt.textContent = Math.round(player.position.y);
-    
-    // Speed (horizontal + vertical magnitude)
-    const speed = Math.round(player.velocity.length() * 10) / 10;
-    hudSpeed.textContent = speed.toFixed(1);
-    
-    // State
-    hudState.textContent = player.state;
-}
-
 // Game loop
 const clock = new THREE.Clock();
 
 function animate() {
     requestAnimationFrame(animate);
 
-    if (isGameActive) {
-        const dt = Math.min(clock.getDelta(), 0.1); 
+    const dt = Math.min(clock.getDelta(), 0.1); 
+    
+    // FPS
+    fpsCounter.update();
+
+    if (uiManager.activeScreen === 'HUD') {
+        // Game Playing
         player.update(dt);
         worldManager.update(player.position);
-        updateHUD();
+        uiManager.update();
     } else {
-        clock.getDelta(); 
+        // Main Menu / Pause: Cinematic Rotation
+        // Slowly rotate camera around player position
+        const time = Date.now() * 0.0001;
+        const radius = 20;
+        camera.position.x = player.position.x + Math.sin(time) * radius;
+        camera.position.z = player.position.z + Math.cos(time) * radius;
+        camera.position.y = player.position.y + 10;
+        camera.lookAt(player.position);
     }
 
     renderer.render(scene, camera);
