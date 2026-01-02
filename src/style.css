@@ -230,6 +230,7 @@ canvas { display: block; }
 }
 
 input[type=range] {
+    appearance: none;
     -webkit-appearance: none;
     width: 100%;
     background: transparent;
@@ -256,6 +257,7 @@ input[type=range]::-webkit-slider-thumb {
     border-radius: 50%;
     background: #00d2ff;
     cursor: pointer;
+    appearance: none;
     -webkit-appearance: none;
     margin-top: -7px; /* Centers thumb on track */
     box-shadow: 0 0 10px rgba(0, 210, 255, 0.8);

@@ -7,39 +7,27 @@ const noise3D = createNoise3D();
 const FACES = [
     { // Right
         dir: [1, 0, 0],
-        corners: [
-            [1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]
-        ]
+        corners: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]]
     },
     { // Left
         dir: [-1, 0, 0],
-        corners: [
-            [0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]
-        ]
+        corners: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]]
     },
     { // Top
         dir: [0, 1, 0],
-        corners: [
-            [0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]
-        ]
+        corners: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]]
     },
     { // Bottom
         dir: [0, -1, 0],
-        corners: [
-            [0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]
-        ]
+        corners: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]]
     },
     { // Front
         dir: [0, 0, 1],
-        corners: [
-            [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
-        ]
+        corners: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]]
     },
     { // Back
         dir: [0, 0, -1],
-        corners: [
-            [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]
-        ]
+        corners: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]]
     }
 ];
 
@@ -51,8 +39,8 @@ export class Chunk {
         this.racePath = racePath;
         
         this.size = 16;
-        this.height = 64; 
-        this.scale = 0.08; 
+        // Increased height to allow for floating islands and deeper valleys
+        this.height = 96; 
         
         this.mesh = null;
         this.data = new Uint8Array(this.size * this.height * this.size);
@@ -73,50 +61,78 @@ export class Chunk {
     generate() {
         const startX = this.x * this.size;
         const startZ = this.z * this.size;
-        const spawnRadius = 20;
+        
+        // Settings
+        const scaleBase = 0.02;
+        const scaleMount = 0.05;
+        const scaleIsland = 0.04;
 
-        // Pass 1: Generate voxel data
         for (let x = 0; x < this.size; x++) {
-            for (let y = 0; y < this.height; y++) {
-                for (let z = 0; z < this.size; z++) {
-                    const wx = startX + x;
+            for (let z = 0; z < this.size; z++) {
+                const wx = startX + x;
+                const wz = startZ + z;
+
+                // --- 1. Heightmap Calculation (Ground) ---
+                // Base rolling hills
+                let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 20 + 20;
+                
+                // Add sharp ridges (Mountains)
+                // Using Math.abs creates sharp "creases"
+                const ridge = Math.abs(noise3D(wx * scaleMount, 100, wz * scaleMount));
+                h += ridge * 30;
+
+                const groundHeight = Math.floor(h);
+
+                // --- 2. 3D Noise (Caves & Islands) ---
+                for (let y = 0; y < this.height; y++) {
                     const wy = y;
-                    const wz = startZ + z;
+                    
+                    let blockType = 0;
 
-                    // 1. Spawn Platform
-                    if (wy === 14 && Math.abs(wx) <= 1 && Math.abs(wz) <= 1) {
-                        this.setBlock(x, y, z, 1);
-                        continue;
-                    }
-
-                    // 2. Spawn Safety
-                    const distToSpawn = Math.sqrt(wx**2 + (wy - 14)**2 + wz**2);
-                    if (distToSpawn < spawnRadius) {
-                        continue; // 0
-                    }
-
-                    // 3. Tunnel / Path carving
-                    const pathPos = this.racePath.getPointAtZ(wz);
-                    let tunnelRadius = 12;
-
-                    if (pathPos) {
-                        const dist = Math.sqrt((wx - pathPos.x) ** 2 + (wy - pathPos.y) ** 2);
-                        const rNoise = noise3D(wx * 0.1, wy * 0.1, wz * 0.1);
-                        tunnelRadius += rNoise * 4;
-
-                        if (dist < tunnelRadius) {
-                            continue; // 0
+                    // A. Base Terrain Logic
+                    if (y <= groundHeight) {
+                        blockType = 2; // Stone by default
+                        
+                        // Cave carving (Cheese noise)
+                        const caveNoise = noise3D(wx * 0.05, wy * 0.05, wz * 0.05);
+                        if (caveNoise > 0.4) {
+                            blockType = 0; // Air
+                        } else if (y === groundHeight) {
+                            blockType = 1; // Grass on top
                         }
                     }
 
-                    // 4. Terrain Noise
-                    const d1 = noise3D(wx * this.scale, wy * this.scale, wz * this.scale);
-                    const d2 = noise3D(wx * 0.2, wy * 0.2, wz * 0.2) * 0.5;
-                    const density = d1 + d2;
-                    const heightFactor = Math.sin((y / this.height) * Math.PI); 
-                    
-                    if (density * heightFactor > 0.15) {
-                        this.setBlock(x, y, z, 2);
+                    // B. Floating Islands Logic (High Altitude)
+                    // Only check above a certain height to save processing
+                    if (y > 40 && y < 90) {
+                        const islandNoise = noise3D(wx * scaleIsland, wy * scaleIsland, wz * scaleIsland);
+                        // Make islands rarer and clumped
+                        if (islandNoise > 0.45) {
+                            blockType = (y > 85 || noise3D(wx*0.1, (wy+1)*0.1, wz*0.1) < 0.45) ? 1 : 2; 
+                        }
+                    }
+
+                    // C. Race Path Carving (Ensure tunnel is clear)
+                    const pathPos = this.racePath.getPointAtZ(wz);
+                    if (pathPos) {
+                        // Horizontal distance
+                        const dx = wx - pathPos.x;
+                        const dy = wy - pathPos.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        
+                        // Safe zone radius around path
+                        if (dist < 8) {
+                            blockType = 0;
+                        }
+                    }
+
+                    // D. Spawn Platform (Safe zone at start)
+                    if (wx >= -2 && wx <= 2 && wz >= -2 && wz <= 2 && wy === 14) {
+                        blockType = 3; // Gold/Spawn block
+                    }
+
+                    if (blockType !== 0) {
+                        this.setBlock(x, y, z, blockType);
                     }
                 }
             }
@@ -139,13 +155,20 @@ export class Chunk {
                     const type = this.getBlock(x, y, z);
                     if (type === 0) continue;
 
-                    // Calculate Color once per block
-                    if (type === 1) {
+                    // Block Colors
+                    if (type === 1) { // Grass
+                        // Vary grass color slightly by height for visual interest
+                        const gVar = (y / this.height) * 0.2;
+                        colorObj.setRGB(0.2, 0.7 - gVar, 0.2); 
+                    } else if (type === 2) { // Stone
+                        const sVar = Math.random() * 0.1;
+                        colorObj.setRGB(0.5 + sVar, 0.5 + sVar, 0.5 + sVar);
+                    } else if (type === 3) { // Spawn
                         colorObj.setHex(0xFFD700);
                     } else {
-                        const h = y / this.height;
-                        colorObj.setHSL(0.6 - (h * 0.1), 0.4, 0.2 + (h * 0.4));
+                        colorObj.setHex(0xFF00FF); // Error pink
                     }
+
                     const r = colorObj.r;
                     const g = colorObj.g;
                     const b = colorObj.b;
@@ -156,8 +179,13 @@ export class Chunk {
                         const ny = y + face.dir[1];
                         const nz = z + face.dir[2];
 
-                        // If neighbor is solid (non-zero), skip face (Occlusion Culling)
+                        // Occlusion Culling
                         if (this.getBlock(nx, ny, nz) !== 0) continue;
+
+                        // Shading: Dim bottom and side faces slightly
+                        let shade = 1.0;
+                        if (face.dir[1] < 0) shade = 0.5; // Bottom
+                        else if (face.dir[0] !== 0 || face.dir[2] !== 0) shade = 0.8; // Sides
 
                         const ndx = positions.length / 3;
 
@@ -169,10 +197,10 @@ export class Chunk {
                                 z + corner[2] + startZ
                             );
                             normals.push(...face.dir);
-                            colors.push(r, g, b);
+                            colors.push(r * shade, g * shade, b * shade);
                         }
 
-                        // Add Indices (Two triangles per face)
+                        // Add Indices
                         indices.push(
                             ndx, ndx + 1, ndx + 2,
                             ndx + 2, ndx + 3, ndx
@@ -190,18 +218,16 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.setIndex(indices);
 
-        // Using Vertex Colors material
-        const material = new THREE.MeshLambertMaterial({ 
-            vertexColors: true 
+        // Standard material for lighting support
+        const material = new THREE.MeshStandardMaterial({ 
+            vertexColors: true,
+            roughness: 0.8,
+            metalness: 0.1
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
         this.mesh.castShadow = true;
         this.mesh.receiveShadow = true;
-        
-        // Frustum culling optimization:
-        // Three.js calculates bounding sphere automatically, ensuring 
-        // this chunk is skipped if not in camera view.
         
         this.scene.add(this.mesh);
     }
@@ -213,6 +239,6 @@ export class Chunk {
             this.mesh.material.dispose();
             this.mesh = null;
         }
-        this.data = null; // Clear memory
+        this.data = null;
     }
 }
