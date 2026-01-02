@@ -14,6 +14,10 @@ export class Player {
         
         this.pitch = 0; 
         this.yaw = Math.PI; 
+        
+        // For physics & camera roll calculation
+        this.lastYaw = this.yaw;
+        this.roll = 0;
 
         this.currentEyeHeight = 1.6;
         this.targetEyeHeight = 1.6;
@@ -73,7 +77,6 @@ export class Player {
         document.addEventListener('keyup', (e) => updateKey(e.code, false));
     }
 
-    // ... [Rest of the file remains exactly the same as previous optimizations] ...
     update(dt) {
         this.checkGrounded();
 
@@ -86,6 +89,8 @@ export class Player {
         this.jumpPressedThisFrame = false;
         this.resolvePhysics(dt);
         this.updateCamera(dt);
+        
+        this.lastYaw = this.yaw;
     }
     
     updateCamera(dt) {
@@ -95,6 +100,7 @@ export class Player {
             this.targetEyeHeight = 0.4;
         }
 
+        // Smooth eye height transition
         const lerpSpeed = 5.0;
         this.currentEyeHeight += (this.targetEyeHeight - this.currentEyeHeight) * lerpSpeed * dt;
 
@@ -106,7 +112,38 @@ export class Player {
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         );
-        this.camera.lookAt(this.camera.position.clone().add(this._lookDir));
+        
+        const target = this.camera.position.clone().add(this._lookDir);
+        this.camera.lookAt(target);
+
+        // --- Camera Tilt (Banking) Logic ---
+        // Calculate turn rate (yaw velocity)
+        // We handle wrapping loosely here, assuming normal mouse movement doesn't snap 360 degrees in one frame
+        const yawDelta = this.yaw - this.lastYaw;
+        const yawVelocity = yawDelta / dt;
+
+        // Target roll based on turn rate. 
+        // Negative coefficient because turning Left (positive yaw change) should bank Left (positive Roll in Z-back view? No, CCW).
+        // Let's tune: Turning Left (Yaw increases) -> Should Roll Left (Z rotation increases/decreases?)
+        // In Three.js camera looking -Z (default) or arbitrary... 
+        // Usually: Turn Left -> Bank Left.
+        const bankAmount = -yawVelocity * 0.1; 
+        
+        // Limit to 45 degrees (0.78 radians)
+        const maxTilt = 0.78; 
+        let targetRoll = Math.max(-maxTilt, Math.min(maxTilt, bankAmount));
+        
+        // If walking, force upright
+        if (this.state !== 'FLYING') targetRoll = 0;
+
+        // Smoothly interpolate roll
+        this.roll += (targetRoll - this.roll) * 10.0 * dt;
+
+        // Apply roll in local space
+        if (Math.abs(this.roll) > 0.001) {
+            const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.roll);
+            this.camera.quaternion.multiply(rollQ);
+        }
     }
 
     checkGrounded() {
@@ -166,38 +203,104 @@ export class Player {
 
         if (this.jumpPressedThisFrame && !this.onGround) {
             this.state = 'FLYING';
-            this._lookDir.set(
-                Math.sin(this.yaw) * Math.cos(this.pitch),
-                Math.sin(this.pitch),
-                Math.cos(this.yaw) * Math.cos(this.pitch)
-            );
-            this.velocity.add(this._lookDir.multiplyScalar(15));
-            this.velocity.y = Math.max(this.velocity.y, 2); 
+            // Boost initial speed if just starting to glide
+            const speed = this.velocity.length();
+            if (speed < 15) {
+                this._lookDir.set(
+                    Math.sin(this.yaw) * Math.cos(this.pitch),
+                    Math.sin(this.pitch),
+                    Math.cos(this.yaw) * Math.cos(this.pitch)
+                );
+                this.velocity.add(this._lookDir.multiplyScalar(15 - speed));
+            }
         }
     }
 
     handleFlying(dt) {
+        // Break long frames into smaller physics steps for stability
+        // Minecraft runs at 20 ticks/sec (0.05s per tick)
+        const stepSize = 0.05;
+        let remaining = dt;
+        
+        while (remaining > 0) {
+            const currentDt = Math.min(remaining, stepSize);
+            this.simulateElytraPhysics(currentDt);
+            remaining -= currentDt;
+        }
+
+        // If speed drops too low, stall
+        if (this.velocity.length() < 1.0) {
+            this.state = 'FALLING';
+        }
+    }
+
+    simulateElytraPhysics(dt) {
+        // Calculate Look Vector
         this._lookDir.set(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
+        
+        const look = this._lookDir;
+        const hlook = Math.sqrt(look.x * look.x + look.z * look.z); // ~ cos(pitch)
+        const sqrpitchcos = hlook * hlook;
 
-        const speed = this.velocity.length();
-        this.velocity.y -= 5.0 * dt; 
-        const angleOfAttack = -this.pitch; 
-        const cosPitch = Math.cos(angleOfAttack);
-        if (cosPitch > 0) {
-            const lift = speed * speed * 0.05 * (cosPitch * cosPitch) * dt;
-            this.velocity.y += lift;
+        // Constants derived from Minecraft source logic scaled to SI units (approximate)
+        // MC Gravity ~ 0.08 blocks/tick^2 -> ~ 32 m/s^2
+        const GRAVITY = 32.0;
+        const LIFT_COEFF = 24.0; 
+        const DIVE_ACCEL = 2.0; 
+        const CLIMB_BOOST = 0.8;
+        const STEER_SPEED = 2.0;
+
+        // 1. Gravity and Lift
+        // velY += -0.08 + sqrpitchcos * 0.06 (MC)
+        const lift = sqrpitchcos * LIFT_COEFF;
+        this.velocity.y += (-GRAVITY + lift) * dt;
+
+        // 2. Drag (Air Resistance)
+        // MC: 0.99 (xz) and 0.98 (y) per tick
+        // To make this framerate independent: Math.pow(rate, dt * 20)
+        const ticks = dt * 20;
+        const dragXZ = Math.pow(0.99, ticks);
+        const dragY = Math.pow(0.98, ticks);
+
+        this.velocity.x *= dragXZ;
+        this.velocity.y *= dragY;
+        this.velocity.z *= dragXZ;
+
+        // 3. Dive Acceleration (Converting potential energy to kinetic)
+        // if (velY < 0 && hlook > 0)
+        if (this.velocity.y < 0 && hlook > 0) {
+            const diveForce = this.velocity.y * -DIVE_ACCEL * sqrpitchcos * dt;
+            this.velocity.y += diveForce;
+            this.velocity.x += (look.x / hlook) * diveForce;
+            this.velocity.z += (look.z / hlook) * diveForce;
         }
-        if (angleOfAttack > 0) {
-            const diveForce = angleOfAttack * 30 * dt;
-            this.velocity.add(this._lookDir.clone().multiplyScalar(diveForce));
+
+        // 4. Climb Boost (Converting kinetic energy to potential)
+        // MC: if (pitch < 0) -> Looking Up
+        // My pitch > 0 is Looking Up.
+        if (this.pitch > 0) {
+            const hvel = Math.sqrt(this.velocity.x**2 + this.velocity.z**2);
+            // Factor: hvel * sin(pitch) * 0.04 (MC)
+            const climbForce = hvel * Math.sin(this.pitch) * CLIMB_BOOST * dt;
+            
+            this.velocity.y += climbForce * 3.5; // Climb is easier than dive
+            this.velocity.x -= (look.x / hlook) * climbForce;
+            this.velocity.z -= (look.z / hlook) * climbForce;
         }
-        const decay = Math.pow(0.995, dt * 60);
-        this.velocity.multiplyScalar(decay);
-        if (speed < 5) this.state = 'FALLING';
+
+        // 5. Steering (Redirecting velocity to look direction)
+        if (hlook > 0) {
+            const hvel = Math.sqrt(this.velocity.x**2 + this.velocity.z**2);
+            const targetX = (look.x / hlook) * hvel;
+            const targetZ = (look.z / hlook) * hvel;
+
+            this.velocity.x += (targetX - this.velocity.x) * STEER_SPEED * dt;
+            this.velocity.z += (targetZ - this.velocity.z) * STEER_SPEED * dt;
+        }
     }
 
     resolvePhysics(dt) {
