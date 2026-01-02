@@ -118,28 +118,28 @@ export class Player {
 
         // --- Camera Tilt (Banking) Logic ---
         // Calculate turn rate (yaw velocity)
-        // We handle wrapping loosely here, assuming normal mouse movement doesn't snap 360 degrees in one frame
         const yawDelta = this.yaw - this.lastYaw;
-        const yawVelocity = yawDelta / dt;
+        const safeDt = Math.max(dt, 0.001); // Prevent division by zero
+        const yawVelocity = yawDelta / safeDt;
 
-        // Target roll based on turn rate. 
-        // Negative coefficient because turning Left (positive yaw change) should bank Left (positive Roll in Z-back view? No, CCW).
-        // Let's tune: Turning Left (Yaw increases) -> Should Roll Left (Z rotation increases/decreases?)
-        // In Three.js camera looking -Z (default) or arbitrary... 
-        // Usually: Turn Left -> Bank Left.
-        const bankAmount = -yawVelocity * 0.1; 
+        // Turning Left (Yaw increases) -> Bank Left (Counter-Clockwise, Positive Roll).
+        // Turning Right (Yaw decreases) -> Bank Right (Clockwise, Negative Roll).
+        // Sensitivity: 0.3 allows reaching max tilt with moderate mouse speed.
+        const bankAmount = yawVelocity * 0.3; 
         
-        // Limit to 45 degrees (0.78 radians)
-        const maxTilt = 0.78; 
+        // Limit to 45 degrees (0.785 radians)
+        const maxTilt = 0.785; 
         let targetRoll = Math.max(-maxTilt, Math.min(maxTilt, bankAmount));
         
         // If walking, force upright
         if (this.state !== 'FLYING') targetRoll = 0;
 
         // Smoothly interpolate roll
-        this.roll += (targetRoll - this.roll) * 10.0 * dt;
+        // Lower factor (e.g., 5.0) makes it smoother/heavier. Higher (10.0) makes it snappier.
+        this.roll += (targetRoll - this.roll) * 5.0 * dt;
 
         // Apply roll in local space
+        // The camera looks down -Z. +Z rotation is Counter-Clockwise (Bank Left).
         if (Math.abs(this.roll) > 0.001) {
             const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.roll);
             this.camera.quaternion.multiply(rollQ);
