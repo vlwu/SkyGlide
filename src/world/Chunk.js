@@ -3,6 +3,46 @@ import { createNoise3D } from 'simplex-noise';
 
 const noise3D = createNoise3D();
 
+// Geometry lookup tables to avoid runtime calculations
+const FACES = [
+    { // Right
+        dir: [1, 0, 0],
+        corners: [
+            [1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]
+        ]
+    },
+    { // Left
+        dir: [-1, 0, 0],
+        corners: [
+            [0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]
+        ]
+    },
+    { // Top
+        dir: [0, 1, 0],
+        corners: [
+            [0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]
+        ]
+    },
+    { // Bottom
+        dir: [0, -1, 0],
+        corners: [
+            [0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]
+        ]
+    },
+    { // Front
+        dir: [0, 0, 1],
+        corners: [
+            [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
+        ]
+    },
+    { // Back
+        dir: [0, 0, -1],
+        corners: [
+            [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]
+        ]
+    }
+];
+
 export class Chunk {
     constructor(x, z, scene, racePath) {
         this.x = x;
@@ -15,9 +55,19 @@ export class Chunk {
         this.scale = 0.08; 
         
         this.mesh = null;
-        this.data = []; 
+        this.data = new Uint8Array(this.size * this.height * this.size);
 
         this.generate();
+    }
+
+    // Helper to access flattened array
+    getBlock(x, y, z) {
+        if (x < 0 || x >= this.size || y < 0 || y >= this.height || z < 0 || z >= this.size) return 0;
+        return this.data[x + this.size * (y + this.height * z)];
+    }
+
+    setBlock(x, y, z, val) {
+        this.data[x + this.size * (y + this.height * z)] = val;
     }
 
     generate() {
@@ -27,9 +77,7 @@ export class Chunk {
 
         // Pass 1: Generate voxel data
         for (let x = 0; x < this.size; x++) {
-            this.data[x] = [];
             for (let y = 0; y < this.height; y++) {
-                this.data[x][y] = [];
                 for (let z = 0; z < this.size; z++) {
                     const wx = startX + x;
                     const wy = y;
@@ -37,15 +85,14 @@ export class Chunk {
 
                     // 1. Spawn Platform
                     if (wy === 14 && Math.abs(wx) <= 1 && Math.abs(wz) <= 1) {
-                        this.data[x][y][z] = 1;
+                        this.setBlock(x, y, z, 1);
                         continue;
                     }
 
                     // 2. Spawn Safety
                     const distToSpawn = Math.sqrt(wx**2 + (wy - 14)**2 + wz**2);
                     if (distToSpawn < spawnRadius) {
-                        this.data[x][y][z] = 0;
-                        continue;
+                        continue; // 0
                     }
 
                     // 3. Tunnel / Path carving
@@ -58,8 +105,7 @@ export class Chunk {
                         tunnelRadius += rNoise * 4;
 
                         if (dist < tunnelRadius) {
-                            this.data[x][y][z] = 0;
-                            continue;
+                            continue; // 0
                         }
                     }
 
@@ -69,81 +115,94 @@ export class Chunk {
                     const density = d1 + d2;
                     const heightFactor = Math.sin((y / this.height) * Math.PI); 
                     
-                    this.data[x][y][z] = (density * heightFactor > 0.15) ? 2 : 0;
-                }
-            }
-        }
-
-        // Pass 2: Visible set
-        const visiblePositions = [];
-        
-        for (let x = 0; x < this.size; x++) {
-            for (let y = 0; y < this.height; y++) {
-                for (let z = 0; z < this.size; z++) {
-                    if (!this.data[x][y][z]) continue;
-
-                    if (this.isVisible(x, y, z)) {
-                        visiblePositions.push({
-                            x: startX + x,
-                            y: y,
-                            z: startZ + z,
-                            type: this.data[x][y][z]
-                        });
+                    if (density * heightFactor > 0.15) {
+                        this.setBlock(x, y, z, 2);
                     }
                 }
             }
         }
 
-        this.buildMesh(visiblePositions);
+        this.buildMesh(startX, startZ);
     }
 
-    isVisible(x, y, z) {
-        if (x === 0 || x === this.size - 1) return true;
-        if (y === 0 || y === this.height - 1) return true;
-        if (z === 0 || z === this.size - 1) return true;
+    buildMesh(startX, startZ) {
+        const positions = [];
+        const normals = [];
+        const colors = [];
+        const indices = [];
 
-        if (!this.data[x+1][y][z]) return true;
-        if (!this.data[x-1][y][z]) return true;
-        if (!this.data[x][y+1][z]) return true;
-        if (!this.data[x][y-1][z]) return true;
-        if (!this.data[x][y][z+1]) return true;
-        if (!this.data[x][y][z-1]) return true;
+        const colorObj = new THREE.Color();
 
-        return false;
-    }
+        for (let x = 0; x < this.size; x++) {
+            for (let y = 0; y < this.height; y++) {
+                for (let z = 0; z < this.size; z++) {
+                    const type = this.getBlock(x, y, z);
+                    if (type === 0) continue;
 
-    buildMesh(positions) {
-        if (positions.length === 0) return;
+                    // Calculate Color once per block
+                    if (type === 1) {
+                        colorObj.setHex(0xFFD700);
+                    } else {
+                        const h = y / this.height;
+                        colorObj.setHSL(0.6 - (h * 0.1), 0.4, 0.2 + (h * 0.4));
+                    }
+                    const r = colorObj.r;
+                    const g = colorObj.g;
+                    const b = colorObj.b;
 
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                    // Check all 6 faces
+                    for (const face of FACES) {
+                        const nx = x + face.dir[0];
+                        const ny = y + face.dir[1];
+                        const nz = z + face.dir[2];
 
-        this.mesh = new THREE.InstancedMesh(geometry, material, positions.length);
-        this.mesh.castShadow = true;
-        this.mesh.receiveShadow = true;
+                        // If neighbor is solid (non-zero), skip face (Occlusion Culling)
+                        if (this.getBlock(nx, ny, nz) !== 0) continue;
 
-        const dummy = new THREE.Object3D();
-        const color = new THREE.Color();
+                        const ndx = positions.length / 3;
 
-        for (let i = 0; i < positions.length; i++) {
-            const pos = positions[i];
-            // OFFSET +0.5 to align center with 0..1 voxel grid
-            dummy.position.set(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5);
-            dummy.updateMatrix();
-            this.mesh.setMatrixAt(i, dummy.matrix);
+                        // Add Vertices
+                        for (const corner of face.corners) {
+                            positions.push(
+                                x + corner[0] + startX, 
+                                y + corner[1], 
+                                z + corner[2] + startZ
+                            );
+                            normals.push(...face.dir);
+                            colors.push(r, g, b);
+                        }
 
-            if (pos.type === 1) {
-                color.setHex(0xFFD700);
-            } else {
-                const h = pos.y / this.height;
-                color.setHSL(0.6 - (h * 0.1), 0.4, 0.2 + (h * 0.4));
+                        // Add Indices (Two triangles per face)
+                        indices.push(
+                            ndx, ndx + 1, ndx + 2,
+                            ndx + 2, ndx + 3, ndx
+                        );
+                    }
+                }
             }
-            this.mesh.setColorAt(i, color);
         }
 
-        this.mesh.instanceMatrix.needsUpdate = true;
-        if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+        if (positions.length === 0) return;
 
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.setIndex(indices);
+
+        // Using Vertex Colors material
+        const material = new THREE.MeshLambertMaterial({ 
+            vertexColors: true 
+        });
+
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.castShadow = true;
+        this.mesh.receiveShadow = true;
+        
+        // Frustum culling optimization:
+        // Three.js calculates bounding sphere automatically, ensuring 
+        // this chunk is skipped if not in camera view.
+        
         this.scene.add(this.mesh);
     }
 
@@ -152,6 +211,8 @@ export class Chunk {
             this.scene.remove(this.mesh);
             this.mesh.geometry.dispose();
             this.mesh.material.dispose();
+            this.mesh = null;
         }
+        this.data = null; // Clear memory
     }
 }

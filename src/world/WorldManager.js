@@ -1,30 +1,34 @@
 import { Chunk } from './Chunk.js';
 
 export class WorldManager {
-    constructor(scene, racePath, chunkSize = 16, renderDistance = 8) {
+    constructor(scene, racePath, chunkSize = 16, renderDistance = 6) {
         this.scene = scene;
         this.racePath = racePath;
         this.chunkSize = chunkSize;
         this.renderDistance = renderDistance; 
 
-        this.chunks = new Map(); // Active chunks map
+        this.chunks = new Map(); 
+        
+        // Cache object to reduce string allocations in loop
+        this.lastChunkKey = '';
+        this.lastChunk = null;
     }
 
     update(playerPos) {
-        // Determine player chunk coordinates
         const centerChunkX = Math.floor(playerPos.x / this.chunkSize);
         const centerChunkZ = Math.floor(playerPos.z / this.chunkSize);
 
         const activeKeys = new Set();
 
-        for (let x = -this.renderDistance; x <= this.renderDistance; x++) {
-            for (let z = -this.renderDistance; z <= this.renderDistance; z++) {
+        // Limit generation width to create a "path" feel rather than full open world
+        // This drastically saves performance in high-speed linear games
+        const width = 3; 
+
+        for (let z = -this.renderDistance; z <= this.renderDistance; z++) {
+            for (let x = -width; x <= width; x++) {
                 const chunkX = centerChunkX + x;
                 const chunkZ = centerChunkZ + z;
                 
-                // Restrict generation width
-                if (Math.abs(chunkX) > 4) continue; 
-
                 const key = `${chunkX},${chunkZ}`;
                 activeKeys.add(key);
 
@@ -48,32 +52,30 @@ export class WorldManager {
         this.chunks.set(key, chunk);
     }
 
-    // Check block solidity at world coordinates
     getBlock(x, y, z) {
         const cx = Math.floor(x / this.chunkSize);
         const cz = Math.floor(z / this.chunkSize);
         
+        // Optimization: Simple cache for physics loops checking same chunk
         const key = `${cx},${cz}`;
-        const chunk = this.chunks.get(key);
+        let chunk;
+
+        if (key === this.lastChunkKey && this.lastChunk) {
+            chunk = this.lastChunk;
+        } else {
+            chunk = this.chunks.get(key);
+            this.lastChunk = chunk;
+            this.lastChunkKey = key;
+        }
         
-        // Treat unloaded chunks as empty
         if (!chunk) return false; 
         
-        // Convert to local chunk coordinates
-        const startX = cx * this.chunkSize;
-        const startZ = cz * this.chunkSize;
-
-        const lx = Math.floor(x) - startX;
+        // Local coordinates
+        const lx = Math.floor(x) - (cx * this.chunkSize);
         const ly = Math.floor(y); 
-        const lz = Math.floor(z) - startZ;
+        const lz = Math.floor(z) - (cz * this.chunkSize);
         
-        // Validate bounds
-        if (ly < 0 || ly >= chunk.height) return false;
-        if (lx < 0 || lx >= this.chunkSize) return false;
-        if (lz < 0 || lz >= this.chunkSize) return false;
-
-        if (!chunk.data[lx] || !chunk.data[lx][ly]) return false;
-        
-        return chunk.data[lx][ly][lz];
+        // Use the new getBlock method from Chunk
+        return chunk.getBlock(lx, ly, lz);
     }
 }
