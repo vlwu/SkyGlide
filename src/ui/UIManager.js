@@ -64,7 +64,7 @@ export class UIManager {
 
     onGameStart() {
         this.showScreen('HUD');
-        document.body.requestPointerLock();
+        this.requestLock();
     }
 
     onGamePause() {
@@ -74,6 +74,23 @@ export class UIManager {
 
     onGameResume() {
         this.showScreen('HUD');
-        document.body.requestPointerLock();
+        this.requestLock();
+    }
+
+    requestLock() {
+        const promise = document.body.requestPointerLock();
+        
+        if (promise && promise.catch) {
+            promise.catch((err) => {
+                // Suppress verbose error logging for expected cancellation
+                if (err.name !== 'SecurityError') {
+                    console.warn('Pointer lock failed:', err);
+                }
+
+                if (this.activeScreen === 'HUD') {
+                    this.onGamePause();
+                }
+            });
+        }
     }
 }

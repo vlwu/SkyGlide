@@ -29,11 +29,14 @@ export class PauseMenu {
 
         document.getElementById('ui-layer').appendChild(this.element);
 
-        // Bind the handler once
-        this.handleKeyDown = this.handleKeyDown.bind(this);
+        this.handleInput = this.handleInput.bind(this);
+        this.openTime = 0;
     }
 
-    handleKeyDown(e) {
+    handleInput(e) {
+        // Prevent immediate re-triggering from the key release of the specific press that paused the game
+        if (Date.now() - this.openTime < 100) return;
+
         if (e.code === 'Escape') {
             e.preventDefault();
             e.stopPropagation();
@@ -43,11 +46,13 @@ export class PauseMenu {
 
     show() { 
         this.element.style.display = 'flex'; 
-        document.addEventListener('keydown', this.handleKeyDown);
+        this.openTime = Date.now();
+        // Use keyup to ensure the 'Escape' press that triggers the lock request isn't the same one interpreted as 'Exit Lock'
+        document.addEventListener('keyup', this.handleInput);
     }
 
     hide() { 
         this.element.style.display = 'none'; 
-        document.removeEventListener('keydown', this.handleKeyDown);
+        document.removeEventListener('keyup', this.handleInput);
     }
 }
