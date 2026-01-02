@@ -28,8 +28,26 @@ export class PauseMenu {
         });
 
         document.getElementById('ui-layer').appendChild(this.element);
+
+        // Bind the handler once
+        this.handleKeyDown = this.handleKeyDown.bind(this);
     }
 
-    show() { this.element.style.display = 'flex'; }
-    hide() { this.element.style.display = 'none'; }
+    handleKeyDown(e) {
+        if (e.code === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            this.uiManager.onGameResume();
+        }
+    }
+
+    show() { 
+        this.element.style.display = 'flex'; 
+        document.addEventListener('keydown', this.handleKeyDown);
+    }
+
+    hide() { 
+        this.element.style.display = 'none'; 
+        document.removeEventListener('keydown', this.handleKeyDown);
+    }
 }
