@@ -24,6 +24,7 @@ export class SettingsMenu {
     render() {
         const keys = settingsManager.settings.keys;
         const currentFps = settingsManager.get('fpsLimit');
+        const currentSens = settingsManager.get('sensitivity');
         
         // Find the index that corresponds to the current setting
         // Default to index 0 (VSync) if not found
@@ -34,6 +35,19 @@ export class SettingsMenu {
             <div class="menu-content settings-content">
                 <h2>SETTINGS</h2>
                 
+                <div class="settings-section">
+                    <h3>INPUT</h3>
+                    <div class="setting-row">
+                        <span>Sensitivity</span>
+                        <div class="slider-container">
+                            <input type="range" id="sens-slider" 
+                                min="0.1" max="5.0" step="0.1" 
+                                value="${currentSens}">
+                            <span id="sens-value" class="slider-value">${currentSens.toFixed(1)}</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="settings-section">
                     <h3>MOVEMENT</h3>
                     <div class="setting-row">
@@ -90,7 +104,17 @@ export class SettingsMenu {
             }
         });
 
-        // Slider Logic
+        // Sensitivity Slider Logic
+        const sensSlider = this.element.querySelector('#sens-slider');
+        const sensLabel = this.element.querySelector('#sens-value');
+
+        sensSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            sensLabel.textContent = val.toFixed(1);
+            settingsManager.set('sensitivity', val);
+        });
+
+        // FPS Slider Logic
         const fpsSlider = this.element.querySelector('#fps-slider');
         const fpsLabel = this.element.querySelector('#fps-value');
 

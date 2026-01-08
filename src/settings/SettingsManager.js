@@ -8,7 +8,8 @@ export class SettingsManager {
                 right: 'KeyD',
                 jump: 'Space'
             },
-            fpsLimit: 0 // 0 = VSync (Browser Default)
+            fpsLimit: 0, // 0 = VSync (Browser Default)
+            sensitivity: 1.0 // Multiplier for mouse sensitivity
         };
         
         this.settings = this.load();

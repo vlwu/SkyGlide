@@ -49,7 +49,15 @@ export class Player {
     initInput() {
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement !== document.body) return;
-            const sensitivity = 0.002;
+
+            // Fix for camera jumping: Ignore anomalously large movements
+            // These often occur during lag spikes or pointer lock re-centering bugs
+            if (Math.abs(e.movementX) > 500 || Math.abs(e.movementY) > 500) return;
+
+            const baseSensitivity = 0.002;
+            const userSensitivity = settingsManager.get('sensitivity');
+            const sensitivity = baseSensitivity * userSensitivity;
+
             this.yaw -= e.movementX * sensitivity;
             this.pitch -= e.movementY * sensitivity;
             this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
