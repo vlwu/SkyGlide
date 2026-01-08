@@ -15,10 +15,6 @@ export class Player {
         this.pitch = 0; 
         this.yaw = Math.PI; 
         
-        // For physics & camera roll calculation
-        this.lastYaw = this.yaw;
-        this.roll = 0;
-
         this.currentEyeHeight = 1.6;
         this.targetEyeHeight = 1.6;
 
@@ -89,10 +85,8 @@ export class Player {
         this.jumpPressedThisFrame = false;
         this.resolvePhysics(dt);
         this.updateCamera(dt);
-        
-        this.lastYaw = this.yaw;
     }
-    
+
     updateCamera(dt) {
         if (this.state === 'WALKING' || this.state === 'FALLING') {
             this.targetEyeHeight = 1.6;
@@ -115,35 +109,6 @@ export class Player {
         
         const target = this.camera.position.clone().add(this._lookDir);
         this.camera.lookAt(target);
-
-        // --- Camera Tilt (Banking) Logic ---
-        // Calculate turn rate (yaw velocity)
-        const yawDelta = this.yaw - this.lastYaw;
-        const safeDt = Math.max(dt, 0.001); // Prevent division by zero
-        const yawVelocity = yawDelta / safeDt;
-
-        // Turning Left (Yaw increases) -> Bank Left (Counter-Clockwise, Positive Roll).
-        // Turning Right (Yaw decreases) -> Bank Right (Clockwise, Negative Roll).
-        // Sensitivity: 0.3 allows reaching max tilt with moderate mouse speed.
-        const bankAmount = yawVelocity * 0.3; 
-        
-        // Limit to 45 degrees (0.785 radians)
-        const maxTilt = 0.785; 
-        let targetRoll = Math.max(-maxTilt, Math.min(maxTilt, bankAmount));
-        
-        // If walking, force upright
-        if (this.state !== 'FLYING') targetRoll = 0;
-
-        // Smoothly interpolate roll
-        // Lower factor (e.g., 5.0) makes it smoother/heavier. Higher (10.0) makes it snappier.
-        this.roll += (targetRoll - this.roll) * 5.0 * dt;
-
-        // Apply roll in local space
-        // The camera looks down -Z. +Z rotation is Counter-Clockwise (Bank Left).
-        if (Math.abs(this.roll) > 0.001) {
-            const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.roll);
-            this.camera.quaternion.multiply(rollQ);
-        }
     }
 
     checkGrounded() {
