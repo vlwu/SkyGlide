@@ -24,7 +24,6 @@ export class PlayerPhysics {
         this._tempVec = new THREE.Vector3();
         
         // Pre-calculated offsets for collision
-        // Optimization: Stored as primitives to allow unrolled loops
         this.radius = 0.4;
     }
 
@@ -44,7 +43,6 @@ export class PlayerPhysics {
         const feetY = player.position.y - 0.05;
         this._tempVec.set(player.position.x, feetY, player.position.z);
         
-        // We check center point below feet
         const blockBelow = this.getWorldBlockInternal(this._tempVec.x, this._tempVec.y, this._tempVec.z);
         
         if (player.velocity.y <= 0 && blockBelow !== BLOCK.AIR) {
@@ -57,16 +55,11 @@ export class PlayerPhysics {
         }
     }
 
-    // Optimization: Unrolled offset checking to avoid iterator allocation
     getWorldBlockInternal(x, y, z) {
-        // Check Center
         let val = this.world.getBlock(x, y, z);
         if (val) return val;
 
-        // Check +/- Radius (X and Z only)
-        // This is a manual expansion of "checkOffsets"
         const r = this.radius;
-        
         if (val = this.world.getBlock(x + r, y, z)) return val;
         if (val = this.world.getBlock(x - r, y, z)) return val;
         if (val = this.world.getBlock(x, y, z + r)) return val;
@@ -93,11 +86,9 @@ export class PlayerPhysics {
         const jumpForce = 11;
         const gravity = 25;
 
-        // Friction
         player.velocity.x -= player.velocity.x * friction * dt;
         player.velocity.z -= player.velocity.z * friction * dt;
 
-        // Input Direction
         this._forward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw)).normalize();
         this._right.set(Math.sin(player.yaw - Math.PI/2), 0, Math.cos(player.yaw - Math.PI/2)).normalize();
         
@@ -109,7 +100,6 @@ export class PlayerPhysics {
 
         if (this._inputDir.lengthSq() > 0) this._inputDir.normalize();
 
-        // Acceleration
         player.velocity.add(this._inputDir.multiplyScalar(moveSpeed * friction * dt));
 
         if (player.onGround) {
@@ -178,14 +168,17 @@ export class PlayerPhysics {
         const LIFT_COEFF = 24.0; 
         const DIVE_ACCEL = 2.0; 
         const CLIMB_BOOST = 0.8;
-        const STEER_SPEED = 2.0;
+        
+        // Optimization: High steer speed for responsive "Minecraft-like" control
+        const STEER_SPEED = 12.0; 
 
         const lift = sqrpitchcos * LIFT_COEFF;
         player.velocity.y += (-GRAVITY + lift) * dt;
 
         const ticks = dt * 20;
-        const dragXZ = Math.pow(0.99, ticks);
-        const dragY = Math.pow(0.98, ticks);
+        // Optimization: Low friction for smooth long-distance flight
+        const dragXZ = Math.pow(0.996, ticks); 
+        const dragY = Math.pow(0.996, ticks);
 
         player.velocity.x *= dragXZ;
         player.velocity.y *= dragY;
@@ -214,6 +207,14 @@ export class PlayerPhysics {
 
             player.velocity.x += (targetX - player.velocity.x) * STEER_SPEED * dt;
             player.velocity.z += (targetZ - player.velocity.z) * STEER_SPEED * dt;
+        }
+
+        // Feature: Hard Speed Cap (40.0)
+        const MAX_SPEED = 40.0;
+        const speedSq = player.velocity.lengthSq();
+        if (speedSq > MAX_SPEED * MAX_SPEED) {
+            const scale = MAX_SPEED / Math.sqrt(speedSq);
+            player.velocity.multiplyScalar(scale);
         }
     }
 
@@ -257,7 +258,6 @@ export class PlayerPhysics {
     }
 
     checkCollisionBody(pos, player) {
-        // Unrolled check for 3 distinct points (Feet, Mid, Head)
         if(this.checkPoint(pos.x, pos.y + 0.1, pos.z)) return true;
         if(this.checkPoint(pos.x, pos.y + player.dims.height * 0.5, pos.z)) return true;
         if(this.checkPoint(pos.x, pos.y + player.dims.height - 0.1, pos.z)) return true;

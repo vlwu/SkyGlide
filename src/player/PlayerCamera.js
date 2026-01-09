@@ -43,8 +43,9 @@ export class PlayerCamera {
         let desiredFOV = this.baseFOV;
         
         if (player.state === 'FLYING') {
-            const t = Math.max(0, Math.min(1, (speed - 20) / 60));
-            desiredFOV = this.baseFOV + (t * 45); 
+            // Speed adjusted for new cap (15 to 40 range)
+            const t = Math.max(0, Math.min(1, (speed - 15) / 25));
+            desiredFOV = this.baseFOV + (t * 35); 
         }
 
         this.camera.fov += (desiredFOV - this.camera.fov) * 5.0 * dt;
