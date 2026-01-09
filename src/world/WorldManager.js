@@ -22,6 +22,16 @@ export class WorldManager {
         });
     }
 
+    reset() {
+        // Dispose of all chunks to force regeneration on the new path
+        for (const [key, chunk] of this.chunks) {
+            chunk.dispose();
+        }
+        this.chunks.clear();
+        this.lastChunk = null;
+        this.lastChunkKey = '';
+    }
+
     update(playerPos) {
         const centerChunkX = Math.floor(playerPos.x / this.chunkSize);
         const centerChunkZ = Math.floor(playerPos.z / this.chunkSize);

@@ -68,8 +68,8 @@ uiManager.setRestartHandler(() => {
     gameScore = 0;
     player.reset();
     racePath.reset();
-    // Force immediate world update for the new position
-    worldManager.update(player.position);
+    worldManager.reset(); // Clear old chunks to prevent clipping with new path
+    worldManager.update(player.position); // Generate new chunks immediately
 });
 
 // Pointer Lock
@@ -122,7 +122,6 @@ function animate(time) {
         worldManager.update(player.position);
 
         // Check for Game Over (Void Fall)
-        // -30 is comfortably below the lowest valley generation
         if (player.position.y < -30) {
             uiManager.onGameOver();
         }
