@@ -122,6 +122,11 @@ function animate(time) {
     racePath.update(dt);
 
     if (uiManager.activeScreen === 'HUD') {
+        // Check for Quick Reset Input
+        if (player.consumeResetInput()) {
+            uiManager.onGameRestart();
+        }
+
         player.update(dt);
         worldManager.update(player.position);
 

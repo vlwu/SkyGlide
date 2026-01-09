@@ -33,9 +33,11 @@ export class Player {
         this.keys = {
             forward: false, backward: false,
             left: false, right: false,
-            jump: false
+            jump: false,
+            reset: false
         };
         this.jumpPressedThisFrame = false; 
+        this.resetPressedThisFrame = false;
 
         this.dims = { height: 1.8, radius: 0.4 }; 
         this.onGround = false;
@@ -104,6 +106,12 @@ export class Player {
                 }
                 this.keys.jump = pressed;
             }
+            if (code === keys.reset) {
+                if (pressed && !this.keys.reset) {
+                    this.resetPressedThisFrame = true;
+                }
+                this.keys.reset = pressed;
+            }
         };
 
         document.addEventListener('keydown', (e) => updateKey(e.code, true));
@@ -120,6 +128,17 @@ export class Player {
         this.camera.updateProjectionMatrix();
         this.onGround = false;
         this.groundBlock = BLOCK.AIR;
+        this.keys.reset = false;
+        this.resetPressedThisFrame = false;
+    }
+
+    // Helper for main loop to check if reset was requested
+    consumeResetInput() {
+        if (this.resetPressedThisFrame) {
+            this.resetPressedThisFrame = false;
+            return true;
+        }
+        return false;
     }
 
     update(dt) {
