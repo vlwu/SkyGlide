@@ -21,14 +21,12 @@ export class WorldManager {
         this.lastUpdate = 0;
 
         // --- WORKER SETUP ---
-        // Initialize the background worker
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
         
         this.worker.onmessage = (e) => {
             const { key, data } = e.data;
             const chunk = this.chunks.get(key);
             if (chunk) {
-                // Main thread receives data -> Carves Tunnel -> Uploads Mesh
                 chunk.applyTerrainData(data);
             }
         };
@@ -42,40 +40,39 @@ export class WorldManager {
         this.lastChunk = null;
         this.lastChunkKey = '';
         this.generationQueue = [];
-        // Note: We don't terminate the worker, we keep it alive for reuse
+    }
+
+    // New Helper for Physics
+    hasChunk(cx, cz) {
+        const key = `${cx},${cz}`;
+        const chunk = this.chunks.get(key);
+        return chunk && chunk.isLoaded;
     }
 
     update(playerPos, camera) {
         const now = performance.now();
         
-        // Queue Update Frequency (200ms)
-        // Reduced frequency because worker handles the load now, we don't need to spam updates
         if (now - this.lastUpdate > 200) {
             this.lastUpdate = now;
             this.updateQueue(playerPos, camera);
         }
 
-        // --- WORKER DISPATCHER ---
-        // Send a limited number of jobs to the worker per frame
-        // This prevents flooding the message channel
         const JOBS_PER_FRAME = 2;
         let dispatched = 0;
 
         while (this.generationQueue.length > 0 && dispatched < JOBS_PER_FRAME) {
             const req = this.generationQueue.shift();
             
-            // If chunk already exists (even if loading), skip
             if (this.chunks.has(req.key)) continue;
 
             const chunk = new Chunk(req.x, req.z, this.scene, this.racePath, this.chunkMaterial);
             this.chunks.set(req.key, chunk);
 
-            // Send job to worker
             this.worker.postMessage({
                 x: req.x,
                 z: req.z,
                 size: this.chunkSize,
-                height: 96 // Fixed chunk height
+                height: 96
             });
 
             dispatched++;
@@ -102,31 +99,36 @@ export class WorldManager {
                 const chunkZ = centerChunkZ + z;
                 const key = `${chunkX},${chunkZ}`;
                 
-                // Keep track of active chunks
                 activeKeys.add(key);
 
-                // If chunk doesn't exist, queue it
                 if (!this.chunks.has(key)) {
                     const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
                     const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
                     const distSq = (wx - playerPos.x)**2 + (wz - playerPos.z)**2;
 
-                    // Frustum/Priority Logic
                     let score = distSq;
-                    if (camera) {
+
+                    // 1. Force Spawn Priority
+                    // If chunk is within ~20 units of origin, load IMMEDIATE
+                    if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
+                        score = -99999999;
+                    } 
+                    // 2. Frustum Priority
+                    else if (camera) {
                         const dirX = wx - playerPos.x;
                         const dirZ = wz - playerPos.z;
                         const len = Math.sqrt(distSq) || 1;
                         const dot = ((dirX/len) * this._cameraForward.x) + ((dirZ/len) * this._cameraForward.z);
-                        score -= (dot * 50000); // Prioritize chunks in front
+                        score -= (dot * 50000); 
                     }
                     newQueue.push({ x: chunkX, z: chunkZ, key, score });
                 }
             }
         }
 
-        // Unload far chunks
         for (const [key, chunk] of this.chunks) {
+            // Keep Spawn Loaded if player is relatively close (double render distance safety)
+            // But if activeKeys has it, it's within render distance anyway.
             if (!activeKeys.has(key)) {
                 chunk.dispose();
                 this.chunks.delete(key);
@@ -152,7 +154,7 @@ export class WorldManager {
             this.lastChunkKey = key;
         }
         
-        if (!chunk) return false; 
+        if (!chunk || !chunk.isLoaded) return false; 
         
         const lx = Math.floor(x) - (cx * this.chunkSize);
         const ly = Math.floor(y); 

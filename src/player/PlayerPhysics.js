@@ -15,7 +15,6 @@ export class PlayerPhysics {
     constructor(world) {
         this.world = world;
         
-        // Reusable vectors to prevent GC
         this._forward = new THREE.Vector3();
         this._right = new THREE.Vector3();
         this._inputDir = new THREE.Vector3();
@@ -23,12 +22,22 @@ export class PlayerPhysics {
         this._nextPos = new THREE.Vector3();
         this._tempVec = new THREE.Vector3();
         
-        // Pre-calculated offsets for collision
-        // Reduced from 0.4 to 0.3 to reduce "snagging" on tunnel walls during high speed flight
         this.radius = 0.3;
     }
 
     update(dt, player) {
+        // --- SAFETY CHECK ---
+        // If the chunk under the player isn't loaded yet (async worker delay),
+        // freeze the player to prevent falling into the void.
+        const chunkX = Math.floor(player.position.x / 16);
+        const chunkZ = Math.floor(player.position.z / 16);
+        
+        if (!this.world.hasChunk(chunkX, chunkZ)) {
+            // Chunk not ready. Hover in place.
+            player.velocity.set(0, 0, 0);
+            return;
+        }
+
         this.checkGrounded(player);
 
         switch(player.state) {
@@ -58,10 +67,12 @@ export class PlayerPhysics {
 
     getWorldBlockInternal(x, y, z) {
         let val = this.world.getBlock(x, y, z);
+        // getBlock returns false if chunk not loaded, or 0 if Air.
+        // We treat false as Air here (no collision) because the 
+        // safety check at start of Update handles the "Void" case.
         if (val) return val;
 
         const r = this.radius;
-        // Optimization: Use OR short-circuiting efficiently
         if (val = this.world.getBlock(x + r, y, z)) return val;
         if (val = this.world.getBlock(x - r, y, z)) return val;
         if (val = this.world.getBlock(x, y, z + r)) return val;
@@ -170,15 +181,12 @@ export class PlayerPhysics {
         const LIFT_COEFF = 24.0; 
         const DIVE_ACCEL = 2.0; 
         const CLIMB_BOOST = 0.8;
-        
-        // Optimization: High steer speed for responsive "Minecraft-like" control
         const STEER_SPEED = 12.0; 
 
         const lift = sqrpitchcos * LIFT_COEFF;
         player.velocity.y += (-GRAVITY + lift) * dt;
 
         const ticks = dt * 20;
-        // Optimization: Low friction for smooth long-distance flight
         const dragXZ = Math.pow(0.996, ticks); 
         const dragY = Math.pow(0.996, ticks);
 
@@ -211,7 +219,6 @@ export class PlayerPhysics {
             player.velocity.z += (targetZ - player.velocity.z) * STEER_SPEED * dt;
         }
 
-        // Feature: Hard Speed Cap (40.0)
         const MAX_SPEED = 40.0;
         const speedSq = player.velocity.lengthSq();
         if (speedSq > MAX_SPEED * MAX_SPEED) {

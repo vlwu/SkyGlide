@@ -45,20 +45,13 @@ export class Chunk {
     }
 
     getBlock(x, y, z) {
-        // If data isn't loaded yet, return Air (0)
         if (!this.data || x < 0 || x >= this.size || y < 0 || y >= this.height || z < 0 || z >= this.size) return 0;
         return this.data[x + this.size * (y + this.height * z)];
     }
 
-    // Called by WorldManager when the Worker finishes
     applyTerrainData(data) {
         this.data = data;
-        
-        // Phase 2: Carve Tunnel (Main Thread - Fast)
-        // We do this here because RacePath logic is complex to move to worker
         this.carveTunnel();
-        
-        // Phase 3: Build Mesh (Main Thread - GPU Upload)
         this.buildMesh();
         this.isLoaded = true;
     }
@@ -67,7 +60,7 @@ export class Chunk {
         const startX = this.x * this.size;
         const startZ = this.z * this.size;
         
-        // Pre-calculation optimization from previous step
+        // 1. Carve Tunnel
         for (let z = 0; z < this.size; z++) {
             const wz = startZ + z;
             const pathPoints = this.racePath.getPointsAtZ(wz);
@@ -107,20 +100,25 @@ export class Chunk {
             }
         }
         
-        // Spawn Point Safety
-        if (startX >= -2 && startX <= 2 && startZ >= -2 && startZ <= 2) {
-             const idx = (startX + 2) + this.size * (14 + this.height * (startZ + 2)); 
-             // We can't easily index local coords from world coords here without modulo, 
-             // but spawn is always at 0,0, so local 0 is world 0 if chunk is 0,0.
-             // Simplified: Just forcing spawn block if in chunk 0,0
-             if (this.x === 0 && this.z === 0) {
-                 // Check local coords around center
-                 for(let lx=6; lx<=10; lx++) {
-                     for(let lz=6; lz<=10; lz++) {
-                         this.data[lx + this.size * (14 + this.height * lz)] = BLOCK.SPAWN;
-                     }
-                 }
-             }
+        // 2. Force Spawn Platform (Post-Carve)
+        // This ensures the spawn block exists even if the tunnel tried to delete it.
+        // We calculate the intersection of this chunk with the spawn area [-2, 2].
+        const minWx = -2, maxWx = 2;
+        const minWz = -2, maxWz = 2;
+        
+        const loopMinX = Math.max(0, minWx - startX);
+        const loopMaxX = Math.min(this.size - 1, maxWx - startX);
+        const loopMinZ = Math.max(0, minWz - startZ);
+        const loopMaxZ = Math.min(this.size - 1, maxWz - startZ);
+
+        if (loopMinX <= loopMaxX && loopMinZ <= loopMaxZ) {
+            for(let z = loopMinZ; z <= loopMaxZ; z++) {
+                for(let x = loopMinX; x <= loopMaxX; x++) {
+                     // Set Spawn Block at Y=14
+                     const idx = x + this.size * (14 + this.height * z);
+                     this.data[idx] = BLOCK.SPAWN;
+                }
+            }
         }
     }
 
@@ -139,9 +137,6 @@ export class Chunk {
         const strideY = size;          
         const strideZ = size * height; 
 
-        // Optimization: Pre-calculate random seed once per column if needed, 
-        // but current implementation calculates per block. Kept for visual consistency.
-
         for (let z = 0; z < size; z++) {
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < size; x++) {
@@ -151,7 +146,6 @@ export class Chunk {
                     const wx = startX + x;
                     const wz = startZ + z;
                     
-                    // Simple hash for color variation
                     let h = (wx * 374761393) ^ (y * 668265263) ^ (wz * 963469177);
                     h = (h ^ (h >> 13)) * 1274124933;
                     const rand = ((h >>> 0) / 4294967296); 
@@ -167,17 +161,12 @@ export class Chunk {
                         const nz = z + face.dir[2];
 
                         let neighborType = BLOCK.AIR;
-                        
-                        // Internal Neighbor Check
                         if (nx >= 0 && nx < size && ny >= 0 && ny < height && nz >= 0 && nz < size) {
                             neighborType = this.data[nx + ny * strideY + nz * strideZ];
                         }
-                        // FUTURE OPTIMIZATION: Check external chunks (Inter-chunk culling)
-                        // For now, we assume AIR at borders to ensure faces are drawn.
 
                         if (neighborType !== BLOCK.AIR) continue;
 
-                        // AO-like shading
                         let shade = 1.0;
                         if (face.dir[1] < 0) shade = 0.6;
                         else if (face.dir[1] > 0) shade = 1.1;
@@ -223,14 +212,10 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.BufferAttribute(BUFFER_COL.slice(0, vertCount * 3), 3));
         geometry.setIndex(new THREE.BufferAttribute(BUFFER_IND.slice(0, indexCount), 1));
 
-        // Create Mesh
         this.mesh = new THREE.Mesh(geometry, this.material);
         this.mesh.castShadow = true; 
         this.mesh.receiveShadow = true; 
-        
-        // Frustum Culling is crucial for performance
         this.mesh.frustumCulled = true;
-        
         this.mesh.matrixAutoUpdate = false;
         this.mesh.updateMatrix();
 
