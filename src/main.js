@@ -2,57 +2,64 @@ import './style.css';
 import * as THREE from 'three';
 import { WorldManager } from './world/WorldManager.js';
 import { RacePath } from './world/RacePath.js';
-import { Sky } from './world/Sky.js'; // Import Sky
+import { Sky } from './world/Sky.js'; 
 import { Player } from './Player.js';
 import { UIManager } from './ui/UIManager.js';
 import { FPSCounter } from './ui/FPSCounter.js';
 import { settingsManager } from './settings/SettingsManager.js';
 
 // Configuration
-// Fog distance is 200, so we need chunks to cover roughly that distance.
-// 200 units / 16 units per chunk ~= 12.5 chunks.
 const RENDER_DISTANCE_UNITS = 200;
 const CHUNK_RENDER_DISTANCE = 14; 
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x87CEEB, 80, RENDER_DISTANCE_UNITS); 
+// Reduce fog slightly to hide chunk loading edge better
+scene.fog = new THREE.Fog(0x87CEEB, 60, RENDER_DISTANCE_UNITS - 20); 
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+
+// Renderer Optimization
+const renderer = new THREE.WebGLRenderer({ 
+    antialias: true,
+    powerPreference: "high-performance", // Hint to browser to use dGPU
+    precision: "mediump" // Default is highp, mediump is faster and usually sufficient for games
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-// Enable shadow maps for depth
+
+// Shadow Map Optimization
 renderer.shadowMap.enabled = true; 
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Use PCFShadowMap (faster than Soft, harder edges)
+renderer.shadowMap.type = THREE.PCFShadowMap; 
+
 document.body.appendChild(renderer.domElement);
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); 
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
 scene.add(ambientLight);
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
 dirLight.position.set(50, 100, 50);
 dirLight.castShadow = true;
 
-// Shadow Optimization:
-// Keep the shadow box tight around the player. We don't need shadows at max render distance.
-// 60 units radius covers the immediate area where high-detail shadows matter.
-const d = 60; 
+// Tight Shadow Frustum
+const d = 50; // Reduced from 60
 dirLight.shadow.camera.left = -d;
 dirLight.shadow.camera.right = d;
 dirLight.shadow.camera.top = d;
 dirLight.shadow.camera.bottom = -d;
 
-// Increase map size for crispness, but the tight camera frustum helps performance
-dirLight.shadow.mapSize.width = 2048;
-dirLight.shadow.mapSize.height = 2048;
+// Optimized Shadow Map Size
+// 1024 is sufficient for this art style and much faster than 2048
+dirLight.shadow.mapSize.width = 1024;
+dirLight.shadow.mapSize.height = 1024;
 dirLight.shadow.bias = -0.0005;
 scene.add(dirLight);
 
 // Game Systems
 const racePath = new RacePath(scene);
-const sky = new Sky(scene); // Initialize Sky
+const sky = new Sky(scene); 
 const worldManager = new WorldManager(scene, racePath, 16, CHUNK_RENDER_DISTANCE);
 const player = new Player(scene, camera, worldManager);
 
@@ -63,13 +70,12 @@ let gameScore = 0;
 const uiManager = new UIManager(player);
 const fpsCounter = new FPSCounter();
 
-// Wiring up Restart Logic
 uiManager.setRestartHandler(() => {
     gameScore = 0;
     player.reset();
     racePath.reset();
-    worldManager.reset(); // Clear old chunks to prevent clipping with new path
-    worldManager.update(player.position); // Generate new chunks immediately
+    worldManager.reset(); 
+    worldManager.update(player.position); 
 });
 
 // Pointer Lock
@@ -113,7 +119,6 @@ function animate(time) {
 
     fpsCounter.update();
 
-    // Update Sky and Path
     sky.update(dt, player.position);
     racePath.update(dt);
 
@@ -121,18 +126,15 @@ function animate(time) {
         player.update(dt);
         worldManager.update(player.position);
 
-        // Check for Game Over (Void Fall)
         if (player.position.y < -30) {
             uiManager.onGameOver();
         }
 
-        // Check Ring Collisions
         const collisionResult = racePath.checkCollisions(player);
         if (collisionResult.scoreIncrease > 0) {
             gameScore += collisionResult.scoreIncrease;
         }
         if (collisionResult.boosted) {
-            // Apply 40 units of boost
             player.applyBoost(40.0);
         }
 
@@ -144,7 +146,6 @@ function animate(time) {
         dirLight.target.position.copy(player.position);
         dirLight.target.updateMatrixWorld();
     } else {
-        // Cinematic Camera Rotation
         const t = Date.now() * 0.0001;
         const radius = 20;
         camera.position.x = player.position.x + Math.sin(t) * radius;
