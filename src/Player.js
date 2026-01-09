@@ -110,41 +110,67 @@ export class Player {
 
     updateCamera(dt) {
         // --- 1. Update Mesh Position & Rotation ---
+        // Center the mesh vertically based on physics position (feet)
         const centerPos = this.position.clone();
         centerPos.y += this.dims.height / 2;
         
         this.mesh.position.copy(centerPos);
 
         // Rotate Mesh
-        this.mesh.rotation.order = 'YXZ'; // Yaw first (world Y), then Pitch (local X)
+        this.mesh.rotation.order = 'YXZ';
         this.mesh.rotation.y = this.yaw;
 
         if (this.state === 'FLYING') {
             // "Superman" pose: Rotate -90deg on X so top points forward, then add pitch
             this.mesh.rotation.x = this.pitch - (Math.PI / 2);
         } else {
-            // Walking pose: Simply apply pitch so the blob tilts up/down
-            this.mesh.rotation.x = this.pitch;
+            // Upright pose
+            this.mesh.rotation.x = 0;
         }
 
-        // --- 2. Update Third-Person Camera ---
+        // --- 2. Update Third-Person Camera with Collision ---
+        // Calculate look vector
         this._lookDir.set(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
 
-        const cameraDist = 6.0; 
-        
-        const cameraPos = centerPos.clone()
-            .sub(this._lookDir.clone().multiplyScalar(cameraDist));
-        
-        cameraPos.y += 1.5;
+        // Target: Where the camera looks AT (Head level)
+        const viewTarget = centerPos.clone().add(new THREE.Vector3(0, 0.5, 0));
 
-        this.camera.position.copy(cameraPos);
-        
-        const lookTarget = centerPos.clone().add(new THREE.Vector3(0, 0.5, 0));
-        this.camera.lookAt(lookTarget);
+        // Ideal Camera Position (standard 3rd person)
+        const cameraDist = 6.0; 
+        // Ideal Pos = PlayerCenter - (LookDir * Dist) + UpOffset
+        const idealPos = centerPos.clone()
+            .sub(this._lookDir.clone().multiplyScalar(cameraDist));
+        idealPos.y += 1.5;
+
+        // --- Raycast for Camera Collision ---
+        const camDir = new THREE.Vector3().subVectors(idealPos, viewTarget);
+        const maxDist = camDir.length();
+        camDir.normalize();
+
+        let actualDist = maxDist;
+        const step = 0.2; // Raymarch step resolution
+
+        // Trace line from player head to camera position
+        for (let d = 0; d <= maxDist; d += step) {
+            this._tempVec.copy(viewTarget).addScaledVector(camDir, d);
+            
+            // If we hit a block
+            if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
+                // Stop camera slightly before the wall (0.2 padding)
+                actualDist = Math.max(0.5, d - 0.2); 
+                break;
+            }
+        }
+
+        // Apply final position
+        const finalPos = viewTarget.clone().addScaledVector(camDir, actualDist);
+
+        this.camera.position.copy(finalPos);
+        this.camera.lookAt(viewTarget);
     }
 
     checkGrounded() {
