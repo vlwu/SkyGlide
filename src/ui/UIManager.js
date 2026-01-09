@@ -2,24 +2,37 @@ import { StartMenu } from './screens/StartMenu.js';
 import { HUD } from './screens/HUD.js';
 import { PauseMenu } from './screens/PauseMenu.js';
 import { SettingsMenu } from './screens/SettingsMenu.js';
+import { GameOverMenu } from './screens/GameOverMenu.js';
 
 export class UIManager {
     constructor(player) {
         this.player = player;
         this.container = document.getElementById('ui-layer');
+        this.restartHandler = null;
 
         // Initialize Components
         this.startMenu = new StartMenu(this);
         this.hud = new HUD(this);
         this.pauseMenu = new PauseMenu(this);
         this.settingsMenu = new SettingsMenu(this);
+        this.gameOverMenu = new GameOverMenu(this);
 
-        this.screens = [this.startMenu, this.hud, this.pauseMenu, this.settingsMenu];
+        this.screens = [
+            this.startMenu, 
+            this.hud, 
+            this.pauseMenu, 
+            this.settingsMenu,
+            this.gameOverMenu
+        ];
         
         this.activeScreen = null;
         this.previousScreen = null; // For "Back" functionality
         
         this.showScreen('START');
+    }
+
+    setRestartHandler(fn) {
+        this.restartHandler = fn;
     }
 
     showScreen(screenName) {
@@ -29,7 +42,7 @@ export class UIManager {
         // Update History (unless we are just going back)
         if (screenName !== 'BACK') {
             if (this.activeScreen && this.activeScreen !== screenName) {
-                 // Don't save HUD in history for settings (HUD -> Settings makes no sense usually)
+                 // Don't save HUD or GAMEOVER in history
                  if (this.activeScreen === 'START' || this.activeScreen === 'PAUSE') {
                      this.previousScreen = this.activeScreen;
                  }
@@ -55,6 +68,10 @@ export class UIManager {
                 this.settingsMenu.show();
                 this.activeScreen = 'SETTINGS';
                 break;
+            case 'GAMEOVER':
+                this.gameOverMenu.show();
+                this.activeScreen = 'GAMEOVER';
+                break;
         }
     }
 
@@ -65,6 +82,9 @@ export class UIManager {
     onGameStart() {
         this.showScreen('HUD');
         this.requestLock();
+        
+        // If we are starting fresh (from menu), trigger restart logic to ensure clean state
+        if (this.restartHandler) this.restartHandler();
     }
 
     onGamePause() {
@@ -75,6 +95,20 @@ export class UIManager {
     onGameResume() {
         this.showScreen('HUD');
         this.requestLock();
+    }
+    
+    onGameOver() {
+        if (this.activeScreen !== 'GAMEOVER') {
+            this.showScreen('GAMEOVER');
+            document.exitPointerLock();
+        }
+    }
+
+    onGameRestart() {
+        if (this.restartHandler) {
+            this.restartHandler();
+            this.onGameResume();
+        }
     }
 
     requestLock() {
