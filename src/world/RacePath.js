@@ -88,9 +88,6 @@ export class RacePath {
             const forcedSplit = (depth === 0 && i === 40);
 
             // 2. Random splits
-            // Must have remaining length > 50
-            // Must have cooled down (25 segments)
-            // Depth limit < 3
             if (depth < 3 && (segments - i) > 50) {
                 if (forcedSplit || (segmentsSinceBranch > 25 && Math.random() < 0.15)) {
                     
@@ -102,7 +99,6 @@ export class RacePath {
                     segmentsSinceBranch = 0;
 
                     // 3. Triple Fork Chance (20% or Forced)
-                    // If forced split, always make it a triple for spectacle
                     if (forcedSplit || Math.random() < 0.2) {
                         const angle2 = -angle * 0.8; // Opposite side
                         const branchDir2 = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle2).normalize();
@@ -116,26 +112,55 @@ export class RacePath {
         curve.tension = 0.5;
         this.curves.push({ curve, depth }); // Store depth for visuals
 
-        // Populate Lookup
+        // Populate Lookup with Interpolation for Smooth Tunnels
         const length = curve.getLength();
-        const divisions = Math.floor(length * 2); 
+        // Higher resolution for better accuracy
+        const divisions = Math.floor(length * 4); 
         const spacedPoints = curve.getSpacedPoints(divisions);
 
         if (spacedPoints.length > 0) {
-            let prevZ = Math.round(spacedPoints[0].z);
-            this.addToLookup(prevZ, spacedPoints[0]);
+            let prevPt = spacedPoints[0];
+            this.addToLookup(Math.round(prevPt.z), prevPt);
 
             for (let i = 1; i < spacedPoints.length; i++) {
-                const pt = spacedPoints[i];
-                const currentZ = Math.round(pt.z);
-                const step = prevZ > currentZ ? -1 : 1;
+                const currPt = spacedPoints[i];
                 
-                let z = prevZ + step;
-                while (z !== currentZ + step) {
-                    this.addToLookup(z, pt);
-                    z += step;
+                const prevZ = Math.round(prevPt.z);
+                const currZ = Math.round(currPt.z);
+
+                // If we cross integer Z boundaries, fill the gaps with interpolated points
+                if (prevZ !== currZ) {
+                    const step = prevZ > currZ ? -1 : 1;
+                    const distZ = currPt.z - prevPt.z;
+                    
+                    let z = prevZ + step;
+                    
+                    // Walk through every integer Z between previous and current point
+                    while (z !== currZ + step) {
+                        // Calculate interpolation factor t based on Z progress
+                        let t = 0;
+                        if (Math.abs(distZ) > 0.0001) {
+                            t = (z - prevPt.z) / distZ;
+                        }
+                        
+                        t = Math.max(0, Math.min(1, t));
+                        
+                        // Create a precise point for this Z plane
+                        const interpPt = new THREE.Vector3().lerpVectors(prevPt, currPt, t);
+                        
+                        // Force the Z to match exactly the integer key to avoid any float drift confusion
+                        // though Chunk.js uses the lookup key for Z mostly.
+                        interpPt.z = z; 
+                        
+                        this.addToLookup(z, interpPt);
+                        
+                        z += step;
+                    }
+                } else {
+                    // Same Z block, just add the point if needed (distance check in addToLookup handles density)
+                    this.addToLookup(currZ, currPt);
                 }
-                prevZ = currentZ;
+                prevPt = currPt;
             }
         }
     }
@@ -146,8 +171,12 @@ export class RacePath {
         }
         const list = this.pathLookup.get(z);
         if (list.length > 0) {
+            // Optimization: If we already have a point very close for this Z, skip.
+            // But we must be careful not to skip branches. 
+            // Since we process branches sequentially, checking the last added point is usually safe.
+            // Reduced distance check to 1.0 to ensure precision.
             const last = list[list.length - 1];
-            if (last.distanceToSquared(point) < 4) return; 
+            if (last.distanceToSquared(point) < 1.0) return; 
         }
         list.push(point);
     }

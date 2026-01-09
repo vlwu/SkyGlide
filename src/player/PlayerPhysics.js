@@ -24,7 +24,8 @@ export class PlayerPhysics {
         this._tempVec = new THREE.Vector3();
         
         // Pre-calculated offsets for collision
-        this.radius = 0.4;
+        // Reduced from 0.4 to 0.3 to reduce "snagging" on tunnel walls during high speed flight
+        this.radius = 0.3;
     }
 
     update(dt, player) {
@@ -60,6 +61,7 @@ export class PlayerPhysics {
         if (val) return val;
 
         const r = this.radius;
+        // Optimization: Use OR short-circuiting efficiently
         if (val = this.world.getBlock(x + r, y, z)) return val;
         if (val = this.world.getBlock(x - r, y, z)) return val;
         if (val = this.world.getBlock(x, y, z + r)) return val;

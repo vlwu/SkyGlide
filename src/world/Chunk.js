@@ -78,7 +78,8 @@ export class Chunk {
 
                 const groundHeight = Math.floor(h);
 
-                // Retrieve all branch points for this Z slice
+                // Retrieve all branch points for this precise Z slice
+                // RacePath now provides interpolated points aligned to this integer Z
                 const pathPoints = this.racePath.getPointsAtZ(wz);
                 
                 for (let y = 0; y < this.height; y++) {
@@ -114,13 +115,15 @@ export class Chunk {
                     // Check collisions with ANY branch
                     if (pathPoints && blockType !== BLOCK.AIR) {
                         for (const point of pathPoints) {
-                            if (Math.abs(wx - point.x) > 15) continue;
+                            // Optimization: Check X distance first before doing full 2D distance
+                            const dx = wx - point.x;
+                            if (Math.abs(dx) > 10) continue;
 
                             const dy = y - point.y;
-                            const dx = wx - point.x;
                             
-                            // Optimization: Increased clearance to 81 (9 blocks radius)
-                            // Makes forks wider and navigation easier
+                            // 9 blocks radius = 81 squared distance
+                            // This carves the cylinder. Since points are now interpolated,
+                            // (point.x, point.y) corresponds exactly to the tunnel center at Z = wz.
                             if (dx*dx + dy*dy < 81) {
                                 blockType = BLOCK.AIR;
                                 break; 
