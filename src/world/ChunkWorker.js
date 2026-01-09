@@ -182,7 +182,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // 3. FORCE SPAWN AND CLEAR STARTING AREA
+    // 3. FORCE SPAWN
     const minWx = -2, maxWx = 2;
     const minWz = -2, maxWz = 2;
     const loopMinX = Math.max(0, minWx - startX);
@@ -192,18 +192,8 @@ self.onmessage = (e) => {
 
     if (loopMinX <= loopMaxX && loopMinZ <= loopMaxZ) {
         for(let lz = loopMinZ; lz <= loopMaxZ; lz++) {
-            const zStride = lz * strideZ;
             for(let lx = loopMinX; lx <= loopMaxX; lx++) {
-                const colBase = lx + zStride;
-                
-                // Spawn Platform
-                data[colBase + 14 * strideY] = BLOCK.SPAWN;
-
-                // BUG FIX: Explicitly clear air above spawn to prevent spawning inside noise terrain
-                // If noise generated a mountain at (0,0), this ensures the player isn't buried.
-                for (let y = 15; y < height; y++) {
-                    data[colBase + y * strideY] = BLOCK.AIR;
-                }
+                data[lx + strideY * 14 + lz * strideZ] = BLOCK.SPAWN;
             }
         }
     }
@@ -212,6 +202,11 @@ self.onmessage = (e) => {
     let vertCount = 0;
     let indexCount = 0;
     const rgb = [0,0,0];
+
+    // Iterating Y outer loop might be better for cache line if data is Y-major?
+    // Current layout: data[lx + y * 16 + lz * 16 * 96]
+    // Inner-most should vary lx (stride 1).
+    // So order: lz -> y -> lx is correct for sequential access.
 
     for (let lz = 0; lz < size; lz++) {
         const lzStride = lz * strideZ;
