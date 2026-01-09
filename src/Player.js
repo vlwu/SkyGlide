@@ -1,13 +1,24 @@
 import * as THREE from 'three';
 import { settingsManager } from './settings/SettingsManager.js';
 
+// Duplicate block IDs locally to avoid circular imports or complex file structures
+const BLOCK = {
+    AIR: 0,
+    GRASS: 1,
+    STONE: 2,
+    SPAWN: 3,
+    DIRT: 4,
+    SNOW: 5,
+    SAND: 6,
+    ICE: 7
+};
+
 export class Player {
     constructor(scene, camera, world) {
         this.scene = scene;
         this.camera = camera;
         this.world = world;
 
-        // Cache initial FOV to return to it
         this.baseFOV = camera.fov;
         this.targetFOV = this.baseFOV;
 
@@ -28,6 +39,7 @@ export class Player {
 
         this.dims = { height: 1.8, radius: 0.4 }; 
         this.onGround = false;
+        this.groundBlock = BLOCK.AIR; // Track what we are standing on
         
         // REUSABLE VECTORS
         this._lookDir = new THREE.Vector3();
@@ -44,7 +56,7 @@ export class Player {
             new THREE.Vector3(0, 0, -this.dims.radius)
         ];
 
-        // --- Visual Representation (Translucent Blob) ---
+        // --- Visual Representation ---
         const geometry = new THREE.CapsuleGeometry(0.4, 1.0, 4, 8);
         const material = new THREE.MeshPhysicalMaterial({
             color: 0x88ccff,        
@@ -107,6 +119,7 @@ export class Player {
         this.camera.fov = this.baseFOV;
         this.camera.updateProjectionMatrix();
         this.onGround = false;
+        this.groundBlock = BLOCK.AIR;
     }
 
     update(dt) {
@@ -124,7 +137,6 @@ export class Player {
     }
 
     updateCamera(dt) {
-        // --- 1. Update Mesh Position & Rotation ---
         const centerPos = this.position.clone();
         centerPos.y += this.dims.height / 2;
         
@@ -140,19 +152,15 @@ export class Player {
             this.mesh.rotation.x = 0;
         }
 
-        // --- 2. Dynamic FOV & Third-Person Camera ---
-        
-        // Calculate speed for FOV warping
+        // --- Dynamic FOV ---
         const speed = this.velocity.length();
         let desiredFOV = this.baseFOV;
         
         if (this.state === 'FLYING') {
-            // Map speed 20..80 to FOV 75..110
             const t = Math.max(0, Math.min(1, (speed - 20) / 60));
             desiredFOV = this.baseFOV + (t * 45); 
         }
 
-        // Smoothly interpolate FOV
         this.camera.fov += (desiredFOV - this.camera.fov) * 5.0 * dt;
         this.camera.updateProjectionMatrix();
 
@@ -165,7 +173,6 @@ export class Player {
 
         const viewTarget = centerPos.clone().add(new THREE.Vector3(0, 0.5, 0));
 
-        // Pull camera back slightly more at high speeds
         const baseDist = 6.0;
         const extraDist = (this.camera.fov - this.baseFOV) * 0.05; 
         const cameraDist = baseDist + extraDist;
@@ -174,7 +181,7 @@ export class Player {
             .sub(this._lookDir.clone().multiplyScalar(cameraDist));
         idealPos.y += 1.5;
 
-        // --- Raycast for Camera Collision ---
+        // Camera Collision Raycast
         const camDir = new THREE.Vector3().subVectors(idealPos, viewTarget);
         const maxDist = camDir.length();
         camDir.normalize();
@@ -184,7 +191,6 @@ export class Player {
 
         for (let d = 0; d <= maxDist; d += step) {
             this._tempVec.copy(viewTarget).addScaledVector(camDir, d);
-            
             if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
                 actualDist = Math.max(0.5, d - 0.2); 
                 break;
@@ -199,38 +205,64 @@ export class Player {
     applyBoost(speedIncrease) {
         if (this.state !== 'FLYING') {
             this.state = 'FLYING';
-            // Lift off slightly if on ground
             this.position.y += 2.0;
         }
 
-        // Calculate current forward direction
         this._lookDir.set(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
 
-        // Apply velocity in look direction
         this.velocity.add(this._lookDir.multiplyScalar(speedIncrease));
     }
 
     checkGrounded() {
         const feetY = this.position.y - 0.05;
         this._tempVec.set(this.position.x, feetY, this.position.z);
-        if (this.velocity.y <= 0 && this.checkPoints([this._tempVec])) {
+        
+        // Find specifically what block we are on
+        const blockBelow = this.getWorldBlock(this._tempVec);
+        
+        if (this.velocity.y <= 0 && blockBelow !== BLOCK.AIR) {
             this.onGround = true;
+            this.groundBlock = blockBelow;
             if (this.state === 'FALLING') this.state = 'WALKING';
         } else {
             this.onGround = false;
+            this.groundBlock = BLOCK.AIR;
         }
     }
 
+    // Helper to check multiple points for collision but return boolean
+    getWorldBlock(pos) {
+        for (let off of this._checkOffsets) {
+            const val = this.world.getBlock(pos.x + off.x, pos.y + off.y, pos.z + off.z);
+            if (val) return val;
+        }
+        return 0;
+    }
+
     handleWalking(dt) {
-        const speed = 10;
-        const friction = 10;
+        // --- Physics Material Logic ---
+        let friction = 10.0;
+        let moveSpeed = 10.0;
+
+        if (this.groundBlock === BLOCK.ICE) {
+            friction = 0.5; // Slippery!
+            moveSpeed = 15.0; // Can build up more speed
+        } else if (this.groundBlock === BLOCK.SAND) {
+            friction = 15.0; // Sluggish
+            moveSpeed = 7.0;
+        } else if (this.groundBlock === BLOCK.SNOW) {
+            friction = 8.0;
+            moveSpeed = 9.0;
+        }
+
         const jumpForce = 11;
         const gravity = 25;
 
+        // Apply Friction
         this.velocity.x -= this.velocity.x * friction * dt;
         this.velocity.z -= this.velocity.z * friction * dt;
 
@@ -245,7 +277,8 @@ export class Player {
 
         if (this._inputDir.lengthSq() > 0) this._inputDir.normalize();
 
-        this.velocity.add(this._inputDir.multiplyScalar(speed * friction * dt));
+        // Acceleration
+        this.velocity.add(this._inputDir.multiplyScalar(moveSpeed * friction * dt));
 
         if (this.onGround) {
             this.velocity.y = 0;
@@ -306,7 +339,7 @@ export class Player {
         ).normalize();
         
         const look = this._lookDir;
-        const hlook = Math.sqrt(look.x * look.x + look.z * look.z); // ~ cos(pitch)
+        const hlook = Math.sqrt(look.x * look.x + look.z * look.z); 
         const sqrpitchcos = hlook * hlook;
 
         const GRAVITY = 32.0;
@@ -384,7 +417,7 @@ export class Player {
                 if (this.velocity.y < 0) {
                     this.position.y = Math.floor(this._nextPos.y + 0.1) + 1; 
                     this.velocity.y = 0;
-                    this.onGround = true;
+                    this.onGround = true; // Will be verified by checkGrounded next frame
                     if(this.state === 'FLYING' || this.state === 'FALLING') this.state = 'WALKING';
                 } else {
                     this.position.y = Math.floor(this._nextPos.y) - 0.2; 
@@ -418,17 +451,9 @@ export class Player {
         return false;
     }
 
-    checkPoints(points) {
-        for (let p of points) {
-            if (this.checkPoint(p)) return true;
-        }
-        return false;
-    }
-
     crash() {
         this.state = 'FALLING';
         this.velocity.multiplyScalar(0.2);
-        // Reset FOV immediately on crash for impact
         this.camera.fov = this.baseFOV;
         this.camera.updateProjectionMatrix();
     }
