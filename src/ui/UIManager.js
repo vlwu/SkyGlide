@@ -9,6 +9,7 @@ export class UIManager {
         this.player = player;
         this.container = document.getElementById('ui-layer');
         this.restartHandler = null;
+        this.exitHandler = null;
 
         // Initialize Components
         this.startMenu = new StartMenu(this);
@@ -26,7 +27,7 @@ export class UIManager {
         ];
         
         this.activeScreen = null;
-        this.previousScreen = null; // For "Back" functionality
+        this.previousScreen = null; 
         
         this.showScreen('START');
     }
@@ -35,14 +36,15 @@ export class UIManager {
         this.restartHandler = fn;
     }
 
+    setExitHandler(fn) {
+        this.exitHandler = fn;
+    }
+
     showScreen(screenName) {
-        // Hide all screens first
         this.screens.forEach(s => s.hide());
 
-        // Update History (unless we are just going back)
         if (screenName !== 'BACK') {
             if (this.activeScreen && this.activeScreen !== screenName) {
-                 // Don't save HUD or GAMEOVER in history
                  if (this.activeScreen === 'START' || this.activeScreen === 'PAUSE') {
                      this.previousScreen = this.activeScreen;
                  }
@@ -83,8 +85,8 @@ export class UIManager {
         this.showScreen('HUD');
         this.requestLock();
         
-        // If we are starting fresh (from menu), trigger restart logic to ensure clean state
-        if (this.restartHandler) this.restartHandler();
+        // Always trigger a soft start to ensure state is clean
+        if (this.restartHandler) this.restartHandler('soft');
     }
 
     onGamePause() {
@@ -104,11 +106,17 @@ export class UIManager {
         }
     }
 
-    onGameRestart() {
+    onGameRestart(mode = 'hard') {
         if (this.restartHandler) {
-            this.restartHandler();
+            this.restartHandler(mode);
             this.onGameResume();
         }
+    }
+
+    onExitToMenu() {
+        if (this.exitHandler) this.exitHandler();
+        this.showScreen('START');
+        document.exitPointerLock();
     }
 
     requestLock() {
@@ -116,11 +124,9 @@ export class UIManager {
         
         if (promise && promise.catch) {
             promise.catch((err) => {
-                // Suppress verbose error logging for expected cancellation
                 if (err.name !== 'SecurityError') {
                     console.warn('Pointer lock failed:', err);
                 }
-
                 if (this.activeScreen === 'HUD') {
                     this.onGamePause();
                 }

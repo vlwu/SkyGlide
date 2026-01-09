@@ -9,14 +9,13 @@ import { FPSCounter } from './ui/FPSCounter.js';
 import { settingsManager } from './settings/SettingsManager.js';
 
 // Configuration
-// Optimization: Increased render distance to better visualize branching paths
-const RENDER_DISTANCE_UNITS = 200;
-const CHUNK_RENDER_DISTANCE = 10; 
+const RENDER_DISTANCE_UNITS = 350; 
+const CHUNK_RENDER_DISTANCE = 18;  
 
 // Scene setup
 const scene = new THREE.Scene();
-// Fog pushed back to reveal branches earlier
-scene.fog = new THREE.Fog(0xA0D0E0, 60, RENDER_DISTANCE_UNITS - 10); 
+// Fog pushed back to match new render distance
+scene.fog = new THREE.Fog(0xA0D0E0, 100, RENDER_DISTANCE_UNITS - 50); 
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
@@ -70,12 +69,33 @@ let gameScore = 0;
 const uiManager = new UIManager(player);
 const fpsCounter = new FPSCounter();
 
-uiManager.setRestartHandler(() => {
+// Handler for Soft (Retry) and Hard (New Path) resets
+uiManager.setRestartHandler((mode) => {
     gameScore = 0;
     player.reset();
-    racePath.reset();
-    worldManager.reset(); 
+
+    if (mode === 'hard') {
+        // Generate new seed
+        racePath.reset();
+        worldManager.reset(); 
+    } else {
+        // Soft Reset: Reactivate all rings without destroying path
+        if (racePath.rings) {
+            racePath.rings.forEach(ring => {
+                ring.active = true;
+                ring.mesh.scale.set(1, 1, 1);
+                ring.mesh.material.color.setHex(0x00ffff); // Reset to base color (Note: Branch colors reset to cyan)
+            });
+        }
+    }
+    
+    // Force world update around spawn
     worldManager.update(player.position); 
+});
+
+uiManager.setExitHandler(() => {
+    // Just pause logic effectively, scene persists in background
+    player.keys.forward = false; // Kill inputs
 });
 
 // Pointer Lock
@@ -124,7 +144,7 @@ function animate(time) {
 
     if (uiManager.activeScreen === 'HUD') {
         if (player.consumeResetInput()) {
-            uiManager.onGameRestart();
+            uiManager.onGameRestart('soft'); // 'R' key triggers quick retry
         }
 
         player.update(dt);
@@ -150,6 +170,7 @@ function animate(time) {
         dirLight.target.position.copy(player.position);
         dirLight.target.updateMatrixWorld();
     } else {
+        // Main Menu / Pause Camera rotation
         const t = Date.now() * 0.0001;
         const radius = 20;
         camera.position.x = player.position.x + Math.sin(t) * radius;

@@ -9,7 +9,11 @@ export class PauseMenu {
             
             <div class="button-group-vertical">
                 <button id="btn-resume" class="btn-primary">RESUME</button>
-                <button id="btn-reset-pause" class="btn-primary" style="background: #ff3333; color: white;">RESET RUN</button>
+                <div class="button-group">
+                    <button id="btn-retry-pause" class="btn-secondary">RETRY RUN</button>
+                    <button id="btn-new-path-pause" class="btn-secondary">NEW PATH</button>
+                </div>
+                <button id="btn-exit-pause" class="btn-secondary" style="border-color: #ff3333; color: #ff3333;">EXIT TO MENU</button>
                 <button id="btn-settings-pause" class="btn-secondary">SETTINGS</button>
             </div>
 
@@ -18,25 +22,46 @@ export class PauseMenu {
             </div>
         `;
 
+        // Resume
         this.element.querySelector('#btn-resume').addEventListener('click', (e) => {
             e.stopPropagation();
             this.uiManager.onGameResume();
         });
 
-        const resetBtn = this.element.querySelector('#btn-reset-pause');
-        resetBtn.addEventListener('click', (e) => {
+        // Retry (Same Path)
+        const retryBtn = this.element.querySelector('#btn-retry-pause');
+        retryBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            resetBtn.textContent = 'INITIALIZING...';
+            retryBtn.textContent = 'LOADING...';
             setTimeout(() => {
-                this.uiManager.onGameRestart();
-                resetBtn.textContent = 'RESET RUN';
-            }, 100);
+                this.uiManager.onGameRestart('soft');
+                retryBtn.textContent = 'RETRY RUN';
+            }, 50);
         });
 
-        // Hover styling logic for the red button
-        resetBtn.addEventListener('mouseenter', () => resetBtn.style.background = '#ff6666');
-        resetBtn.addEventListener('mouseleave', () => resetBtn.style.background = '#ff3333');
+        // New Path (New Seed)
+        const newPathBtn = this.element.querySelector('#btn-new-path-pause');
+        newPathBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            newPathBtn.textContent = 'GENERATING...';
+            setTimeout(() => {
+                this.uiManager.onGameRestart('hard');
+                newPathBtn.textContent = 'NEW PATH';
+            }, 50);
+        });
 
+        // Exit
+        const exitBtn = this.element.querySelector('#btn-exit-pause');
+        exitBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.uiManager.onExitToMenu();
+        });
+        
+        // Hover styling for exit
+        exitBtn.addEventListener('mouseenter', () => exitBtn.style.background = 'rgba(255, 51, 51, 0.2)');
+        exitBtn.addEventListener('mouseleave', () => exitBtn.style.background = 'transparent');
+
+        // Settings
         this.element.querySelector('#btn-settings-pause').addEventListener('click', (e) => {
             e.stopPropagation();
             this.uiManager.showScreen('SETTINGS');
@@ -49,7 +74,6 @@ export class PauseMenu {
     }
 
     handleInput(e) {
-        // Prevent immediate re-triggering from the key release of the specific press that paused the game
         if (Date.now() - this.openTime < 100) return;
 
         if (e.code === 'Escape') {
@@ -62,7 +86,6 @@ export class PauseMenu {
     show() { 
         this.element.style.display = 'flex'; 
         this.openTime = Date.now();
-        // Use keyup to ensure the 'Escape' press that triggers the lock request isn't the same one interpreted as 'Exit Lock'
         document.addEventListener('keyup', this.handleInput);
     }
 
