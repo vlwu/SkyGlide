@@ -9,8 +9,9 @@ import { FPSCounter } from './ui/FPSCounter.js';
 import { settingsManager } from './settings/SettingsManager.js';
 
 // Configuration
-const RENDER_DISTANCE_UNITS = 350; 
-const CHUNK_RENDER_DISTANCE = 18;  
+// Feature: Increased Render Distance for better visuals
+const RENDER_DISTANCE_UNITS = 400; // Increased from 200
+const CHUNK_RENDER_DISTANCE = 24;  // Increased from 10
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -79,14 +80,8 @@ uiManager.setRestartHandler((mode) => {
         racePath.reset();
         worldManager.reset(); 
     } else {
-        // Soft Reset: Reactivate all rings without destroying path
-        if (racePath.rings) {
-            racePath.rings.forEach(ring => {
-                ring.active = true;
-                ring.mesh.scale.set(1, 1, 1);
-                ring.mesh.material.color.setHex(0x00ffff); // Reset to base color (Note: Branch colors reset to cyan)
-            });
-        }
+        // Soft Reset: Reactivate all rings utilizing the helper to preserve branch colors
+        racePath.resetRings();
     }
     
     // Force world update around spawn

@@ -43,7 +43,9 @@ export class WorldManager {
         const activeKeys = new Set();
         const neededChunks = [];
 
-        const width = 2; 
+        // Widen the generation area to support higher render distances
+        // Previous: width = 2 (5 chunks wide). New: width = 5 (11 chunks wide)
+        const width = 5; 
         const backDist = Math.min(3, this.renderDistance);
 
         for (let z = -backDist; z <= this.renderDistance; z++) {
@@ -73,7 +75,8 @@ export class WorldManager {
         neededChunks.sort((a, b) => a.dist - b.dist);
 
         // 3. Process
-        const GENERATION_BUDGET = 2;
+        // Increased budget from 2 to 5 to handle the larger world volume faster
+        const GENERATION_BUDGET = 5;
         let generated = 0;
 
         for (const req of neededChunks) {

@@ -45,6 +45,16 @@ export class RacePath {
         this.generate();
     }
 
+    // New method to handle Soft Resets (Retry same seed)
+    resetRings() {
+        this.rings.forEach(ring => {
+            ring.active = true;
+            ring.mesh.scale.set(1, 1, 1);
+            // Restore the specific branch color
+            ring.mesh.material.color.setHex(ring.originalColor);
+        });
+    }
+
     generate() {
         const startPos = new THREE.Vector3(0, 15, 0);
         const startDir = new THREE.Vector3(0, 0, -1);
@@ -60,7 +70,6 @@ export class RacePath {
         const points = [];
         
         points.push(startPos.clone());
-        // Tangent control point
         const controlPoint = startPos.clone().add(startDir.clone().multiplyScalar(20));
         points.push(controlPoint);
 
@@ -83,24 +92,19 @@ export class RacePath {
 
             segmentsSinceBranch++;
 
-            // --- BRANCHING LOGIC ---
-            // 1. Force a split early on the main path (Depth 0, ~Segment 40) so the user SEES it.
             const forcedSplit = (depth === 0 && i === 40);
 
-            // 2. Random splits
             if (depth < 3 && (segments - i) > 50) {
                 if (forcedSplit || (segmentsSinceBranch > 25 && Math.random() < 0.15)) {
                     
-                    // Branch Angle: 35 degrees
                     const angle = (Math.PI / 5) * (Math.random() > 0.5 ? 1 : -1);
                     const branchDir = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle).normalize();
                     
                     this.createBranch(nextPos, branchDir, segments - i, depth + 1);
                     segmentsSinceBranch = 0;
 
-                    // 3. Triple Fork Chance (20% or Forced)
                     if (forcedSplit || Math.random() < 0.2) {
-                        const angle2 = -angle * 0.8; // Opposite side
+                        const angle2 = -angle * 0.8; 
                         const branchDir2 = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle2).normalize();
                         this.createBranch(nextPos, branchDir2, segments - i, depth + 1);
                     }
@@ -110,11 +114,9 @@ export class RacePath {
 
         const curve = new THREE.CatmullRomCurve3(points);
         curve.tension = 0.5;
-        this.curves.push({ curve, depth }); // Store depth for visuals
+        this.curves.push({ curve, depth }); 
 
-        // Populate Lookup with Interpolation for Smooth Tunnels
         const length = curve.getLength();
-        // Higher resolution for better accuracy
         const divisions = Math.floor(length * 4); 
         const spacedPoints = curve.getSpacedPoints(divisions);
 
@@ -128,36 +130,24 @@ export class RacePath {
                 const prevZ = Math.round(prevPt.z);
                 const currZ = Math.round(currPt.z);
 
-                // If we cross integer Z boundaries, fill the gaps with interpolated points
                 if (prevZ !== currZ) {
                     const step = prevZ > currZ ? -1 : 1;
                     const distZ = currPt.z - prevPt.z;
                     
                     let z = prevZ + step;
-                    
-                    // Walk through every integer Z between previous and current point
                     while (z !== currZ + step) {
-                        // Calculate interpolation factor t based on Z progress
                         let t = 0;
                         if (Math.abs(distZ) > 0.0001) {
                             t = (z - prevPt.z) / distZ;
                         }
-                        
                         t = Math.max(0, Math.min(1, t));
-                        
-                        // Create a precise point for this Z plane
                         const interpPt = new THREE.Vector3().lerpVectors(prevPt, currPt, t);
-                        
-                        // Force the Z to match exactly the integer key to avoid any float drift confusion
-                        // though Chunk.js uses the lookup key for Z mostly.
                         interpPt.z = z; 
                         
                         this.addToLookup(z, interpPt);
-                        
                         z += step;
                     }
                 } else {
-                    // Same Z block, just add the point if needed (distance check in addToLookup handles density)
                     this.addToLookup(currZ, currPt);
                 }
                 prevPt = currPt;
@@ -171,10 +161,6 @@ export class RacePath {
         }
         const list = this.pathLookup.get(z);
         if (list.length > 0) {
-            // Optimization: If we already have a point very close for this Z, skip.
-            // But we must be careful not to skip branches. 
-            // Since we process branches sequentially, checking the last added point is usually safe.
-            // Reduced distance check to 1.0 to ensure precision.
             const last = list[list.length - 1];
             if (last.distanceToSquared(point) < 1.0) return; 
         }
@@ -186,7 +172,6 @@ export class RacePath {
             const curveLength = curve.getLength();
             let currentDist = 30;
             
-            // Branch Color Coding
             let ringColor = 0x00ffff; // Cyan (Main)
             if (depth === 1) ringColor = 0xc000ff; // Purple (Branch 1)
             if (depth >= 2) ringColor = 0xff8800;  // Orange (Branch 2)
@@ -222,7 +207,10 @@ export class RacePath {
 
                 if (!overlapping) {
                     const mat = this.ringMaterial.clone();
-                    mat.color.setHex(ringColor);
+                    
+                    // Logic: White hot if boost is high, otherwise depth color
+                    const finalColor = (boost > 30) ? 0xffffff : ringColor;
+                    mat.color.setHex(finalColor);
 
                     const mesh = new THREE.Mesh(this.ringGeometry, mat);
                     mesh.position.copy(pos);
@@ -230,14 +218,18 @@ export class RacePath {
                     
                     if (boost > 30) {
                         mesh.scale.set(1.2, 1.2, 1.0);
-                        mat.color.setHex(0xffffff); // White hot boost
                     } else if (boost < 15) {
                         mesh.scale.set(0.9, 0.9, 1.0);
                     }
 
                     this.scene.add(mesh);
                     this.rings.push({
-                        mesh, position: pos, radius: 5.5, active: true, boostAmount: Math.round(boost)
+                        mesh, 
+                        position: pos, 
+                        radius: 5.5, 
+                        active: true, 
+                        boostAmount: Math.round(boost),
+                        originalColor: finalColor // Store for reset
                     });
                 }
 
