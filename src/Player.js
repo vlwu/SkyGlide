@@ -98,6 +98,17 @@ export class Player {
         document.addEventListener('keyup', (e) => updateKey(e.code, false));
     }
 
+    reset() {
+        this.position.set(0, 16, 0);
+        this.velocity.set(0, 0, 0);
+        this.pitch = 0;
+        this.yaw = Math.PI;
+        this.state = 'WALKING';
+        this.camera.fov = this.baseFOV;
+        this.camera.updateProjectionMatrix();
+        this.onGround = false;
+    }
+
     update(dt) {
         this.checkGrounded();
 

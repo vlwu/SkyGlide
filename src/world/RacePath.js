@@ -6,7 +6,7 @@ export class RacePath {
         this.points = [];
         this.curve = null;
         
-    // Z-coordinate lookup table
+        // Z-coordinate lookup table
         this.pathLookup = new Map();
         
         this.segmentCount = 100;
@@ -14,16 +14,39 @@ export class RacePath {
 
         // Ring System
         this.rings = [];
-        this.activeRings = []; // For collision checks
-        this.ringGeometry = new THREE.TorusGeometry(3.5, 0.2, 8, 24);
-        this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff }); // Cyan
-        this.ringActiveColor = new THREE.Color(0x00ffff);
-        this.ringInactiveColor = new THREE.Color(0x111111);
+        this.visualItems = []; // Track visuals to dispose on reset
 
+        this.ringGeometry = new THREE.TorusGeometry(3.5, 0.2, 8, 24);
+        this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+        
         this.uniforms = {
             uTime: { value: 0 }
         };
         
+        this.generate();
+    }
+
+    clear() {
+        // Remove visuals from scene
+        this.visualItems.forEach(item => {
+            this.scene.remove(item);
+            if (item.geometry) item.geometry.dispose();
+            if (item.material) item.material.dispose();
+        });
+        this.visualItems = [];
+
+        // Remove rings
+        this.rings.forEach(ring => {
+            this.scene.remove(ring.mesh);
+        });
+        this.rings = [];
+
+        this.points = [];
+        this.pathLookup.clear();
+    }
+
+    reset() {
+        this.clear();
         this.generate();
     }
 
@@ -85,15 +108,13 @@ export class RacePath {
             });
         };
 
-        // 1. Spawn a "Starter Ring" close to the player
-        // 40 units out is reachable in ~1-2 seconds
+        // 1. Spawn a "Starter Ring" close to the player (approx 40 units)
         const starterDist = 40;
         const starterT = Math.min(starterDist / curveLength, 1.0);
         createRingAt(starterT);
 
         // 2. Spawn regular procedural rings
         const count = Math.floor(curveLength / 100);
-
         for (let i = 1; i < count; i++) {
             const t = i / count;
             // Avoid placing a random ring too close to the starter ring
@@ -105,21 +126,16 @@ export class RacePath {
     checkCollisions(player) {
         let scoreIncrease = 0;
         let boosted = false;
-
-        // Optimization: Only check rings relatively close to player Z
-        // Since the path moves -Z, we check rings with Z close to player Z
-        // For now, simple distance check on all active rings is fine for < 100 rings
         
         for (const ring of this.rings) {
             if (!ring.active) continue;
 
             const dist = player.position.distanceTo(ring.position);
             
-            // If player is close enough to the center
             if (dist < ring.radius) {
                 ring.active = false;
-                ring.mesh.material.color.setHex(0x333333); // Dim it out
-                ring.mesh.scale.setScalar(0.1); // Shrink effect
+                ring.mesh.material.color.setHex(0x333333); 
+                ring.mesh.scale.setScalar(0.1); 
                 
                 scoreIncrease++;
                 boosted = true;
@@ -144,14 +160,6 @@ export class RacePath {
         const tubeFrag = `
             uniform float uTime;
             varying vec2 vUv;
-
-            vec3 palette(float t) {
-                vec3 a = vec3(0.5, 0.5, 0.5);
-                vec3 b = vec3(0.5, 0.5, 0.5);
-                vec3 c = vec3(1.0, 1.0, 1.0);
-                vec3 d = vec3(0.263, 0.416, 0.557); 
-                return a + b * cos(6.28318 * (c * t + d));
-            }
 
             void main() {
                 float t = vUv.x * 3.0 - uTime * 0.5;
@@ -186,6 +194,7 @@ export class RacePath {
 
         const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
         this.scene.add(tubeMesh);
+        this.visualItems.push(tubeMesh);
 
 
         // --- 2. Streaming Particles ---
@@ -200,7 +209,6 @@ export class RacePath {
             const pt = curvePoints[i];
             
             const theta = Math.random() * Math.PI * 2;
-            const r = 0.5 + Math.random() * 2.0; 
 
             posArray[i*3] = pt.x + Math.cos(theta) * 0.2;
             posArray[i*3+1] = pt.y + Math.sin(theta) * 0.2;
@@ -257,6 +265,7 @@ export class RacePath {
 
         const particles = new THREE.Points(partGeo, partMat);
         this.scene.add(particles);
+        this.visualItems.push(particles);
     }
 
     getPointAtZ(z) {

@@ -63,6 +63,15 @@ let gameScore = 0;
 const uiManager = new UIManager(player);
 const fpsCounter = new FPSCounter();
 
+// Wiring up Restart Logic
+uiManager.setRestartHandler(() => {
+    gameScore = 0;
+    player.reset();
+    racePath.reset();
+    // Force immediate world update for the new position
+    worldManager.update(player.position);
+});
+
 // Pointer Lock
 document.addEventListener('pointerlockchange', () => {
     if (document.pointerLockElement === document.body) {
@@ -111,6 +120,12 @@ function animate(time) {
     if (uiManager.activeScreen === 'HUD') {
         player.update(dt);
         worldManager.update(player.position);
+
+        // Check for Game Over (Void Fall)
+        // -30 is comfortably below the lowest valley generation
+        if (player.position.y < -30) {
+            uiManager.onGameOver();
+        }
 
         // Check Ring Collisions
         const collisionResult = racePath.checkCollisions(player);
