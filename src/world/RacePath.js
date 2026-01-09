@@ -6,28 +6,28 @@ export class RacePath {
         this.points = [];
         this.curve = null;
         
-        // Z-coordinate lookup table
         this.pathLookup = new Map();
         
         this.segmentCount = 100;
         this.forwardStep = -50; 
 
-        // Ring System
         this.rings = [];
-        this.visualItems = []; // Track visuals to dispose on reset
+        this.visualItems = []; 
 
-        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 24);
+        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 12); // Reduced radialSegments from 24 to 12 (Low Poly)
         this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
         
         this.uniforms = {
             uTime: { value: 0 }
         };
         
+        // Reusable result object to prevent GC
+        this._collisionResult = { scoreIncrease: 0, boosted: false };
+        
         this.generate();
     }
 
     clear() {
-        // Remove visuals from scene
         this.visualItems.forEach(item => {
             this.scene.remove(item);
             if (item.geometry) item.geometry.dispose();
@@ -35,7 +35,6 @@ export class RacePath {
         });
         this.visualItems = [];
 
-        // Remove rings
         this.rings.forEach(ring => {
             this.scene.remove(ring.mesh);
         });
@@ -55,14 +54,9 @@ export class RacePath {
         this.points.push(currentPos.clone());
 
         for (let i = 0; i < this.segmentCount; i++) {
-            // Step Z
             const z = currentPos.z + this.forwardStep;
-            
-            // Apply random offset
             const x = currentPos.x + (Math.random() - 0.5) * 80; 
             let y = currentPos.y + (Math.random() - 0.5) * 40; 
-            
-            // Clamp height
             y = Math.max(20, Math.min(80, y));
 
             const nextPos = new THREE.Vector3(x, y, z);
@@ -73,13 +67,11 @@ export class RacePath {
         this.curve = new THREE.CatmullRomCurve3(this.points);
         this.curve.tension = 0.5;
 
-        // Generate lookup table
         const curveLength = this.curve.getLength();
         const divisions = Math.floor(curveLength);
         const spacedPoints = this.curve.getSpacedPoints(divisions);
 
         spacedPoints.forEach(point => {
-            // Map integer Z to curve point
             this.pathLookup.set(Math.round(point.z), point);
         });
 
@@ -108,46 +100,53 @@ export class RacePath {
             });
         };
 
-        // 1. Spawn a "Starter Ring" close to the player
         const starterDist = 20;
         const starterT = Math.min(starterDist / curveLength, 1.0);
         createRingAt(starterT);
 
-        // 2. Spawn regular procedural rings
         const count = Math.floor(curveLength / 70);
         for (let i = 1; i < count; i++) {
             const t = i / count;
-            // Avoid placing a random ring too close to the starter ring
             if (Math.abs(t - starterT) < 0.02) continue;
             createRingAt(t);
         }
     }
 
     checkCollisions(player) {
-        let scoreIncrease = 0;
-        let boosted = false;
+        // Reset result object
+        this._collisionResult.scoreIncrease = 0;
+        this._collisionResult.boosted = false;
         
+        // Optimization: Simple distance check
+        // For 100 rings, iterating all is fast enough, provided we don't allocate objects.
+        const pPos = player.position;
+
         for (const ring of this.rings) {
             if (!ring.active) continue;
 
-            const dist = player.position.distanceTo(ring.position);
+            // Fast check: Z distance first (most likely to fail)
+            if (Math.abs(pPos.z - ring.position.z) > 10) continue;
+
+            // Full distance check
+            const distSq = pPos.distanceToSquared(ring.position);
             
-            if (dist < ring.radius) {
+            if (distSq < ring.radius * ring.radius) {
                 ring.active = false;
                 ring.mesh.material.color.setHex(0x333333); 
                 ring.mesh.scale.setScalar(0.1); 
                 
-                scoreIncrease++;
-                boosted = true;
+                this._collisionResult.scoreIncrease++;
+                this._collisionResult.boosted = true;
             }
         }
 
-        return { scoreIncrease, boosted };
+        return this._collisionResult;
     }
 
     createVisuals() {
-        // --- 1. Glowing Tube ---
-        const tubeGeo = new THREE.TubeGeometry(this.curve, 300, 0.2, 8, false);
+        // 1. Tube
+        // Optimization: Reduced tubularSegments from 300 to 150
+        const tubeGeo = new THREE.TubeGeometry(this.curve, 150, 0.2, 6, false);
         
         const tubeVert = `
             varying vec2 vUv;
@@ -160,24 +159,16 @@ export class RacePath {
         const tubeFrag = `
             uniform float uTime;
             varying vec2 vUv;
-
             void main() {
                 float t = vUv.x * 3.0 - uTime * 0.5;
-                
+                // Simplified color mixing for performance
                 vec3 purple = vec3(0.3, 0.0, 0.6);
-                vec3 pink   = vec3(1.0, 0.2, 0.5);
-                vec3 orange = vec3(1.0, 0.6, 0.1);
                 vec3 gold   = vec3(1.0, 0.9, 0.3);
-
-                float n = sin(t) * 0.5 + 0.5;
-                float n2 = cos(t * 1.3 + uTime) * 0.5 + 0.5;
                 
-                vec3 col = mix(purple, pink, n);
-                col = mix(col, orange, n2);
-                col = mix(col, gold, pow(n * n2, 2.0)); 
+                float n = sin(t) * 0.5 + 0.5;
+                vec3 col = mix(purple, gold, n);
 
                 float alpha = 0.6 + 0.2 * sin(vUv.x * 20.0 - uTime * 2.0);
-
                 gl_FragColor = vec4(col, alpha);
             }
         `;
@@ -197,8 +188,9 @@ export class RacePath {
         this.visualItems.push(tubeMesh);
 
 
-        // --- 2. Streaming Particles ---
-        const particleCount = 4000;
+        // 2. Particles
+        // Optimization: Reduced count from 4000 to 1500 for low-end devices
+        const particleCount = 1500;
         const curvePoints = this.curve.getSpacedPoints(particleCount);
         
         const posArray = new Float32Array(particleCount * 3);
@@ -207,7 +199,6 @@ export class RacePath {
 
         for(let i=0; i<particleCount; i++) {
             const pt = curvePoints[i];
-            
             const theta = Math.random() * Math.PI * 2;
 
             posArray[i*3] = pt.x + Math.cos(theta) * 0.2;
@@ -245,12 +236,10 @@ export class RacePath {
         const partFrag = `
             varying float vAlpha;
             void main() {
-                vec2 center = gl_PointCoord - vec2(0.5);
-                float dist = length(center);
-                if (dist > 0.5) discard;
-                vec3 color = mix(vec3(1.0, 0.5, 0.0), vec3(1.0, 0.9, 0.5), vAlpha);
-                float alpha = vAlpha * (1.0 - smoothstep(0.3, 0.5, dist));
-                gl_FragColor = vec4(color, alpha);
+                // Optimization: Simple square point instead of circle distance calculation
+                if (vAlpha < 0.05) discard;
+                vec3 color = vec3(1.0, 0.7, 0.2); 
+                gl_FragColor = vec4(color, vAlpha);
             }
         `;
 
@@ -275,12 +264,13 @@ export class RacePath {
     update(dt) {
         this.uniforms.uTime.value += dt;
         
-        // Pulse active rings
+        // Optimization: Only update visible rings? 
+        // For now, standard update is fine as simple math is cheap.
         const s = 1.0 + Math.sin(this.uniforms.uTime.value * 5) * 0.05;
         for (const ring of this.rings) {
             if (ring.active) {
                 ring.mesh.scale.set(s, s, s);
-                ring.mesh.rotation.z += dt; // Rotate ring for effect
+                ring.mesh.rotation.z += dt; 
             }
         }
     }

@@ -6,9 +6,15 @@ export class PlayerCamera {
         this.world = world;
         this.baseFOV = camera.fov;
         
-        // Temp vars to avoid GC
+        // Memory Optimization: Pre-allocate all vectors used in calculations
+        // to absolutely zero out Garbage Collection (GC) during gameplay.
         this._lookDir = new THREE.Vector3();
         this._tempVec = new THREE.Vector3();
+        this._centerPos = new THREE.Vector3();
+        this._viewTarget = new THREE.Vector3();
+        this._idealPos = new THREE.Vector3();
+        this._camDir = new THREE.Vector3();
+        this._viewOffset = new THREE.Vector3(0, 0.5, 0); // Constant offset
     }
 
     reset() {
@@ -17,12 +23,12 @@ export class PlayerCamera {
     }
 
     update(dt, player) {
-        // Player center position
-        const centerPos = player.position.clone();
-        centerPos.y += player.dims.height / 2;
+        // 1. Calculate Player Center (No allocation)
+        this._centerPos.copy(player.position);
+        this._centerPos.y += player.dims.height / 2;
 
-        // Sync Mesh rotation (visuals)
-        player.mesh.position.copy(centerPos);
+        // 2. Sync Mesh visuals
+        player.mesh.position.copy(this._centerPos);
         player.mesh.rotation.order = 'YXZ';
         player.mesh.rotation.y = player.yaw;
 
@@ -32,7 +38,7 @@ export class PlayerCamera {
             player.mesh.rotation.x = 0;
         }
 
-        // --- Dynamic FOV ---
+        // 3. Dynamic FOV
         const speed = player.velocity.length();
         let desiredFOV = this.baseFOV;
         
@@ -44,41 +50,46 @@ export class PlayerCamera {
         this.camera.fov += (desiredFOV - this.camera.fov) * 5.0 * dt;
         this.camera.updateProjectionMatrix();
 
-        // Calculate look vector
+        // 4. Calculate Look Vector
         this._lookDir.set(
             Math.sin(player.yaw) * Math.cos(player.pitch),
             Math.sin(player.pitch),
             Math.cos(player.yaw) * Math.cos(player.pitch)
         ).normalize();
 
-        const viewTarget = centerPos.clone().add(new THREE.Vector3(0, 0.5, 0));
+        // 5. Calculate Camera Positions (No cloning)
+        // View Target = Center + Offset
+        this._viewTarget.copy(this._centerPos).add(this._viewOffset);
 
         const baseDist = 6.0;
         const extraDist = (this.camera.fov - this.baseFOV) * 0.05; 
         const cameraDist = baseDist + extraDist;
 
-        const idealPos = centerPos.clone()
-            .sub(this._lookDir.clone().multiplyScalar(cameraDist));
-        idealPos.y += 1.5;
+        // Ideal Pos calculation
+        this._idealPos.copy(this._centerPos).sub(this._lookDir.multiplyScalar(cameraDist));
+        this._idealPos.y += 1.5;
 
-        // Camera Collision Raycast
-        const camDir = new THREE.Vector3().subVectors(idealPos, viewTarget);
-        const maxDist = camDir.length();
-        camDir.normalize();
+        // 6. Camera Collision Raycast
+        // camDir = Ideal - Target
+        this._camDir.subVectors(this._idealPos, this._viewTarget);
+        const maxDist = this._camDir.length();
+        this._camDir.normalize();
 
         let actualDist = maxDist;
-        const step = 0.2; 
+        const step = 0.5; // Optimization: Increased step size from 0.2 to 0.5 to reduce raycast iterations
 
         for (let d = 0; d <= maxDist; d += step) {
-            this._tempVec.copy(viewTarget).addScaledVector(camDir, d);
+            this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, d);
+            // Integer check is faster than precise float check if valid
             if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
                 actualDist = Math.max(0.5, d - 0.2); 
                 break;
             }
         }
 
-        const finalPos = viewTarget.clone().addScaledVector(camDir, actualDist);
-        this.camera.position.copy(finalPos);
-        this.camera.lookAt(viewTarget);
+        // Final Position
+        this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, actualDist);
+        this.camera.position.copy(this._tempVec);
+        this.camera.lookAt(this._viewTarget);
     }
 }
