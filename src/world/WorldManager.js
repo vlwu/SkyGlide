@@ -20,14 +20,13 @@ export class WorldManager {
         this.generationQueue = [];
         this.lastUpdate = 0;
 
-        // --- WORKER SETUP ---
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
         
         this.worker.onmessage = (e) => {
-            const { key, data } = e.data;
+            const { key } = e.data;
             const chunk = this.chunks.get(key);
             if (chunk) {
-                chunk.applyTerrainData(data);
+                chunk.applyMesh(e.data);
             }
         };
     }
@@ -42,7 +41,6 @@ export class WorldManager {
         this.generationQueue = [];
     }
 
-    // New Helper for Physics
     hasChunk(cx, cz) {
         const key = `${cx},${cz}`;
         const chunk = this.chunks.get(key);
@@ -68,11 +66,27 @@ export class WorldManager {
             const chunk = new Chunk(req.x, req.z, this.scene, this.racePath, this.chunkMaterial);
             this.chunks.set(req.key, chunk);
 
+            // Prepare Path Segments for this Chunk
+            // The worker doesn't have THREE.js, so we pass simple objects
+            const pathSegments = {};
+            const startZ = req.z * this.chunkSize;
+            
+            // Collect points for the Z-range of this chunk
+            for (let z = 0; z < this.chunkSize; z++) {
+                const wz = startZ + z;
+                const points = this.racePath.getPointsAtZ(wz);
+                if (points && points.length > 0) {
+                    // Map vectors to simple objects {x,y}
+                    pathSegments[wz] = points.map(p => ({ x: p.x, y: p.y }));
+                }
+            }
+
             this.worker.postMessage({
                 x: req.x,
                 z: req.z,
                 size: this.chunkSize,
-                height: 96
+                height: 96,
+                pathSegments: pathSegments // Pass the tunnel data
             });
 
             dispatched++;
@@ -107,14 +121,9 @@ export class WorldManager {
                     const distSq = (wx - playerPos.x)**2 + (wz - playerPos.z)**2;
 
                     let score = distSq;
-
-                    // 1. Force Spawn Priority
-                    // If chunk is within ~20 units of origin, load IMMEDIATE
                     if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
                         score = -99999999;
-                    } 
-                    // 2. Frustum Priority
-                    else if (camera) {
+                    } else if (camera) {
                         const dirX = wx - playerPos.x;
                         const dirZ = wz - playerPos.z;
                         const len = Math.sqrt(distSq) || 1;
@@ -127,8 +136,6 @@ export class WorldManager {
         }
 
         for (const [key, chunk] of this.chunks) {
-            // Keep Spawn Loaded if player is relatively close (double render distance safety)
-            // But if activeKeys has it, it's within render distance anyway.
             if (!activeKeys.has(key)) {
                 chunk.dispose();
                 this.chunks.delete(key);
