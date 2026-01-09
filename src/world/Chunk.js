@@ -1,15 +1,12 @@
 import * as THREE from 'three';
-import { createNoise3D } from 'simplex-noise';
-
-const noise3D = createNoise3D();
 
 const FACES = [
-    { dir: [1, 0, 0], corners: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] }, // Right
-    { dir: [-1, 0, 0], corners: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] }, // Left
-    { dir: [0, 1, 0], corners: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] }, // Top
-    { dir: [0, -1, 0], corners: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] }, // Bottom
-    { dir: [0, 0, 1], corners: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] }, // Front
-    { dir: [0, 0, -1], corners: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] }  // Back
+    { dir: [1, 0, 0], corners: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] }, 
+    { dir: [-1, 0, 0], corners: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] }, 
+    { dir: [0, 1, 0], corners: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] }, 
+    { dir: [0, -1, 0], corners: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] }, 
+    { dir: [0, 0, 1], corners: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] }, 
+    { dir: [0, 0, -1], corners: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] }  
 ];
 
 const BLOCK = {
@@ -23,7 +20,7 @@ const BLOCK = {
     ICE: 7
 };
 
-// Reusable Scratchpad Buffers
+// Scratchpad Buffers (Global to reduce GC)
 const MAX_VERTICES = 32000; 
 const BUFFER_POS = new Float32Array(MAX_VERTICES * 3);
 const BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
@@ -41,121 +38,98 @@ export class Chunk {
         this.size = 16;
         this.height = 96;
         
-        this.data = new Uint8Array(this.size * this.height * this.size);
+        // Data is now initially null, waiting for Worker
+        this.data = null;
         this.mesh = null;
-
-        this.generate();
+        this.isLoaded = false;
     }
 
     getBlock(x, y, z) {
-        if (x < 0 || x >= this.size || y < 0 || y >= this.height || z < 0 || z >= this.size) return 0;
+        // If data isn't loaded yet, return Air (0)
+        if (!this.data || x < 0 || x >= this.size || y < 0 || y >= this.height || z < 0 || z >= this.size) return 0;
         return this.data[x + this.size * (y + this.height * z)];
     }
 
-    setBlock(x, y, z, val) {
-        this.data[x + this.size * (y + this.height * z)] = val;
+    // Called by WorldManager when the Worker finishes
+    applyTerrainData(data) {
+        this.data = data;
+        
+        // Phase 2: Carve Tunnel (Main Thread - Fast)
+        // We do this here because RacePath logic is complex to move to worker
+        this.carveTunnel();
+        
+        // Phase 3: Build Mesh (Main Thread - GPU Upload)
+        this.buildMesh();
+        this.isLoaded = true;
     }
 
-    generate() {
+    carveTunnel() {
         const startX = this.x * this.size;
         const startZ = this.z * this.size;
         
-        const scaleBase = 0.02;
-        const scaleMount = 0.04;
-        const scaleIsland = 0.04;
-        
-        for (let x = 0; x < this.size; x++) {
-            for (let z = 0; z < this.size; z++) {
+        // Pre-calculation optimization from previous step
+        for (let z = 0; z < this.size; z++) {
+            const wz = startZ + z;
+            const pathPoints = this.racePath.getPointsAtZ(wz);
+            
+            if (!pathPoints) continue;
+
+            for (let x = 0; x < this.size; x++) {
                 const wx = startX + x;
-                const wz = startZ + z;
-
-                // 1. Terrain Height Calculation
-                let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
                 
-                const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
-                if (mountain > 0) {
-                    h += mountain * 35;
-                }
-
-                const groundHeight = Math.floor(h);
-
-                // 2. Tunnel Pre-calculation (Optimization)
-                // Instead of checking 3D distance for every Y level, determine the "clearance"
-                // Y-range for this specific X,Z column.
-                const pathPoints = this.racePath.getPointsAtZ(wz);
                 let tunnelMinY = 999;
                 let tunnelMaxY = -999;
 
-                if (pathPoints) {
-                    for (const point of pathPoints) {
-                        const dx = wx - point.x;
-                        const dxSq = dx * dx;
-                        
-                        // Radius is 9.0 (distSq < 81)
-                        if (dxSq < 81) {
-                            // Calculate how much vertical space the tunnel takes at this X offset
-                            // dy^2 < 81 - dx^2
-                            const dySpan = Math.sqrt(81 - dxSq);
-                            
-                            const top = point.y + dySpan;
-                            const bottom = point.y - dySpan;
-
-                            if (bottom < tunnelMinY) tunnelMinY = bottom;
-                            if (top > tunnelMaxY) tunnelMaxY = top;
-                        }
+                for (const point of pathPoints) {
+                    const dx = wx - point.x;
+                    const dxSq = dx * dx;
+                    if (dxSq < 81) {
+                        const dySpan = Math.sqrt(81 - dxSq);
+                        const top = point.y + dySpan;
+                        const bottom = point.y - dySpan;
+                        if (bottom < tunnelMinY) tunnelMinY = bottom;
+                        if (top > tunnelMaxY) tunnelMaxY = top;
                     }
                 }
-                
-                for (let y = 0; y < this.height; y++) {
-                    let blockType = BLOCK.AIR;
 
-                    // Fast Tunnel Exclusion
-                    if (y > tunnelMinY && y < tunnelMaxY) {
-                        // This area is carved by the tunnel. Leave as AIR.
-                        // We skip all other logic for this voxel.
-                    }
-                    else if (y <= groundHeight) {
-                        blockType = BLOCK.STONE; 
-                        const depth = groundHeight - y;
-                        
-                        if (groundHeight > 58) {
-                            if (depth === 0) blockType = BLOCK.SNOW;
-                            else if (depth < 3) blockType = BLOCK.STONE;
-                        } else if (groundHeight < 22) {
-                            if (depth < 3) blockType = BLOCK.SAND;
-                        } else {
-                            if (depth === 0) blockType = BLOCK.GRASS;
-                            else if (depth < 3) blockType = BLOCK.DIRT;
-                        }
-                    }
-                    else if (y > 45 && y < 90) {
-                        const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
-                        if (islandNoise > 0.45) {
-                            if (y > 80) blockType = BLOCK.ICE;
-                            else if (y > 78) blockType = BLOCK.SNOW;
-                            else blockType = BLOCK.STONE;
-                            
-                            if (y < 70 && islandNoise < 0.5 && noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0) {
-                                blockType = BLOCK.GRASS;
-                            }
-                        }
-                    }
+                if (tunnelMaxY > tunnelMinY) {
+                    const iMin = Math.max(0, Math.floor(tunnelMinY));
+                    const iMax = Math.min(this.height, Math.ceil(tunnelMaxY));
+                    
+                    const strideY = this.size;
+                    const strideZ = this.size * this.height;
+                    const colBase = x + z * strideZ;
 
-                    if (blockType === BLOCK.AIR && wx >= -2 && wx <= 2 && wz >= -2 && wz <= 2 && y === 14) {
-                        blockType = BLOCK.SPAWN;
-                    }
-
-                    if (blockType !== BLOCK.AIR) {
-                        this.data[x + this.size * y + z * this.size * this.height] = blockType; 
+                    for (let y = iMin; y < iMax; y++) {
+                        this.data[colBase + y * strideY] = BLOCK.AIR;
                     }
                 }
             }
         }
-
-        this.buildMesh(startX, startZ);
+        
+        // Spawn Point Safety
+        if (startX >= -2 && startX <= 2 && startZ >= -2 && startZ <= 2) {
+             const idx = (startX + 2) + this.size * (14 + this.height * (startZ + 2)); 
+             // We can't easily index local coords from world coords here without modulo, 
+             // but spawn is always at 0,0, so local 0 is world 0 if chunk is 0,0.
+             // Simplified: Just forcing spawn block if in chunk 0,0
+             if (this.x === 0 && this.z === 0) {
+                 // Check local coords around center
+                 for(let lx=6; lx<=10; lx++) {
+                     for(let lz=6; lz<=10; lz++) {
+                         this.data[lx + this.size * (14 + this.height * lz)] = BLOCK.SPAWN;
+                     }
+                 }
+             }
+        }
     }
 
-    buildMesh(startX, startZ) {
+    buildMesh() {
+        if (!this.data) return;
+
+        const startX = this.x * this.size;
+        const startZ = this.z * this.size;
+        
         let vertCount = 0;
         let indexCount = 0;
 
@@ -164,6 +138,9 @@ export class Chunk {
         const height = this.height;
         const strideY = size;          
         const strideZ = size * height; 
+
+        // Optimization: Pre-calculate random seed once per column if needed, 
+        // but current implementation calculates per block. Kept for visual consistency.
 
         for (let z = 0; z < size; z++) {
             for (let y = 0; y < height; y++) {
@@ -174,6 +151,7 @@ export class Chunk {
                     const wx = startX + x;
                     const wz = startZ + z;
                     
+                    // Simple hash for color variation
                     let h = (wx * 374761393) ^ (y * 668265263) ^ (wz * 963469177);
                     h = (h ^ (h >> 13)) * 1274124933;
                     const rand = ((h >>> 0) / 4294967296); 
@@ -189,12 +167,17 @@ export class Chunk {
                         const nz = z + face.dir[2];
 
                         let neighborType = BLOCK.AIR;
+                        
+                        // Internal Neighbor Check
                         if (nx >= 0 && nx < size && ny >= 0 && ny < height && nz >= 0 && nz < size) {
                             neighborType = this.data[nx + ny * strideY + nz * strideZ];
                         }
+                        // FUTURE OPTIMIZATION: Check external chunks (Inter-chunk culling)
+                        // For now, we assume AIR at borders to ensure faces are drawn.
 
                         if (neighborType !== BLOCK.AIR) continue;
 
+                        // AO-like shading
                         let shade = 1.0;
                         if (face.dir[1] < 0) shade = 0.6;
                         else if (face.dir[1] > 0) shade = 1.1;
@@ -240,10 +223,14 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.BufferAttribute(BUFFER_COL.slice(0, vertCount * 3), 3));
         geometry.setIndex(new THREE.BufferAttribute(BUFFER_IND.slice(0, indexCount), 1));
 
+        // Create Mesh
         this.mesh = new THREE.Mesh(geometry, this.material);
         this.mesh.castShadow = true; 
         this.mesh.receiveShadow = true; 
+        
+        // Frustum Culling is crucial for performance
         this.mesh.frustumCulled = true;
+        
         this.mesh.matrixAutoUpdate = false;
         this.mesh.updateMatrix();
 
@@ -270,5 +257,6 @@ export class Chunk {
             this.mesh = null;
         }
         this.data = null;
+        this.isLoaded = false;
     }
 }
