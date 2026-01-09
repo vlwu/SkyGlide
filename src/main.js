@@ -93,8 +93,9 @@ function animate(time) {
     
     fpsCounter.update();
 
-    // Update Sky
+    // Update Sky and Path
     sky.update(dt, player.position);
+    racePath.update(dt);
 
     if (uiManager.activeScreen === 'HUD') {
         player.update(dt);
