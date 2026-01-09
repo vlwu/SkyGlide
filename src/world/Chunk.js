@@ -17,6 +17,9 @@ export class Chunk {
         // Cache center position for distance checks
         this.worldX = x * 16 + 8;
         this.worldZ = z * 16 + 8;
+
+        // Bounding box for manual culling
+        this.bbox = new THREE.Box3();
     }
 
     getBlock(x, y, z) {
@@ -39,12 +42,21 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.BufferAttribute(geoData.color, 3));
         geometry.setIndex(new THREE.BufferAttribute(geoData.index, 1));
 
+        // Compute bounding box for optimized culling
+        geometry.computeBoundingBox();
+        this.bbox.copy(geometry.boundingBox);
+        // Translate bbox to world position
+        this.bbox.translate(new THREE.Vector3(this.x * this.size, 0, this.z * this.size));
+
         this.mesh = new THREE.Mesh(geometry, this.material);
         this.mesh.position.set(this.x * this.size, 0, this.z * this.size);
         
         this.mesh.castShadow = true; 
         this.mesh.receiveShadow = true; 
-        this.mesh.frustumCulled = true;
+        
+        // We handle culling manually in WorldManager for better efficiency
+        this.mesh.frustumCulled = false;
+        
         this.mesh.matrixAutoUpdate = false;
         this.mesh.updateMatrix();
 
@@ -52,22 +64,22 @@ export class Chunk {
         this.isLoaded = true;
     }
 
-    // Optimization: Disable shadows for distant chunks
-    update(playerX, playerZ) {
+    // Optimization: Disable shadows and handle visibility
+    update(distSq) {
         if (!this.mesh) return;
 
-        const dx = this.worldX - playerX;
-        const dz = this.worldZ - playerZ;
-        const distSq = dx*dx + dz*dz;
+        // Shadow Culling: 60^2 = 3600
+        const shadowDistSq = 3600;
 
-        // 60 units * 60 units = 3600
-        // If chunk is further than 60 units, disable shadow casting
-        // This keeps the shadow map update extremely cheap
-        if (distSq > 3600) {
+        if (distSq > shadowDistSq) {
             if (this.mesh.castShadow) this.mesh.castShadow = false;
         } else {
             if (!this.mesh.castShadow) this.mesh.castShadow = true;
         }
+    }
+
+    setVisible(visible) {
+        if (this.mesh) this.mesh.visible = visible;
     }
 
     dispose() {

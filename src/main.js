@@ -65,6 +65,12 @@ const player = new Player(scene, camera, worldManager);
 
 // Game State
 let gameScore = 0;
+// Optimization: Flag to control game load state (Prevents lag in main menu)
+let isGameRunning = false; 
+
+// Start logic: Clear any initial junk, wait for user start
+racePath.clear();
+worldManager.reset();
 
 // UI Systems
 const uiManager = new UIManager(player);
@@ -72,6 +78,7 @@ const fpsCounter = new FPSCounter();
 
 // Handler for Soft (Retry) and Hard (New Path) resets
 uiManager.setRestartHandler((mode) => {
+    isGameRunning = true;
     gameScore = 0;
     player.reset();
 
@@ -89,8 +96,13 @@ uiManager.setRestartHandler((mode) => {
 });
 
 uiManager.setExitHandler(() => {
-    // Just pause logic effectively, scene persists in background
+    // Stop game logic
+    isGameRunning = false;
     player.keys.forward = false; // Kill inputs
+    
+    // Unload heavy assets to stop lag in menu
+    racePath.clear();
+    worldManager.reset();
 });
 
 // Pointer Lock
@@ -134,50 +146,56 @@ function animate(time) {
 
     fpsCounter.update();
 
-    sky.update(dt, player.position);
-    racePath.update(dt);
-
-    if (uiManager.activeScreen === 'HUD') {
-        if (player.consumeResetInput()) {
-            uiManager.onGameRestart('soft'); // 'R' key triggers quick retry
-        }
-
-        player.update(dt);
-        
-        // --- OPTIMIZATION START ---
-        // Pass camera to WorldManager for smart frustration/direction culling
-        worldManager.update(player.position, camera);
-        // --- OPTIMIZATION END ---
-
-        if (player.position.y < -30) {
-            uiManager.onGameOver();
-        }
-
-        const collisionResult = racePath.checkCollisions(player);
-        if (collisionResult.scoreIncrease > 0) {
-            gameScore += collisionResult.scoreIncrease;
-        }
-        
-        if (collisionResult.boostAmount > 0) {
-            player.applyBoost(collisionResult.boostAmount);
-        }
-
-        uiManager.hud.update(player, gameScore);
-        
-        dirLight.position.x = player.position.x + 50;
-        dirLight.position.z = player.position.z + 50;
-        dirLight.target.position.copy(player.position);
-        dirLight.target.updateMatrixWorld();
-    } else {
-        // Main Menu / Pause Camera rotation
-        const t = Date.now() * 0.0001;
-        const radius = 20;
-        camera.position.x = player.position.x + Math.sin(t) * radius;
-        camera.position.z = player.position.z + Math.cos(t) * radius;
-        camera.position.y = player.position.y + 10;
-        camera.lookAt(player.position);
-        
+    if (isGameRunning) {
+        // GAME ACTIVE LOOP
         sky.update(dt, player.position);
+        racePath.update(dt, player.position); // Pass player pos for culling
+
+        if (uiManager.activeScreen === 'HUD') {
+            if (player.consumeResetInput()) {
+                uiManager.onGameRestart('soft'); 
+            }
+
+            player.update(dt);
+            
+            // Pass camera to WorldManager for smart frustration/direction culling
+            worldManager.update(player.position, camera);
+
+            if (player.position.y < -30) {
+                uiManager.onGameOver();
+            }
+
+            const collisionResult = racePath.checkCollisions(player);
+            if (collisionResult.scoreIncrease > 0) {
+                gameScore += collisionResult.scoreIncrease;
+            }
+            
+            if (collisionResult.boostAmount > 0) {
+                player.applyBoost(collisionResult.boostAmount);
+            }
+
+            uiManager.hud.update(player, gameScore);
+            
+            dirLight.position.x = player.position.x + 50;
+            dirLight.position.z = player.position.z + 50;
+            dirLight.target.position.copy(player.position);
+            dirLight.target.updateMatrixWorld();
+        } else {
+            // PAUSE MENU (Game running but paused)
+            sky.update(dt, player.position);
+            // Don't update physics/world generation when paused to save resources
+        }
+    } else {
+        // MAIN MENU LOOP (Game unloaded)
+        // Just rotate camera for background ambiance (looking at sky)
+        const t = Date.now() * 0.0001;
+        
+        // Simulating a camera flight or rotation around the empty void
+        camera.position.set(Math.sin(t) * 50, 40, Math.cos(t) * 50);
+        camera.lookAt(0, 40, 0);
+        
+        // Ensure sky is visible
+        sky.update(dt, camera.position);
     }
 
     renderer.render(scene, camera);

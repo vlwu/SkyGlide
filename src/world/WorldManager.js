@@ -21,6 +21,12 @@ export class WorldManager {
         this.lastUpdate = 0;
         this.frameCounter = 0; // Optimization: For throttling updates
 
+        // Culling optimizations
+        this.frustum = new THREE.Frustum();
+        this.projScreenMatrix = new THREE.Matrix4();
+        // Render distance in units (chunkSize * renderDistance) + margin, squared
+        this.maxVisibleDistSq = (chunkSize * renderDistance + 32) ** 2;
+
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
         
         this.worker.onmessage = (e) => {
@@ -52,12 +58,36 @@ export class WorldManager {
         this.frameCounter++;
         const now = performance.now();
         
-        // 1. Shadow LOD Update (Throttled)
-        // Optimization: Only update shadow flags every 15 frames. 
-        // Shadow map updates are expensive, and chunks don't move.
-        if (this.frameCounter % 15 === 0) {
-            for (const chunk of this.chunks.values()) {
-                chunk.update(playerPos.x, playerPos.z);
+        // 1. Culling & Visibility Update
+        // Update frustum from camera
+        this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
+
+        for (const chunk of this.chunks.values()) {
+            if (!chunk.mesh) continue;
+
+            const dx = chunk.worldX - playerPos.x;
+            const dz = chunk.worldZ - playerPos.z;
+            const distSq = dx*dx + dz*dz;
+
+            // Distance Culling: Skip rendering if beyond max visual range
+            if (distSq > this.maxVisibleDistSq) {
+                chunk.setVisible(false);
+                continue;
+            }
+
+            // Frustum Culling: Skip if bbox is not in camera view
+            if (!this.frustum.intersectsBox(chunk.bbox)) {
+                chunk.setVisible(false);
+                continue;
+            }
+
+            // If visible
+            chunk.setVisible(true);
+
+            // Shadow LOD (Throttled)
+            if (this.frameCounter % 15 === 0) {
+                chunk.update(distSq);
             }
         }
 
@@ -115,8 +145,6 @@ export class WorldManager {
         const activeKeys = new Set();
         const newQueue = [];
         const range = this.renderDistance;
-        
-        // Pre-calculate squared ranges to avoid Math.sqrt inside loops
         const rangeSq = (range * this.chunkSize) ** 2;
 
         for (let z = -range; z <= range; z++) {
@@ -128,7 +156,7 @@ export class WorldManager {
                 activeKeys.add(key);
 
                 if (!this.chunks.has(key)) {
-                    // Optimization: Culling based on camera direction (Frustum Cullingish)
+                    // Optimization: Culling based on camera direction
                     const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
                     const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
                     
@@ -136,17 +164,14 @@ export class WorldManager {
                     const dirZ = wz - playerPos.z;
                     const distSq = dirX*dirX + dirZ*dirZ;
 
-                    // Skip if outside circular render distance (makes corners of square unavailable)
-                    // This saves ~20% of chunk generation
+                    // Skip if outside circular render distance
                     if (distSq > rangeSq * 1.2) continue;
 
                     let score = distSq;
                     
-                    // Prioritize chunks behind spawn (for initial look)
                     if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
                         score = -99999999;
                     } else if (camera) {
-                        // Prioritize chunks in front of camera
                         const len = Math.sqrt(distSq) || 1;
                         const dot = ((dirX/len) * this._cameraForward.x) + ((dirZ/len) * this._cameraForward.z);
                         score -= (dot * 50000); 

@@ -58,6 +58,8 @@ export class RacePath {
     }
 
     resetRings() {
+        if (!this.instancedMesh) return;
+
         for (let i = 0; i < this.ringData.length; i++) {
             const data = this.ringData[i];
             data.active = true;
@@ -262,6 +264,7 @@ export class RacePath {
             }
 
             this.instancedMesh.instanceMatrix.needsUpdate = true;
+            this.instancedMesh.frustumCulled = false; // Always render rings (bucket system handles logic)
             this.scene.add(this.instancedMesh);
             this.ringData = tempRings;
         }
@@ -321,6 +324,8 @@ export class RacePath {
         for (const { curve } of this.curves) {
             // Optimization: Reduce segments from 150 to 100 for tubes
             const tubeGeo = new THREE.TubeGeometry(curve, 100, 0.2, 6, false);
+            // Optimization: Compute bbox for culling
+            tubeGeo.computeBoundingBox();
             
             const tubeVert = `
                 varying vec2 vUv;
@@ -355,6 +360,7 @@ export class RacePath {
             });
 
             const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+            tubeMesh.userData.bbox = tubeGeo.boundingBox;
             this.scene.add(tubeMesh);
             this.visualItems.push(tubeMesh);
 
@@ -381,6 +387,9 @@ export class RacePath {
             partGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
             partGeo.setAttribute('aRandom', new THREE.BufferAttribute(randomArray, 3));
             partGeo.setAttribute('aPhase', new THREE.BufferAttribute(phaseArray, 1));
+            
+            partGeo.computeBoundingBox();
+
             const partMat = new THREE.ShaderMaterial({
                 uniforms: this.uniforms,
                 vertexShader: `
@@ -403,6 +412,7 @@ export class RacePath {
                 depthWrite: false
             });
             const particles = new THREE.Points(partGeo, partMat);
+            particles.userData.bbox = partGeo.boundingBox;
             this.scene.add(particles);
             this.visualItems.push(particles);
         }
@@ -412,7 +422,24 @@ export class RacePath {
         return this.pathLookup.get(Math.round(z));
     }
 
-    update(dt) {
+    update(dt, playerPos = null) {
         this.uniforms.uTime.value += dt;
+
+        // Optimization: Cull visual items (tubes/particles) based on Z distance
+        if (playerPos) {
+            this.visualItems.forEach(item => {
+                if (item.userData.bbox) {
+                    const minZ = item.userData.bbox.min.z;
+                    const maxZ = item.userData.bbox.max.z;
+                    
+                    // Simple Z-check culling (Range approx 300)
+                    if (playerPos.z > maxZ + 100 || playerPos.z < minZ - 250) {
+                        item.visible = false;
+                    } else {
+                        item.visible = true;
+                    }
+                }
+            });
+        }
     }
 }
