@@ -1,0 +1,14 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="64" height="64" fill="#1f2933"></rect>
+
+  <!-- Wing pixels -->
+  <rect x="12" y="36" width="8" height="8" fill="#3b82f6"></rect>
+  <rect x="20" y="28" width="8" height="8" fill="#60a5fa"></rect>
+  <rect x="28" y="20" width="8" height="8" fill="#93c5fd"></rect>
+  <rect x="36" y="28" width="8" height="8" fill="#60a5fa"></rect>
+  <rect x="44" y="36" width="8" height="8" fill="#3b82f6"></rect>
+
+  <!-- Center glide notch -->
+  <rect x="28" y="36" width="8" height="8" fill="#1f2933"></rect>
+</svg>
