@@ -16,10 +16,6 @@ const CHUNK_RENDER_DISTANCE = 14;
 
 // Scene setup
 const scene = new THREE.Scene();
-// No static background color - Sky shader handles it
-// scene.background = new THREE.Color(0x87CEEB); 
-
-// Fog helps blend chunks into the sky
 scene.fog = new THREE.Fog(0x87CEEB, 80, RENDER_DISTANCE_UNITS); 
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -59,6 +55,9 @@ const racePath = new RacePath(scene);
 const sky = new Sky(scene); // Initialize Sky
 const worldManager = new WorldManager(scene, racePath, 16, CHUNK_RENDER_DISTANCE);
 const player = new Player(scene, camera, worldManager);
+
+// Game State
+let gameScore = 0;
 
 // UI Systems
 const uiManager = new UIManager(player);
@@ -102,7 +101,7 @@ function animate(time) {
     }
 
     const dt = Math.min(clock.getDelta(), 0.1); 
-    
+
     fpsCounter.update();
 
     // Update Sky and Path
@@ -112,10 +111,20 @@ function animate(time) {
     if (uiManager.activeScreen === 'HUD') {
         player.update(dt);
         worldManager.update(player.position);
-        uiManager.hud.update(player);
+
+        // Check Ring Collisions
+        const collisionResult = racePath.checkCollisions(player);
+        if (collisionResult.scoreIncrease > 0) {
+            gameScore += collisionResult.scoreIncrease;
+        }
+        if (collisionResult.boosted) {
+            // Apply 40 units of boost
+            player.applyBoost(40.0);
+        }
+
+        uiManager.hud.update(player, gameScore);
         
-        // Keep light centered on player for shadows
-        // This ensures the high-res shadow map is always where the player is looking
+        // Keep light centered on player
         dirLight.position.x = player.position.x + 50;
         dirLight.position.z = player.position.z + 50;
         dirLight.target.position.copy(player.position);
@@ -129,7 +138,6 @@ function animate(time) {
         camera.position.y = player.position.y + 10;
         camera.lookAt(player.position);
         
-        // Still update sky in pause menu
         sky.update(dt, player.position);
     }
 

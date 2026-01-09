@@ -4,7 +4,13 @@ export class HUD {
         this.element = document.createElement('div');
         this.element.id = 'hud';
         
+        this.score = 0;
+
         this.element.innerHTML = `
+            <div class="hud-item hud-score">
+                <span class="label">RINGS</span>
+                <span class="value" id="hud-score">0</span>
+            </div>
             <div class="hud-item">
                 <span class="label">ALTITUDE</span>
                 <span class="value" id="hud-alt">0</span>
@@ -22,12 +28,15 @@ export class HUD {
         document.getElementById('ui-layer').appendChild(this.element);
         
         // Cache references
+        this.elScore = this.element.querySelector('#hud-score');
         this.elAlt = this.element.querySelector('#hud-alt');
         this.elSpeed = this.element.querySelector('#hud-speed');
         this.elState = this.element.querySelector('#hud-state');
     }
 
-    update(player) {
+    update(player, score) {
+        this.score = score;
+        this.elScore.textContent = this.score;
         this.elAlt.textContent = Math.round(player.position.y);
         const speed = Math.round(player.velocity.length() * 10) / 10;
         this.elSpeed.textContent = speed.toFixed(1);

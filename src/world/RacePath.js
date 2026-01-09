@@ -6,11 +6,19 @@ export class RacePath {
         this.points = [];
         this.curve = null;
         
-        // Z-coordinate lookup table
+    // Z-coordinate lookup table
         this.pathLookup = new Map();
         
         this.segmentCount = 100;
         this.forwardStep = -50; 
+
+        // Ring System
+        this.rings = [];
+        this.activeRings = []; // For collision checks
+        this.ringGeometry = new THREE.TorusGeometry(3.5, 0.2, 8, 24);
+        this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff }); // Cyan
+        this.ringActiveColor = new THREE.Color(0x00ffff);
+        this.ringInactiveColor = new THREE.Color(0x111111);
 
         this.uniforms = {
             uTime: { value: 0 }
@@ -32,7 +40,7 @@ export class RacePath {
             let y = currentPos.y + (Math.random() - 0.5) * 40; 
             
             // Clamp height
-            y = Math.max(10, Math.min(50, y));
+            y = Math.max(20, Math.min(80, y));
 
             const nextPos = new THREE.Vector3(x, y, z);
             this.points.push(nextPos);
@@ -53,6 +61,59 @@ export class RacePath {
         });
 
         this.createVisuals();
+        this.spawnRings();
+    }
+
+    spawnRings() {
+        // Place rings every ~100 units along the curve
+        const curveLength = this.curve.getLength();
+        const count = Math.floor(curveLength / 100);
+
+        for (let i = 1; i < count; i++) {
+            const t = i / count;
+            const pos = this.curve.getPointAt(t);
+            const tangent = this.curve.getTangentAt(t);
+
+            const mesh = new THREE.Mesh(this.ringGeometry, this.ringMaterial.clone());
+            mesh.position.copy(pos);
+            mesh.lookAt(pos.clone().add(tangent));
+            
+            this.scene.add(mesh);
+            
+            this.rings.push({
+                mesh: mesh,
+                position: pos,
+                radius: 3.5,
+                active: true
+            });
+        }
+    }
+
+    checkCollisions(player) {
+        let scoreIncrease = 0;
+        let boosted = false;
+
+        // Optimization: Only check rings relatively close to player Z
+        // Since the path moves -Z, we check rings with Z close to player Z
+        // For now, simple distance check on all active rings is fine for < 100 rings
+        
+        for (const ring of this.rings) {
+            if (!ring.active) continue;
+
+            const dist = player.position.distanceTo(ring.position);
+            
+            // If player is close enough to the center
+            if (dist < ring.radius) {
+                ring.active = false;
+                ring.mesh.material.color.setHex(0x333333); // Dim it out
+                ring.mesh.scale.setScalar(0.1); // Shrink effect
+                
+                scoreIncrease++;
+                boosted = true;
+            }
+        }
+
+        return { scoreIncrease, boosted };
     }
 
     createVisuals() {
@@ -71,34 +132,29 @@ export class RacePath {
             uniform float uTime;
             varying vec2 vUv;
 
-            // Cosine based palette, similar to IQ's palettes
             vec3 palette(float t) {
                 vec3 a = vec3(0.5, 0.5, 0.5);
                 vec3 b = vec3(0.5, 0.5, 0.5);
                 vec3 c = vec3(1.0, 1.0, 1.0);
-                vec3 d = vec3(0.263, 0.416, 0.557); // Colors offset
+                vec3 d = vec3(0.263, 0.416, 0.557); 
                 return a + b * cos(6.28318 * (c * t + d));
             }
 
             void main() {
-                // Animate along the path
                 float t = vUv.x * 3.0 - uTime * 0.5;
                 
-                // Sunset Gradient Colors
                 vec3 purple = vec3(0.3, 0.0, 0.6);
                 vec3 pink   = vec3(1.0, 0.2, 0.5);
                 vec3 orange = vec3(1.0, 0.6, 0.1);
                 vec3 gold   = vec3(1.0, 0.9, 0.3);
 
-                // Fluid mixing
                 float n = sin(t) * 0.5 + 0.5;
                 float n2 = cos(t * 1.3 + uTime) * 0.5 + 0.5;
                 
                 vec3 col = mix(purple, pink, n);
                 col = mix(col, orange, n2);
-                col = mix(col, gold, pow(n * n2, 2.0)); // Highlights
+                col = mix(col, gold, pow(n * n2, 2.0)); 
 
-                // Pulse alpha
                 float alpha = 0.6 + 0.2 * sin(vUv.x * 20.0 - uTime * 2.0);
 
                 gl_FragColor = vec4(col, alpha);
@@ -121,7 +177,6 @@ export class RacePath {
 
         // --- 2. Streaming Particles ---
         const particleCount = 4000;
-        // Sample points along curve
         const curvePoints = this.curve.getSpacedPoints(particleCount);
         
         const posArray = new Float32Array(particleCount * 3);
@@ -131,15 +186,13 @@ export class RacePath {
         for(let i=0; i<particleCount; i++) {
             const pt = curvePoints[i];
             
-            // Random offset from center to create volume
             const theta = Math.random() * Math.PI * 2;
-            const r = 0.5 + Math.random() * 2.0; // Spread out a bit
+            const r = 0.5 + Math.random() * 2.0; 
 
             posArray[i*3] = pt.x + Math.cos(theta) * 0.2;
             posArray[i*3+1] = pt.y + Math.sin(theta) * 0.2;
             posArray[i*3+2] = pt.z;
 
-            // Drift direction
             randomArray[i*3] = (Math.random() - 0.5) * 4.0;
             randomArray[i*3+1] = (Math.random() - 0.5) * 4.0;
             randomArray[i*3+2] = (Math.random() - 0.5) * 4.0;
@@ -159,19 +212,11 @@ export class RacePath {
             varying float vAlpha;
 
             void main() {
-                // Cycle 0..1
                 float life = mod(uTime * 0.3 + aPhase, 1.0);
-                
-                // Drift outward
                 vec3 newPos = position + aRandom * (life * 3.0);
-                
                 vec4 mvPosition = modelViewMatrix * vec4(newPos, 1.0);
                 gl_Position = projectionMatrix * mvPosition;
-
-                // Fade out at end of life
                 vAlpha = 1.0 - smoothstep(0.0, 1.0, life);
-                
-                // Size attenuation
                 gl_PointSize = (6.0 * vAlpha) * (100.0 / -mvPosition.z);
             }
         `;
@@ -179,17 +224,11 @@ export class RacePath {
         const partFrag = `
             varying float vAlpha;
             void main() {
-                // Circle shape
                 vec2 center = gl_PointCoord - vec2(0.5);
                 float dist = length(center);
                 if (dist > 0.5) discard;
-
-                // Glowing orange/gold color
                 vec3 color = mix(vec3(1.0, 0.5, 0.0), vec3(1.0, 0.9, 0.5), vAlpha);
-                
-                // Soft edge
                 float alpha = vAlpha * (1.0 - smoothstep(0.3, 0.5, dist));
-                
                 gl_FragColor = vec4(color, alpha);
             }
         `;
@@ -213,5 +252,14 @@ export class RacePath {
 
     update(dt) {
         this.uniforms.uTime.value += dt;
+        
+        // Pulse active rings
+        const s = 1.0 + Math.sin(this.uniforms.uTime.value * 5) * 0.05;
+        for (const ring of this.rings) {
+            if (ring.active) {
+                ring.mesh.scale.set(s, s, s);
+                ring.mesh.rotation.z += dt; // Rotate ring for effect
+            }
+        }
     }
 }

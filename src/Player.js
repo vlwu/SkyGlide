@@ -7,6 +7,10 @@ export class Player {
         this.camera = camera;
         this.world = world;
 
+        // Cache initial FOV to return to it
+        this.baseFOV = camera.fov;
+        this.targetFOV = this.baseFOV;
+
         this.state = 'WALKING';
 
         this.position = new THREE.Vector3(0, 16, 0); 
@@ -110,7 +114,6 @@ export class Player {
 
     updateCamera(dt) {
         // --- 1. Update Mesh Position & Rotation ---
-        // Center the mesh vertically based on physics position (feet)
         const centerPos = this.position.clone();
         centerPos.y += this.dims.height / 2;
         
@@ -121,14 +124,27 @@ export class Player {
         this.mesh.rotation.y = this.yaw;
 
         if (this.state === 'FLYING') {
-            // "Superman" pose: Rotate -90deg on X so top points forward, then add pitch
             this.mesh.rotation.x = this.pitch - (Math.PI / 2);
         } else {
-            // Upright pose
             this.mesh.rotation.x = 0;
         }
 
-        // --- 2. Update Third-Person Camera with Collision ---
+        // --- 2. Dynamic FOV & Third-Person Camera ---
+        
+        // Calculate speed for FOV warping
+        const speed = this.velocity.length();
+        let desiredFOV = this.baseFOV;
+        
+        if (this.state === 'FLYING') {
+            // Map speed 20..80 to FOV 75..110
+            const t = Math.max(0, Math.min(1, (speed - 20) / 60));
+            desiredFOV = this.baseFOV + (t * 45); 
+        }
+
+        // Smoothly interpolate FOV
+        this.camera.fov += (desiredFOV - this.camera.fov) * 5.0 * dt;
+        this.camera.updateProjectionMatrix();
+
         // Calculate look vector
         this._lookDir.set(
             Math.sin(this.yaw) * Math.cos(this.pitch),
@@ -136,12 +152,13 @@ export class Player {
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
 
-        // Target: Where the camera looks AT (Head level)
         const viewTarget = centerPos.clone().add(new THREE.Vector3(0, 0.5, 0));
 
-        // Ideal Camera Position (standard 3rd person)
-        const cameraDist = 6.0; 
-        // Ideal Pos = PlayerCenter - (LookDir * Dist) + UpOffset
+        // Pull camera back slightly more at high speeds
+        const baseDist = 6.0;
+        const extraDist = (this.camera.fov - this.baseFOV) * 0.05; 
+        const cameraDist = baseDist + extraDist;
+
         const idealPos = centerPos.clone()
             .sub(this._lookDir.clone().multiplyScalar(cameraDist));
         idealPos.y += 1.5;
@@ -152,25 +169,38 @@ export class Player {
         camDir.normalize();
 
         let actualDist = maxDist;
-        const step = 0.2; // Raymarch step resolution
+        const step = 0.2; 
 
-        // Trace line from player head to camera position
         for (let d = 0; d <= maxDist; d += step) {
             this._tempVec.copy(viewTarget).addScaledVector(camDir, d);
             
-            // If we hit a block
             if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
-                // Stop camera slightly before the wall (0.2 padding)
                 actualDist = Math.max(0.5, d - 0.2); 
                 break;
             }
         }
 
-        // Apply final position
         const finalPos = viewTarget.clone().addScaledVector(camDir, actualDist);
-
         this.camera.position.copy(finalPos);
         this.camera.lookAt(viewTarget);
+    }
+
+    applyBoost(speedIncrease) {
+        if (this.state !== 'FLYING') {
+            this.state = 'FLYING';
+            // Lift off slightly if on ground
+            this.position.y += 2.0;
+        }
+
+        // Calculate current forward direction
+        this._lookDir.set(
+            Math.sin(this.yaw) * Math.cos(this.pitch),
+            Math.sin(this.pitch),
+            Math.cos(this.yaw) * Math.cos(this.pitch)
+        ).normalize();
+
+        // Apply velocity in look direction
+        this.velocity.add(this._lookDir.multiplyScalar(speedIncrease));
     }
 
     checkGrounded() {
@@ -230,7 +260,6 @@ export class Player {
 
         if (this.jumpPressedThisFrame && !this.onGround) {
             this.state = 'FLYING';
-            // Boost initial speed if just starting to glide
             const speed = this.velocity.length();
             if (speed < 15) {
                 this._lookDir.set(
@@ -388,5 +417,8 @@ export class Player {
     crash() {
         this.state = 'FALLING';
         this.velocity.multiplyScalar(0.2);
+        // Reset FOV immediately on crash for impact
+        this.camera.fov = this.baseFOV;
+        this.camera.updateProjectionMatrix();
     }
 }
