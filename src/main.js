@@ -10,8 +10,7 @@ import { settingsManager } from './settings/SettingsManager.js';
 
 // Configuration
 const RENDER_DISTANCE_UNITS = 160;
-// Reduced chunk distance to keep draw calls and geometry generation lower
-const CHUNK_RENDER_DISTANCE = 12; 
+const CHUNK_RENDER_DISTANCE = 10; 
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -26,7 +25,12 @@ const renderer = new THREE.WebGLRenderer({
     precision: "mediump" 
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+// GPU Critical Optimization: Force 1:1 pixel ratio.
+// High-DPI screens (Retina, modern Windows laptops) default to >1.0.
+// Rendering 2x pixels quadruples the fragment shader load.
+// For a voxel game, 1.0 looks perfectly fine and saves massive FPS.
+renderer.setPixelRatio(1);
 
 // Shadow Map Optimization
 renderer.shadowMap.enabled = true; 
@@ -49,8 +53,7 @@ dirLight.shadow.camera.right = d;
 dirLight.shadow.camera.top = d;
 dirLight.shadow.camera.bottom = -d;
 
-// Optimization: Reduced Shadow Map size for low-end devices
-// 512 is sufficient for the low-poly style and saves significant VRAM/Fillrate
+// Small shadow map for performance
 dirLight.shadow.mapSize.width = 512;
 dirLight.shadow.mapSize.height = 512;
 dirLight.shadow.bias = -0.0005;
@@ -143,7 +146,6 @@ function animate(time) {
 
         uiManager.hud.update(player, gameScore);
         
-        // Keep light centered on player
         dirLight.position.x = player.position.x + 50;
         dirLight.position.z = player.position.z + 50;
         dirLight.target.position.copy(player.position);

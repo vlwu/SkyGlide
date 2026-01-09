@@ -14,7 +14,9 @@ export class WorldManager {
         this.lastChunkKey = '';
         this.lastChunk = null;
 
-        // Optimization: Use Lambert Material (Gouraud shading)
+        // Optimization: Throttling updates
+        this.lastUpdate = 0;
+
         this.chunkMaterial = new THREE.MeshLambertMaterial({ 
             vertexColors: true
         });
@@ -30,14 +32,17 @@ export class WorldManager {
     }
 
     update(playerPos) {
+        // There is no need to calculate distance squares and create arrays 60 times a second.
+        const now = performance.now();
+        if (now - this.lastUpdate < 100) return;
+        this.lastUpdate = now;
+
         const centerChunkX = Math.floor(playerPos.x / this.chunkSize);
         const centerChunkZ = Math.floor(playerPos.z / this.chunkSize);
 
         const activeKeys = new Set();
         const neededChunks = [];
 
-        // Optimization: Reduced generation width from 3 to 2
-        // This reduces active chunks from ~120 to ~80, saving draw calls and generation time
         const width = 2; 
         const backDist = Math.min(3, this.renderDistance);
 
@@ -50,14 +55,13 @@ export class WorldManager {
                 activeKeys.add(key);
 
                 if (!this.chunks.has(key)) {
-                    // Distance squared for sorting
                     const distSq = x*x + z*z;
                     neededChunks.push({ x: chunkX, z: chunkZ, key, dist: distSq });
                 }
             }
         }
 
-        // 1. Unload distant chunks
+        // 1. Unload
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 chunk.dispose();
@@ -65,11 +69,11 @@ export class WorldManager {
             }
         }
 
-        // 2. Sort needed chunks by distance (closest first)
+        // 2. Sort
         neededChunks.sort((a, b) => a.dist - b.dist);
 
-        // 3. Process generation queue
-        const GENERATION_BUDGET = 2; // Keep budget tight
+        // 3. Process
+        const GENERATION_BUDGET = 2;
         let generated = 0;
 
         for (const req of neededChunks) {
