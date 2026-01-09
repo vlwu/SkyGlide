@@ -69,6 +69,7 @@ export class Chunk {
                 const wx = startX + x;
                 const wz = startZ + z;
 
+                // 1. Terrain Height Calculation
                 let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
                 
                 const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
@@ -78,14 +79,42 @@ export class Chunk {
 
                 const groundHeight = Math.floor(h);
 
-                // Retrieve all branch points for this precise Z slice
-                // RacePath now provides interpolated points aligned to this integer Z
+                // 2. Tunnel Pre-calculation (Optimization)
+                // Instead of checking 3D distance for every Y level, determine the "clearance"
+                // Y-range for this specific X,Z column.
                 const pathPoints = this.racePath.getPointsAtZ(wz);
+                let tunnelMinY = 999;
+                let tunnelMaxY = -999;
+
+                if (pathPoints) {
+                    for (const point of pathPoints) {
+                        const dx = wx - point.x;
+                        const dxSq = dx * dx;
+                        
+                        // Radius is 9.0 (distSq < 81)
+                        if (dxSq < 81) {
+                            // Calculate how much vertical space the tunnel takes at this X offset
+                            // dy^2 < 81 - dx^2
+                            const dySpan = Math.sqrt(81 - dxSq);
+                            
+                            const top = point.y + dySpan;
+                            const bottom = point.y - dySpan;
+
+                            if (bottom < tunnelMinY) tunnelMinY = bottom;
+                            if (top > tunnelMaxY) tunnelMaxY = top;
+                        }
+                    }
+                }
                 
                 for (let y = 0; y < this.height; y++) {
                     let blockType = BLOCK.AIR;
-                    
-                    if (y <= groundHeight) {
+
+                    // Fast Tunnel Exclusion
+                    if (y > tunnelMinY && y < tunnelMaxY) {
+                        // This area is carved by the tunnel. Leave as AIR.
+                        // We skip all other logic for this voxel.
+                    }
+                    else if (y <= groundHeight) {
                         blockType = BLOCK.STONE; 
                         const depth = groundHeight - y;
                         
@@ -108,25 +137,6 @@ export class Chunk {
                             
                             if (y < 70 && islandNoise < 0.5 && noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0) {
                                 blockType = BLOCK.GRASS;
-                            }
-                        }
-                    }
-
-                    // Check collisions with ANY branch
-                    if (pathPoints && blockType !== BLOCK.AIR) {
-                        for (const point of pathPoints) {
-                            // Optimization: Check X distance first before doing full 2D distance
-                            const dx = wx - point.x;
-                            if (Math.abs(dx) > 10) continue;
-
-                            const dy = y - point.y;
-                            
-                            // 9 blocks radius = 81 squared distance
-                            // This carves the cylinder. Since points are now interpolated,
-                            // (point.x, point.y) corresponds exactly to the tunnel center at Z = wz.
-                            if (dx*dx + dy*dy < 81) {
-                                blockType = BLOCK.AIR;
-                                break; 
                             }
                         }
                     }

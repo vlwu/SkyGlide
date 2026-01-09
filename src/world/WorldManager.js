@@ -14,12 +14,15 @@ export class WorldManager {
         this.lastChunkKey = '';
         this.lastChunk = null;
 
-        // Optimization: Throttling updates
         this.lastUpdate = 0;
-
         this.chunkMaterial = new THREE.MeshLambertMaterial({ 
             vertexColors: true
         });
+
+        // Optimization: Reusable vectors for sorting math
+        this._cameraForward = new THREE.Vector3();
+        this._tempVec = new THREE.Vector3();
+        this.generationQueue = [];
     }
 
     reset() {
@@ -29,41 +32,105 @@ export class WorldManager {
         this.chunks.clear();
         this.lastChunk = null;
         this.lastChunkKey = '';
+        this.generationQueue = [];
     }
 
-    update(playerPos) {
-        // There is no need to calculate distance squares and create arrays 60 times a second.
+    update(playerPos, camera) {
         const now = performance.now();
-        if (now - this.lastUpdate < 100) return;
-        this.lastUpdate = now;
+        const TIME_BUDGET = 4.0; // Milliseconds max per frame for generation
 
+        // 1. Update the Load Queue (throttled to every 100ms)
+        // We recalculate priorities less often than we generate
+        if (now - this.lastUpdate > 100) {
+            this.lastUpdate = now;
+            this.updateQueue(playerPos, camera);
+        }
+
+        // 2. Process Queue with Time Budget
+        // Generate as many chunks as possible within the 4ms window
+        // This ensures high FPS even on lower-end devices
+        const workStart = performance.now();
+        
+        while (this.generationQueue.length > 0) {
+            // Safety break if we exceed budget
+            if (performance.now() - workStart > TIME_BUDGET) break;
+
+            const req = this.generationQueue.shift();
+            
+            // Double check if chunk is still needed (player might have moved)
+            if (!this.chunks.has(req.key)) {
+                this.createChunk(req.x, req.z, req.key);
+            }
+        }
+    }
+
+    updateQueue(playerPos, camera) {
         const centerChunkX = Math.floor(playerPos.x / this.chunkSize);
         const centerChunkZ = Math.floor(playerPos.z / this.chunkSize);
 
+        // Get camera direction for Frustum Priority
+        if (camera) {
+            camera.getWorldDirection(this._cameraForward);
+            this._cameraForward.y = 0;
+            this._cameraForward.normalize();
+        }
+
         const activeKeys = new Set();
-        const neededChunks = [];
+        const newQueue = [];
 
-        // Widen the generation area to support higher render distances
-        // Previous: width = 2 (5 chunks wide). New: width = 5 (11 chunks wide)
-        const width = 5; 
-        const backDist = Math.min(3, this.renderDistance);
-
-        for (let z = -backDist; z <= this.renderDistance; z++) {
-            for (let x = -width; x <= width; x++) {
+        // Scan area
+        // We scan a slightly wider area than render distance to buffer turns
+        const range = this.renderDistance;
+        
+        for (let z = -range; z <= range; z++) {
+            for (let x = -range; x <= range; x++) {
                 const chunkX = centerChunkX + x;
                 const chunkZ = centerChunkZ + z;
-                
                 const key = `${chunkX},${chunkZ}`;
+                
+                // Absolute World Position of chunk center
+                const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
+                const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
+
+                const distSq = (wx - playerPos.x)**2 + (wz - playerPos.z)**2;
+                const maxDistSq = (this.renderDistance * this.chunkSize) ** 2;
+
+                if (distSq > maxDistSq) continue;
+
                 activeKeys.add(key);
 
                 if (!this.chunks.has(key)) {
-                    const distSq = x*x + z*z;
-                    neededChunks.push({ x: chunkX, z: chunkZ, key, dist: distSq });
+                    // --- Priority Calculation ---
+                    // 1. Distance Score (Close = Low number = Higher Priority)
+                    let score = distSq;
+
+                    // 2. Frustum Bias
+                    // If chunk is in front of camera, reduce score (increase priority) artificially.
+                    // This ensures chunks the player is looking at load first.
+                    if (camera) {
+                        const dirX = wx - playerPos.x;
+                        const dirZ = wz - playerPos.z;
+                        
+                        // Normalized direction to chunk (approx)
+                        const len = Math.sqrt(distSq) || 1;
+                        const ndx = dirX / len;
+                        const ndz = dirZ / len;
+
+                        // Dot Product: 1.0 = Straight Ahead, -1.0 = Behind
+                        const dot = (ndx * this._cameraForward.x) + (ndz * this._cameraForward.z);
+
+                        // If ahead (dot > 0), subtract huge value to prioritize.
+                        // If behind (dot < 0), add penalty.
+                        // Weight of 50000 ensures chunks 50m ahead load before chunks 10m behind.
+                        score -= (dot * 50000);
+                    }
+
+                    newQueue.push({ x: chunkX, z: chunkZ, key, score });
                 }
             }
         }
 
-        // 1. Unload
+        // Unload old chunks
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 chunk.dispose();
@@ -71,22 +138,9 @@ export class WorldManager {
             }
         }
 
-        // 2. Sort
-        neededChunks.sort((a, b) => a.dist - b.dist);
-
-        // 3. Process
-        // Increased budget from 2 to 5 to handle the larger world volume faster
-        const GENERATION_BUDGET = 5;
-        let generated = 0;
-
-        for (const req of neededChunks) {
-            if (generated >= GENERATION_BUDGET) break;
-            
-            if (!this.chunks.has(req.key)) {
-                this.createChunk(req.x, req.z, req.key);
-                generated++;
-            }
-        }
+        // Sort queue by Score (Ascending)
+        newQueue.sort((a, b) => a.score - b.score);
+        this.generationQueue = newQueue;
     }
 
     createChunk(x, z, key) {

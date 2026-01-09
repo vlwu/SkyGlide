@@ -85,7 +85,7 @@ uiManager.setRestartHandler((mode) => {
     }
     
     // Force world update around spawn
-    worldManager.update(player.position); 
+    worldManager.update(player.position, camera); 
 });
 
 uiManager.setExitHandler(() => {
@@ -143,7 +143,11 @@ function animate(time) {
         }
 
         player.update(dt);
-        worldManager.update(player.position);
+        
+        // --- OPTIMIZATION START ---
+        // Pass camera to WorldManager for smart frustration/direction culling
+        worldManager.update(player.position, camera);
+        // --- OPTIMIZATION END ---
 
         if (player.position.y < -30) {
             uiManager.onGameOver();
