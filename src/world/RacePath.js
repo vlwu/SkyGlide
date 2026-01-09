@@ -14,7 +14,7 @@ export class RacePath {
         this.rings = [];
         this.visualItems = []; 
 
-        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 12); // Reduced radialSegments from 24 to 12 (Low Poly)
+        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 12); // Low Poly
         this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
         
         this.uniforms = {
@@ -22,7 +22,7 @@ export class RacePath {
         };
         
         // Reusable result object to prevent GC
-        this._collisionResult = { scoreIncrease: 0, boosted: false };
+        this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
         
         this.generate();
     }
@@ -82,7 +82,8 @@ export class RacePath {
     spawnRings() {
         const curveLength = this.curve.getLength();
         
-        const createRingAt = (t) => {
+        // Helper to create a ring with specific boost properties
+        const createRingAt = (t, boostAmount) => {
             const pos = this.curve.getPointAt(t);
             const tangent = this.curve.getTangentAt(t);
 
@@ -90,41 +91,68 @@ export class RacePath {
             mesh.position.copy(pos);
             mesh.lookAt(pos.clone().add(tangent));
             
+            // Visual feedback for high-boost rings
+            if (boostAmount > 30) {
+                mesh.scale.set(1.2, 1.2, 1.0);
+                mesh.material.color.setHex(0xffaa00); // Gold for super boost
+            } else if (boostAmount < 15) {
+                mesh.scale.set(0.9, 0.9, 1.0);
+            }
+
             this.scene.add(mesh);
             
             this.rings.push({
                 mesh: mesh,
                 position: pos,
                 radius: 5.5,
-                active: true
+                active: true,
+                boostAmount: boostAmount
             });
         };
 
-        const starterDist = 20;
-        const starterT = Math.min(starterDist / curveLength, 1.0);
-        createRingAt(starterT);
+        // Smart Ring Placement Algorithm
+        let currentDist = 30; // Start slightly ahead
+        
+        while (currentDist < curveLength - 30) {
+            const t = currentDist / curveLength;
+            
+            // Analyze slope (Tangent Y component)
+            // +1 is straight up, -1 is straight down, 0 is flat
+            const tangent = this.curve.getTangentAt(t);
+            const slope = tangent.y;
 
-        const count = Math.floor(curveLength / 70);
-        for (let i = 1; i < count; i++) {
-            const t = i / count;
-            if (Math.abs(t - starterT) < 0.02) continue;
-            createRingAt(t);
+            let spacing = 70;   // Default spacing
+            let boost = 20;     // Default boost
+
+            // 1. CLIMBING (Needs more rings, more speed)
+            if (slope > 0.1) {
+                const intensity = Math.min(slope / 0.6, 1.0); // Normalize 0..1
+                spacing = 70 - (intensity * 40); // Min spacing 30
+                boost = 20 + (intensity * 30);   // Max boost 50
+            } 
+            // 2. DIVING (Gravity assists, fewer rings, less boost)
+            else if (slope < -0.1) {
+                const intensity = Math.min(Math.abs(slope) / 0.6, 1.0);
+                spacing = 70 + (intensity * 60); // Max spacing 130
+                boost = 20 - (intensity * 10);   // Min boost 10
+            }
+
+            createRingAt(t, Math.round(boost));
+            currentDist += spacing;
         }
     }
 
     checkCollisions(player) {
         // Reset result object
         this._collisionResult.scoreIncrease = 0;
-        this._collisionResult.boosted = false;
+        this._collisionResult.boostAmount = 0;
         
-        // Optimization: Simple distance check
-        // For 100 rings, iterating all is fast enough, provided we don't allocate objects.
         const pPos = player.position;
 
         for (const ring of this.rings) {
             if (!ring.active) continue;
 
-            // Fast check: Z distance first (most likely to fail)
+            // Fast check: Z distance
             if (Math.abs(pPos.z - ring.position.z) > 10) continue;
 
             // Full distance check
@@ -136,7 +164,8 @@ export class RacePath {
                 ring.mesh.scale.setScalar(0.1); 
                 
                 this._collisionResult.scoreIncrease++;
-                this._collisionResult.boosted = true;
+                // Accumulate boost if hitting multiple in one frame (rare but possible)
+                this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
             }
         }
 
@@ -145,7 +174,6 @@ export class RacePath {
 
     createVisuals() {
         // 1. Tube
-        // Optimization: Reduced tubularSegments from 300 to 150
         const tubeGeo = new THREE.TubeGeometry(this.curve, 150, 0.2, 6, false);
         
         const tubeVert = `
@@ -161,7 +189,6 @@ export class RacePath {
             varying vec2 vUv;
             void main() {
                 float t = vUv.x * 3.0 - uTime * 0.5;
-                // Simplified color mixing for performance
                 vec3 purple = vec3(0.3, 0.0, 0.6);
                 vec3 gold   = vec3(1.0, 0.9, 0.3);
                 
@@ -187,9 +214,7 @@ export class RacePath {
         this.scene.add(tubeMesh);
         this.visualItems.push(tubeMesh);
 
-
         // 2. Particles
-        // Optimization: Reduced count from 4000 to 1500 for low-end devices
         const particleCount = 1500;
         const curvePoints = this.curve.getSpacedPoints(particleCount);
         
@@ -236,7 +261,6 @@ export class RacePath {
         const partFrag = `
             varying float vAlpha;
             void main() {
-                // Optimization: Simple square point instead of circle distance calculation
                 if (vAlpha < 0.05) discard;
                 vec3 color = vec3(1.0, 0.7, 0.2); 
                 gl_FragColor = vec4(color, vAlpha);
@@ -264,12 +288,12 @@ export class RacePath {
     update(dt) {
         this.uniforms.uTime.value += dt;
         
-        // Optimization: Only update visible rings? 
-        // For now, standard update is fine as simple math is cheap.
         const s = 1.0 + Math.sin(this.uniforms.uTime.value * 5) * 0.05;
         for (const ring of this.rings) {
             if (ring.active) {
-                ring.mesh.scale.set(s, s, s);
+                // Pulse size based on boost power (subtle hint)
+                const boostScale = 1.0 + (ring.boostAmount - 20) * 0.01;
+                ring.mesh.scale.set(s * boostScale, s * boostScale, s);
                 ring.mesh.rotation.z += dt; 
             }
         }

@@ -34,9 +34,6 @@ export class Player {
         this.groundBlock = 0; 
         
         // --- Visual Representation ---
-        // Optimization: Switched from CapsuleGeometry (high poly) to Cylinder (lower poly)
-        // Optimization: Switched from MeshPhysicalMaterial (Transmission/Glass = 2 render passes)
-        // to MeshPhongMaterial (Simple lighting = 1 render pass). This is a massive GPU win.
         const geometry = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8);
         const material = new THREE.MeshPhongMaterial({
             color: 0x00d2ff,        
@@ -125,7 +122,8 @@ export class Player {
     applyBoost(speedIncrease) {
         if (this.state !== 'FLYING') {
             this.state = 'FLYING';
-            this.position.y += 2.0;
+            // Lift slightly more if it's a massive boost to clear terrain
+            this.position.y += speedIncrease > 30 ? 3.0 : 2.0;
         }
 
         const lookDir = new THREE.Vector3(
@@ -134,6 +132,7 @@ export class Player {
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
 
+        // Direct velocity addition provides the most satisfying "kick"
         this.velocity.add(lookDir.multiplyScalar(speedIncrease));
     }
 }

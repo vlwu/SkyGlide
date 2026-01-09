@@ -23,13 +23,9 @@ const renderer = new THREE.WebGLRenderer({
     antialias: true,
     powerPreference: "high-performance",
     precision: "mediump",
-    // Optimization: Disable stencil buffer. We rely on depth buffer for shadows.
-    // This reduces memory bandwidth usage.
     stencil: false 
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-
-// GPU Critical Optimization: Force 1:1 pixel ratio.
 renderer.setPixelRatio(1);
 
 // Shadow Map Optimization
@@ -136,13 +132,17 @@ function animate(time) {
             uiManager.onGameOver();
         }
 
+        // --- COLLISION LOGIC UPDATED ---
         const collisionResult = racePath.checkCollisions(player);
         if (collisionResult.scoreIncrease > 0) {
             gameScore += collisionResult.scoreIncrease;
         }
-        if (collisionResult.boosted) {
-            player.applyBoost(20.0);
+        
+        // Use the variable boost amount from the smart generator
+        if (collisionResult.boostAmount > 0) {
+            player.applyBoost(collisionResult.boostAmount);
         }
+        // --------------------------------
 
         uiManager.hud.update(player, gameScore);
         
