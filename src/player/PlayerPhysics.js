@@ -1,0 +1,279 @@
+import * as THREE from 'three';
+
+const BLOCK = {
+    AIR: 0,
+    GRASS: 1,
+    STONE: 2,
+    SPAWN: 3,
+    DIRT: 4,
+    SNOW: 5,
+    SAND: 6,
+    ICE: 7
+};
+
+export class PlayerPhysics {
+    constructor(world) {
+        this.world = world;
+        
+        // Reusable vectors to prevent GC
+        this._forward = new THREE.Vector3();
+        this._right = new THREE.Vector3();
+        this._inputDir = new THREE.Vector3();
+        this._lookDir = new THREE.Vector3();
+        this._nextPos = new THREE.Vector3();
+        this._tempVec = new THREE.Vector3();
+        
+        // Collision offsets (radius 0.4)
+        this._checkOffsets = [
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0.4, 0, 0), 
+            new THREE.Vector3(-0.4, 0, 0),
+            new THREE.Vector3(0, 0, 0.4), 
+            new THREE.Vector3(0, 0, -0.4)
+        ];
+    }
+
+    update(dt, player) {
+        this.checkGrounded(player);
+
+        switch(player.state) {
+            case 'WALKING': this.handleWalking(dt, player); break;
+            case 'FALLING': this.handleFalling(dt, player); break;
+            case 'FLYING': this.handleFlying(dt, player); break;
+        }
+
+        this.resolvePhysics(dt, player);
+    }
+
+    checkGrounded(player) {
+        const feetY = player.position.y - 0.05;
+        this._tempVec.set(player.position.x, feetY, player.position.z);
+        
+        const blockBelow = this.getWorldBlock(this._tempVec);
+        
+        if (player.velocity.y <= 0 && blockBelow !== BLOCK.AIR) {
+            player.onGround = true;
+            player.groundBlock = blockBelow;
+            if (player.state === 'FALLING') player.state = 'WALKING';
+        } else {
+            player.onGround = false;
+            player.groundBlock = BLOCK.AIR;
+        }
+    }
+
+    getWorldBlock(pos) {
+        for (let off of this._checkOffsets) {
+            const val = this.world.getBlock(pos.x + off.x, pos.y + off.y, pos.z + off.z);
+            if (val) return val;
+        }
+        return 0;
+    }
+
+    handleWalking(dt, player) {
+        let friction = 10.0;
+        let moveSpeed = 10.0;
+
+        if (player.groundBlock === BLOCK.ICE) {
+            friction = 0.5;
+            moveSpeed = 15.0;
+        } else if (player.groundBlock === BLOCK.SAND) {
+            friction = 15.0;
+            moveSpeed = 7.0;
+        } else if (player.groundBlock === BLOCK.SNOW) {
+            friction = 8.0;
+            moveSpeed = 9.0;
+        }
+
+        const jumpForce = 11;
+        const gravity = 25;
+
+        // Friction
+        player.velocity.x -= player.velocity.x * friction * dt;
+        player.velocity.z -= player.velocity.z * friction * dt;
+
+        // Input Direction
+        this._forward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw)).normalize();
+        this._right.set(Math.sin(player.yaw - Math.PI/2), 0, Math.cos(player.yaw - Math.PI/2)).normalize();
+        
+        this._inputDir.set(0,0,0);
+        if (player.keys.forward) this._inputDir.add(this._forward);
+        if (player.keys.backward) this._inputDir.sub(this._forward);
+        if (player.keys.right) this._inputDir.add(this._right);
+        if (player.keys.left) this._inputDir.sub(this._right);
+
+        if (this._inputDir.lengthSq() > 0) this._inputDir.normalize();
+
+        // Acceleration
+        player.velocity.add(this._inputDir.multiplyScalar(moveSpeed * friction * dt));
+
+        if (player.onGround) {
+            player.velocity.y = 0;
+            if (player.jumpPressedThisFrame) {
+                player.velocity.y = jumpForce;
+                player.onGround = false;
+                player.position.y += 0.1; 
+                player.state = 'FALLING'; 
+            }
+        } else {
+            player.velocity.y -= gravity * dt;
+            if (player.velocity.y < -1.0) player.state = 'FALLING';
+        }
+    }
+
+    handleFalling(dt, player) {
+        const gravity = 25;
+        player.velocity.y -= gravity * dt;
+
+        const airSpeed = 5;
+        this._forward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw)).normalize();
+        if (player.keys.forward) player.velocity.add(this._forward.multiplyScalar(airSpeed * dt));
+
+        if (player.jumpPressedThisFrame && !player.onGround) {
+            player.state = 'FLYING';
+            const speed = player.velocity.length();
+            if (speed < 15) {
+                this._lookDir.set(
+                    Math.sin(player.yaw) * Math.cos(player.pitch),
+                    Math.sin(player.pitch),
+                    Math.cos(player.yaw) * Math.cos(player.pitch)
+                );
+                player.velocity.add(this._lookDir.multiplyScalar(15 - speed));
+            }
+        }
+    }
+
+    handleFlying(dt, player) {
+        const stepSize = 0.05;
+        let remaining = dt;
+        
+        while (remaining > 0) {
+            const currentDt = Math.min(remaining, stepSize);
+            this.simulateElytraPhysics(currentDt, player);
+            remaining -= currentDt;
+        }
+
+        if (player.velocity.length() < 1.0) {
+            player.state = 'FALLING';
+        }
+    }
+
+    simulateElytraPhysics(dt, player) {
+        this._lookDir.set(
+            Math.sin(player.yaw) * Math.cos(player.pitch),
+            Math.sin(player.pitch),
+            Math.cos(player.yaw) * Math.cos(player.pitch)
+        ).normalize();
+        
+        const look = this._lookDir;
+        const hlook = Math.sqrt(look.x * look.x + look.z * look.z); 
+        const sqrpitchcos = hlook * hlook;
+
+        const GRAVITY = 32.0;
+        const LIFT_COEFF = 24.0; 
+        const DIVE_ACCEL = 2.0; 
+        const CLIMB_BOOST = 0.8;
+        const STEER_SPEED = 2.0;
+
+        const lift = sqrpitchcos * LIFT_COEFF;
+        player.velocity.y += (-GRAVITY + lift) * dt;
+
+        const ticks = dt * 20;
+        const dragXZ = Math.pow(0.99, ticks);
+        const dragY = Math.pow(0.98, ticks);
+
+        player.velocity.x *= dragXZ;
+        player.velocity.y *= dragY;
+        player.velocity.z *= dragXZ;
+
+        if (player.velocity.y < 0 && hlook > 0) {
+            const diveForce = player.velocity.y * -DIVE_ACCEL * sqrpitchcos * dt;
+            player.velocity.y += diveForce;
+            player.velocity.x += (look.x / hlook) * diveForce;
+            player.velocity.z += (look.z / hlook) * diveForce;
+        }
+
+        if (player.pitch > 0) {
+            const hvel = Math.sqrt(player.velocity.x**2 + player.velocity.z**2);
+            const climbForce = hvel * Math.sin(player.pitch) * CLIMB_BOOST * dt;
+            
+            player.velocity.y += climbForce * 3.5;
+            player.velocity.x -= (look.x / hlook) * climbForce;
+            player.velocity.z -= (look.z / hlook) * climbForce;
+        }
+
+        if (hlook > 0) {
+            const hvel = Math.sqrt(player.velocity.x**2 + player.velocity.z**2);
+            const targetX = (look.x / hlook) * hvel;
+            const targetZ = (look.z / hlook) * hvel;
+
+            player.velocity.x += (targetX - player.velocity.x) * STEER_SPEED * dt;
+            player.velocity.z += (targetZ - player.velocity.z) * STEER_SPEED * dt;
+        }
+    }
+
+    resolvePhysics(dt, player) {
+        this._nextPos.copy(player.position);
+        this._nextPos.x += player.velocity.x * dt;
+        if (this.checkCollisionBody(this._nextPos, player)) {
+            player.velocity.x = 0;
+            if (player.state === 'FLYING') this.crash(player);
+        } else {
+            player.position.x = this._nextPos.x;
+        }
+
+        this._nextPos.copy(player.position);
+        this._nextPos.z += player.velocity.z * dt;
+        if (this.checkCollisionBody(this._nextPos, player)) {
+            player.velocity.z = 0;
+            if (player.state === 'FLYING') this.crash(player);
+        } else {
+            player.position.z = this._nextPos.z;
+        }
+
+        this._nextPos.copy(player.position);
+        this._nextPos.y += player.velocity.y * dt;
+        
+        if (Math.abs(player.velocity.y) > 0.001) {
+            if (this.checkCollisionBody(this._nextPos, player)) {
+                if (player.velocity.y < 0) {
+                    player.position.y = Math.floor(this._nextPos.y + 0.1) + 1; 
+                    player.velocity.y = 0;
+                    player.onGround = true; 
+                    if(player.state === 'FLYING' || player.state === 'FALLING') player.state = 'WALKING';
+                } else {
+                    player.position.y = Math.floor(this._nextPos.y) - 0.2; 
+                    player.velocity.y = 0;
+                }
+            } else {
+                player.position.y = this._nextPos.y;
+            }
+        }
+    }
+
+    checkCollisionBody(pos, player) {
+        this._tempVec.copy(pos).setY(pos.y + 0.1);
+        if(this.checkPoint(this._tempVec)) return true;
+        this._tempVec.copy(pos).setY(pos.y + player.dims.height * 0.5);
+        if(this.checkPoint(this._tempVec)) return true;
+        this._tempVec.copy(pos).setY(pos.y + player.dims.height - 0.1);
+        if(this.checkPoint(this._tempVec)) return true;
+        return false;
+    }
+
+    checkPoint(p) {
+        for (let off of this._checkOffsets) {
+            const cx = p.x + off.x;
+            const cy = p.y + off.y;
+            const cz = p.z + off.z;
+            if (this.world.getBlock(cx, cy, cz)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    crash(player) {
+        player.state = 'FALLING';
+        player.velocity.multiplyScalar(0.2);
+    }
+}
