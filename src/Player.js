@@ -15,9 +15,8 @@ export class Player {
         this.pitch = 0; 
         this.yaw = Math.PI; 
         
-        this.currentEyeHeight = 1.6;
-        this.targetEyeHeight = 1.6;
-
+        // Removed eyeHeight logic as it's now handled by the 3rd person camera offset
+        
         this.keys = {
             forward: false, backward: false,
             left: false, right: false,
@@ -25,10 +24,10 @@ export class Player {
         };
         this.jumpPressedThisFrame = false; 
 
-        this.dims = { height: 1.8, radius: 0.3 };
+        this.dims = { height: 1.8, radius: 0.4 }; // Slightly wider radius for visual clarity
         this.onGround = false;
         
-        // REUSABLE VECTORS FOR PHYSICS (GC Optimization)
+        // REUSABLE VECTORS
         this._lookDir = new THREE.Vector3();
         this._inputDir = new THREE.Vector3();
         this._forward = new THREE.Vector3();
@@ -43,6 +42,25 @@ export class Player {
             new THREE.Vector3(0, 0, -this.dims.radius)
         ];
 
+        // --- Visual Representation (Translucent Blob) ---
+        // Capsule: Radius 0.4, Length 1.0 (Total Height ~1.8)
+        const geometry = new THREE.CapsuleGeometry(0.4, 1.0, 4, 8);
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0x88ccff,        // Cyan/Blueish tint
+            metalness: 0.0,
+            roughness: 0.15,        // Low roughness for "frosted glass" blur
+            transmission: 1.0,      // Full transmission for transparency
+            thickness: 1.2,         // Refraction volume
+            ior: 1.5,               // Index of Refraction (Glass-like)
+            opacity: 1.0,
+            transparent: false      // False enables the transmission pass properly
+        });
+        
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.castShadow = true;
+        this.mesh.receiveShadow = true;
+        this.scene.add(this.mesh);
+
         this.initInput();
     }
 
@@ -50,8 +68,6 @@ export class Player {
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement !== document.body) return;
 
-            // Fix for camera jumping: Ignore anomalously large movements
-            // These often occur during lag spikes or pointer lock re-centering bugs
             if (Math.abs(e.movementX) > 500 || Math.abs(e.movementY) > 500) return;
 
             const baseSensitivity = 0.002;
@@ -96,27 +112,49 @@ export class Player {
     }
 
     updateCamera(dt) {
-        if (this.state === 'WALKING' || this.state === 'FALLING') {
-            this.targetEyeHeight = 1.6;
-        } else if (this.state === 'FLYING') {
-            this.targetEyeHeight = 0.4;
+        // --- 1. Update Mesh Position & Rotation ---
+        // Center the mesh vertically based on physics position (feet)
+        const centerPos = this.position.clone();
+        centerPos.y += this.dims.height / 2;
+        
+        this.mesh.position.copy(centerPos);
+
+        // Rotate Mesh
+        this.mesh.rotation.order = 'YXZ';
+        this.mesh.rotation.y = this.yaw;
+
+        if (this.state === 'FLYING') {
+            // "Superman" pose: Rotate -90deg on X so top points forward, then add pitch
+            this.mesh.rotation.x = this.pitch - (Math.PI / 2);
+        } else {
+            // Upright pose
+            this.mesh.rotation.x = 0;
         }
 
-        // Smooth eye height transition
-        const lerpSpeed = 5.0;
-        this.currentEyeHeight += (this.targetEyeHeight - this.currentEyeHeight) * lerpSpeed * dt;
-
-        this.camera.position.copy(this.position);
-        this.camera.position.y += this.currentEyeHeight;
-
+        // --- 2. Update Third-Person Camera ---
+        // Calculate look vector
         this._lookDir.set(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
-        );
+        ).normalize();
+
+        const cameraDist = 6.0; // Distance behind player
         
-        const target = this.camera.position.clone().add(this._lookDir);
-        this.camera.lookAt(target);
+        // Calculate Camera Position
+        // Pos = PlayerCenter - (LookDir * Dist) + UpOffset
+        const cameraPos = centerPos.clone()
+            .sub(this._lookDir.clone().multiplyScalar(cameraDist));
+        
+        // Lift camera slightly above the player's center for a better view
+        cameraPos.y += 1.5;
+
+        // Apply to camera
+        this.camera.position.copy(cameraPos);
+        
+        // Look slightly above the player center to keep them in the lower third
+        const lookTarget = centerPos.clone().add(new THREE.Vector3(0, 0.5, 0));
+        this.camera.lookAt(lookTarget);
     }
 
     checkGrounded() {
@@ -190,8 +228,6 @@ export class Player {
     }
 
     handleFlying(dt) {
-        // Break long frames into smaller physics steps for stability
-        // Minecraft runs at 20 ticks/sec (0.05s per tick)
         const stepSize = 0.05;
         let remaining = dt;
         
@@ -201,14 +237,12 @@ export class Player {
             remaining -= currentDt;
         }
 
-        // If speed drops too low, stall
         if (this.velocity.length() < 1.0) {
             this.state = 'FALLING';
         }
     }
 
     simulateElytraPhysics(dt) {
-        // Calculate Look Vector
         this._lookDir.set(
             Math.sin(this.yaw) * Math.cos(this.pitch),
             Math.sin(this.pitch),
@@ -219,8 +253,6 @@ export class Player {
         const hlook = Math.sqrt(look.x * look.x + look.z * look.z); // ~ cos(pitch)
         const sqrpitchcos = hlook * hlook;
 
-        // Constants derived from Minecraft source logic scaled to SI units (approximate)
-        // MC Gravity ~ 0.08 blocks/tick^2 -> ~ 32 m/s^2
         const GRAVITY = 32.0;
         const LIFT_COEFF = 24.0; 
         const DIVE_ACCEL = 2.0; 
@@ -228,13 +260,10 @@ export class Player {
         const STEER_SPEED = 2.0;
 
         // 1. Gravity and Lift
-        // velY += -0.08 + sqrpitchcos * 0.06 (MC)
         const lift = sqrpitchcos * LIFT_COEFF;
         this.velocity.y += (-GRAVITY + lift) * dt;
 
-        // 2. Drag (Air Resistance)
-        // MC: 0.99 (xz) and 0.98 (y) per tick
-        // To make this framerate independent: Math.pow(rate, dt * 20)
+        // 2. Drag
         const ticks = dt * 20;
         const dragXZ = Math.pow(0.99, ticks);
         const dragY = Math.pow(0.98, ticks);
@@ -243,8 +272,7 @@ export class Player {
         this.velocity.y *= dragY;
         this.velocity.z *= dragXZ;
 
-        // 3. Dive Acceleration (Converting potential energy to kinetic)
-        // if (velY < 0 && hlook > 0)
+        // 3. Dive Acceleration
         if (this.velocity.y < 0 && hlook > 0) {
             const diveForce = this.velocity.y * -DIVE_ACCEL * sqrpitchcos * dt;
             this.velocity.y += diveForce;
@@ -252,20 +280,17 @@ export class Player {
             this.velocity.z += (look.z / hlook) * diveForce;
         }
 
-        // 4. Climb Boost (Converting kinetic energy to potential)
-        // MC: if (pitch < 0) -> Looking Up
-        // My pitch > 0 is Looking Up.
+        // 4. Climb Boost
         if (this.pitch > 0) {
             const hvel = Math.sqrt(this.velocity.x**2 + this.velocity.z**2);
-            // Factor: hvel * sin(pitch) * 0.04 (MC)
             const climbForce = hvel * Math.sin(this.pitch) * CLIMB_BOOST * dt;
             
-            this.velocity.y += climbForce * 3.5; // Climb is easier than dive
+            this.velocity.y += climbForce * 3.5;
             this.velocity.x -= (look.x / hlook) * climbForce;
             this.velocity.z -= (look.z / hlook) * climbForce;
         }
 
-        // 5. Steering (Redirecting velocity to look direction)
+        // 5. Steering
         if (hlook > 0) {
             const hvel = Math.sqrt(this.velocity.x**2 + this.velocity.z**2);
             const targetX = (look.x / hlook) * hvel;
