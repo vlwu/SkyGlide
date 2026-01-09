@@ -14,8 +14,8 @@ const CHUNK_RENDER_DISTANCE = 14;
 
 // Scene setup
 const scene = new THREE.Scene();
-// Reduce fog slightly to hide chunk loading edge better
-scene.fog = new THREE.Fog(0x87CEEB, 60, RENDER_DISTANCE_UNITS - 20); 
+// Fog matched to Sky bottomColor for seamless horizon
+scene.fog = new THREE.Fog(0xA0D0E0, 60, RENDER_DISTANCE_UNITS - 20); 
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
@@ -36,22 +36,21 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 document.body.appendChild(renderer.domElement);
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.65); // Slightly brighter for new palette
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
 dirLight.position.set(50, 100, 50);
 dirLight.castShadow = true;
 
 // Tight Shadow Frustum
-const d = 50; // Reduced from 60
+const d = 50; 
 dirLight.shadow.camera.left = -d;
 dirLight.shadow.camera.right = d;
 dirLight.shadow.camera.top = d;
 dirLight.shadow.camera.bottom = -d;
 
 // Optimized Shadow Map Size
-// 1024 is sufficient for this art style and much faster than 2048
 dirLight.shadow.mapSize.width = 1024;
 dirLight.shadow.mapSize.height = 1024;
 dirLight.shadow.bias = -0.0005;

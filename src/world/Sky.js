@@ -25,12 +25,10 @@ export class Sky {
             varying vec2 vUv;
             varying vec3 vWorldPosition;
 
-            // Simple pseudo-random hash
             float hash(vec2 p) {
                 return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
             }
 
-            // 2D Value Noise for clouds
             float noise(vec2 p) {
                 vec2 i = floor(p);
                 vec2 f = fract(p);
@@ -45,37 +43,32 @@ export class Sky {
             void main() {
                 // 1. Sky Gradient (Vertical)
                 float h = normalize(vWorldPosition).y;
-                vec3 skyColor = mix(bottomColor, topColor, max(h, 0.0));
+                // Smooth blend between horizon and zenith
+                vec3 skyColor = mix(bottomColor, topColor, pow(max(h, 0.0), 0.8));
 
                 // 2. Cloud Layer
-                // Project UVs onto a virtual plane for the top of the box
-                // This prevents clouds from stretching on the sides
-                vec2 cloudUV = vWorldPosition.xz / (vWorldPosition.y + 0.5); // Perspective trick
-                
-                // Animate
+                vec2 cloudUV = vWorldPosition.xz / (vWorldPosition.y + 0.5); 
                 cloudUV += time * 0.02;
 
-                // Pixelate the noise (The "Minecraft" look)
                 float scale = 0.5;
                 vec2 pixelUV = floor(cloudUV * scale) / scale;
                 
                 float n = noise(pixelUV * 3.0);
                 
-                // Cloud Threshold
-                float cloudMask = step(0.65, n); // Sharp edges
-                
-                // Fade clouds near horizon
+                float cloudMask = step(0.65, n); 
                 cloudMask *= smoothstep(0.1, 0.4, h);
 
-                vec3 finalColor = mix(skyColor, vec3(1.0), cloudMask * 0.8);
+                // Clouds are slightly off-white to blend
+                vec3 cloudColor = vec3(0.95, 0.98, 1.0);
+                vec3 finalColor = mix(skyColor, cloudColor, cloudMask * 0.8);
 
                 gl_FragColor = vec4(finalColor, 1.0);
             }
         `;
 
         const uniforms = {
-            topColor: { value: new THREE.Color(0x0077ff) },
-            bottomColor: { value: new THREE.Color(0x87CEEB) },
+            topColor: { value: new THREE.Color(0x4A6FA5) }, // Deeper soft blue
+            bottomColor: { value: new THREE.Color(0xA0D0E0) }, // Hazy light blue horizon
             time: { value: 0 }
         };
 
@@ -84,7 +77,7 @@ export class Sky {
             uniforms: uniforms,
             vertexShader: vertexShader,
             fragmentShader: fragmentShader,
-            side: THREE.BackSide // Render on the inside of the box
+            side: THREE.BackSide
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
@@ -94,7 +87,6 @@ export class Sky {
 
     update(dt, playerPos) {
         this.uniforms.time.value += dt;
-        // Keep the skybox centered on the player
         this.mesh.position.copy(playerPos);
     }
 }
