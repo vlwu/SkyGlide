@@ -78,19 +78,10 @@ export class Chunk {
 
                 const groundHeight = Math.floor(h);
 
-                const pathPos = this.racePath.getPointAtZ(wz);
-                let pathY = -999;
-                let isNearPath = false;
+                // --- BRANCHING PATH LOGIC ---
+                // We now retrieve an ARRAY of points (or undefined)
+                const pathPoints = this.racePath.getPointsAtZ(wz);
                 
-                if (pathPos) {
-                    const dx = wx - pathPos.x;
-                    // Pre-check X distance to avoid expensive math for far blocks
-                    if (Math.abs(dx) < 15) {
-                        isNearPath = true;
-                        pathY = pathPos.y;
-                    }
-                }
-
                 for (let y = 0; y < this.height; y++) {
                     let blockType = BLOCK.AIR;
                     
@@ -121,13 +112,20 @@ export class Chunk {
                         }
                     }
 
-                    if (isNearPath && blockType !== BLOCK.AIR) {
-                        const dy = y - pathY;
-                        const dx = wx - pathPos.x;
-                        // Optimization: Expanded clearance radius slightly (64 -> 72)
-                        // This helps clear corners when path is diagonal/steep
-                        if (dx*dx + dy*dy < 72) {
-                            blockType = BLOCK.AIR;
+                    // Check collisions with ANY branch
+                    if (pathPoints && blockType !== BLOCK.AIR) {
+                        for (const point of pathPoints) {
+                            // Quick AABB check
+                            if (Math.abs(wx - point.x) > 15) continue;
+
+                            const dy = y - point.y;
+                            const dx = wx - point.x;
+                            
+                            // Clearance Radius 72 (approx 8.5 blocks radius)
+                            if (dx*dx + dy*dy < 72) {
+                                blockType = BLOCK.AIR;
+                                break; // Optimized: Cleared by one branch, no need to check others
+                            }
                         }
                     }
 

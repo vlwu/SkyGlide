@@ -3,25 +3,23 @@ import * as THREE from 'three';
 export class RacePath {
     constructor(scene) {
         this.scene = scene;
-        this.points = [];
-        this.curve = null;
         
+        // Lookup now stores arrays of points: Map<int, Vector3[]>
         this.pathLookup = new Map();
         
-        this.segmentCount = 100;
-        this.forwardStep = -50; 
-
+        // Track all created curves for visuals
+        this.curves = [];
+        
         this.rings = [];
         this.visualItems = []; 
 
-        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 12); // Low Poly
+        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 12); 
         this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
         
         this.uniforms = {
             uTime: { value: 0 }
         };
         
-        // Reusable result object to prevent GC
         this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
         
         this.generate();
@@ -40,7 +38,7 @@ export class RacePath {
         });
         this.rings = [];
 
-        this.points = [];
+        this.curves = [];
         this.pathLookup.clear();
     }
 
@@ -50,117 +48,165 @@ export class RacePath {
     }
 
     generate() {
-        let currentPos = new THREE.Vector3(0, 15, 0);
-        this.points.push(currentPos.clone());
-
-        for (let i = 0; i < this.segmentCount; i++) {
-            const z = currentPos.z + this.forwardStep;
-            const x = currentPos.x + (Math.random() - 0.5) * 80; 
-            let y = currentPos.y + (Math.random() - 0.5) * 40; 
-            y = Math.max(20, Math.min(80, y));
-
-            const nextPos = new THREE.Vector3(x, y, z);
-            this.points.push(nextPos);
-            currentPos = nextPos;
-        }
-
-        this.curve = new THREE.CatmullRomCurve3(this.points);
-        this.curve.tension = 0.5;
-
-        // --- BUG FIX: WALL GENERATION ---
-        // Previously, we just mapped spaced points to integers.
-        // If the curve stepped from Z=10.4 to Z=11.6, the integer 11 was skipped.
-        // Chunk generation would see "undefined" for Z=11 and build a wall.
-        // The fix is to walk the curve and fill EVERY integer Z.
-
-        const curveLength = this.curve.getLength();
-        // Higher resolution for the walk
-        const divisions = Math.floor(curveLength * 2); 
-        const spacedPoints = this.curve.getSpacedPoints(divisions);
-
-        // We track the previous Z to fill gaps
-        let prevZ = Math.round(spacedPoints[0].z);
-        this.pathLookup.set(prevZ, spacedPoints[0]);
-
-        for (let i = 1; i < spacedPoints.length; i++) {
-            const pt = spacedPoints[i];
-            const currentZ = Math.round(pt.z);
-
-            // Interpolate/Fill if there is a gap greater than 1
-            // Since we are moving in -Z, prevZ is usually > currentZ
-            // We handle both directions just in case
-            const step = prevZ > currentZ ? -1 : 1;
-            
-            let z = prevZ + step;
-            while (z !== currentZ + step) {
-                // Ensure we don't overwrite if existing (though unlikely in a linear path)
-                if (!this.pathLookup.has(z)) {
-                    // For the gap, we use the current point (approximation is fine for chunks)
-                    this.pathLookup.set(z, pt);
-                }
-                z += step;
-            }
-            
-            prevZ = currentZ;
-        }
-
+        // Start the main trunk
+        const startPos = new THREE.Vector3(0, 15, 0);
+        // Initial forward direction (negative Z)
+        const startDir = new THREE.Vector3(0, 0, -1);
+        
+        // Recursive generation
+        this.createBranch(startPos, startDir, 120, 0);
+        
         this.createVisuals();
         this.spawnRings();
     }
 
+    createBranch(startPos, startDir, segments, depth) {
+        const points = [];
+        
+        // 1. Seamless Connection
+        // The first point is the start position
+        points.push(startPos.clone());
+        
+        // The second point projects out along the startDir to ensure tangency continuity.
+        // This prevents "kinks" where branches attach.
+        const controlPoint = startPos.clone().add(startDir.clone().multiplyScalar(20));
+        points.push(controlPoint);
+
+        let currentPos = controlPoint;
+        let currentDir = startDir.clone();
+
+        // 2. Generate Points
+        for (let i = 0; i < segments; i++) {
+            const z = currentPos.z - 40; // Step forward
+            
+            // Random wander
+            const x = currentPos.x + (Math.random() - 0.5) * 60; 
+            let y = currentPos.y + (Math.random() - 0.5) * 30; 
+            y = Math.max(20, Math.min(80, y));
+
+            const nextPos = new THREE.Vector3(x, y, z);
+            points.push(nextPos);
+            
+            // Update direction for next iteration's bias
+            currentDir.subVectors(nextPos, currentPos).normalize();
+            currentPos = nextPos;
+
+            // 3. Forking Logic
+            // Only fork if we aren't too deep and we are far enough along this segment
+            if (depth < 2 && i > 30 && i < segments - 30) {
+                // 3% chance per segment to fork
+                if (Math.random() < 0.03) {
+                    // Left or Right branch
+                    const angle = (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 6); // 30 degrees
+                    const branchDir = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle).normalize();
+                    
+                    // Recursive call
+                    // We reduce the length of branches
+                    this.createBranch(nextPos, branchDir, segments - i, depth + 1);
+                    
+                    // Force skip to prevent multiple branches clumping
+                    i += 10; 
+                }
+            }
+        }
+
+        const curve = new THREE.CatmullRomCurve3(points);
+        curve.tension = 0.5;
+        this.curves.push(curve);
+
+        // 4. Populate Lookup (Gap Filling)
+        const length = curve.getLength();
+        const divisions = Math.floor(length * 2); 
+        const spacedPoints = curve.getSpacedPoints(divisions);
+
+        let prevZ = Math.round(spacedPoints[0].z);
+        this.addToLookup(prevZ, spacedPoints[0]);
+
+        for (let i = 1; i < spacedPoints.length; i++) {
+            const pt = spacedPoints[i];
+            const currentZ = Math.round(pt.z);
+            const step = prevZ > currentZ ? -1 : 1;
+            
+            let z = prevZ + step;
+            while (z !== currentZ + step) {
+                this.addToLookup(z, pt);
+                z += step;
+            }
+            prevZ = currentZ;
+        }
+    }
+
+    addToLookup(z, point) {
+        if (!this.pathLookup.has(z)) {
+            this.pathLookup.set(z, []);
+        }
+        // Optimization: Don't add if very close to existing point in this slice (dedupe)
+        const list = this.pathLookup.get(z);
+        if (list.length > 0) {
+            const last = list[list.length - 1];
+            if (Math.abs(last.x - point.x) < 1 && Math.abs(last.y - point.y) < 1) return;
+        }
+        list.push(point);
+    }
+
     spawnRings() {
-        const curveLength = this.curve.getLength();
-        
-        const createRingAt = (t, boostAmount) => {
-            const pos = this.curve.getPointAt(t);
-            const tangent = this.curve.getTangentAt(t);
-
-            const mesh = new THREE.Mesh(this.ringGeometry, this.ringMaterial.clone());
-            mesh.position.copy(pos);
-            mesh.lookAt(pos.clone().add(tangent));
+        for (const curve of this.curves) {
+            const curveLength = curve.getLength();
+            let currentDist = 30;
             
-            if (boostAmount > 30) {
-                mesh.scale.set(1.2, 1.2, 1.0);
-                mesh.material.color.setHex(0xffaa00); 
-            } else if (boostAmount < 15) {
-                mesh.scale.set(0.9, 0.9, 1.0);
+            // Smart placement per curve
+            while (currentDist < curveLength - 30) {
+                const t = currentDist / curveLength;
+                
+                const tangent = curve.getTangentAt(t);
+                const slope = tangent.y;
+
+                let spacing = 70;   
+                let boost = 20;     
+
+                if (slope > 0.1) {
+                    const intensity = Math.min(slope / 0.6, 1.0); 
+                    spacing = 70 - (intensity * 40); 
+                    boost = 20 + (intensity * 30);   
+                } 
+                else if (slope < -0.1) {
+                    const intensity = Math.min(Math.abs(slope) / 0.6, 1.0);
+                    spacing = 70 + (intensity * 60); 
+                    boost = 20 - (intensity * 10);   
+                }
+
+                const pos = curve.getPointAt(t);
+                
+                // Avoid placing rings on top of other rings (intersection check)
+                // This is a simple O(N) check against recent rings
+                let overlapping = false;
+                for (let i = Math.max(0, this.rings.length - 10); i < this.rings.length; i++) {
+                    if (this.rings[i].position.distanceToSquared(pos) < 100) {
+                        overlapping = true;
+                        break;
+                    }
+                }
+
+                if (!overlapping) {
+                    const mesh = new THREE.Mesh(this.ringGeometry, this.ringMaterial.clone());
+                    mesh.position.copy(pos);
+                    mesh.lookAt(pos.clone().add(tangent));
+                    
+                    if (boost > 30) {
+                        mesh.scale.set(1.2, 1.2, 1.0);
+                        mesh.material.color.setHex(0xffaa00); 
+                    } else if (boost < 15) {
+                        mesh.scale.set(0.9, 0.9, 1.0);
+                    }
+
+                    this.scene.add(mesh);
+                    this.rings.push({
+                        mesh, position: pos, radius: 5.5, active: true, boostAmount: Math.round(boost)
+                    });
+                }
+
+                currentDist += spacing;
             }
-
-            this.scene.add(mesh);
-            
-            this.rings.push({
-                mesh: mesh,
-                position: pos,
-                radius: 5.5,
-                active: true,
-                boostAmount: boostAmount
-            });
-        };
-
-        let currentDist = 30; 
-        
-        while (currentDist < curveLength - 30) {
-            const t = currentDist / curveLength;
-            
-            const tangent = this.curve.getTangentAt(t);
-            const slope = tangent.y;
-
-            let spacing = 70;   
-            let boost = 20;     
-
-            if (slope > 0.1) {
-                const intensity = Math.min(slope / 0.6, 1.0); 
-                spacing = 70 - (intensity * 40); 
-                boost = 20 + (intensity * 30);   
-            } 
-            else if (slope < -0.1) {
-                const intensity = Math.min(Math.abs(slope) / 0.6, 1.0);
-                spacing = 70 + (intensity * 60); 
-                boost = 20 - (intensity * 10);   
-            }
-
-            createRingAt(t, Math.round(boost));
-            currentDist += spacing;
         }
     }
 
@@ -170,6 +216,8 @@ export class RacePath {
         
         const pPos = player.position;
 
+        // Optimization: Only check rings that are roughly at the player's Z depth
+        // But iterating array is fast enough for < 1000 rings in JS
         for (const ring of this.rings) {
             if (!ring.active) continue;
 
@@ -191,119 +239,112 @@ export class RacePath {
     }
 
     createVisuals() {
-        const tubeGeo = new THREE.TubeGeometry(this.curve, 150, 0.2, 6, false);
-        
-        const tubeVert = `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        for (const curve of this.curves) {
+            // 1. Tube
+            const tubeGeo = new THREE.TubeGeometry(curve, 150, 0.2, 6, false);
+            
+            const tubeVert = `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `;
+
+            const tubeFrag = `
+                uniform float uTime;
+                varying vec2 vUv;
+                void main() {
+                    float t = vUv.x * 3.0 - uTime * 0.5;
+                    vec3 purple = vec3(0.3, 0.0, 0.6);
+                    vec3 gold   = vec3(1.0, 0.9, 0.3);
+                    float n = sin(t) * 0.5 + 0.5;
+                    vec3 col = mix(purple, gold, n);
+                    float alpha = 0.6 + 0.2 * sin(vUv.x * 20.0 - uTime * 2.0);
+                    gl_FragColor = vec4(col, alpha);
+                }
+            `;
+
+            const tubeMat = new THREE.ShaderMaterial({
+                uniforms: this.uniforms,
+                vertexShader: tubeVert,
+                fragmentShader: tubeFrag,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+
+            const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+            this.scene.add(tubeMesh);
+            this.visualItems.push(tubeMesh);
+
+            // 2. Particles
+            const particleCount = 800; // Lower per branch since we have multiple branches
+            const curvePoints = curve.getSpacedPoints(particleCount);
+            
+            const posArray = new Float32Array(particleCount * 3);
+            const randomArray = new Float32Array(particleCount * 3);
+            const phaseArray = new Float32Array(particleCount);
+
+            for(let i=0; i<particleCount; i++) {
+                const pt = curvePoints[i];
+                const theta = Math.random() * Math.PI * 2;
+                posArray[i*3] = pt.x + Math.cos(theta) * 0.2;
+                posArray[i*3+1] = pt.y + Math.sin(theta) * 0.2;
+                posArray[i*3+2] = pt.z;
+                randomArray[i*3] = (Math.random() - 0.5) * 4.0;
+                randomArray[i*3+1] = (Math.random() - 0.5) * 4.0;
+                randomArray[i*3+2] = (Math.random() - 0.5) * 4.0;
+                phaseArray[i] = Math.random();
             }
-        `;
 
-        const tubeFrag = `
-            uniform float uTime;
-            varying vec2 vUv;
-            void main() {
-                float t = vUv.x * 3.0 - uTime * 0.5;
-                vec3 purple = vec3(0.3, 0.0, 0.6);
-                vec3 gold   = vec3(1.0, 0.9, 0.3);
-                
-                float n = sin(t) * 0.5 + 0.5;
-                vec3 col = mix(purple, gold, n);
+            const partGeo = new THREE.BufferGeometry();
+            partGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            partGeo.setAttribute('aRandom', new THREE.BufferAttribute(randomArray, 3));
+            partGeo.setAttribute('aPhase', new THREE.BufferAttribute(phaseArray, 1));
 
-                float alpha = 0.6 + 0.2 * sin(vUv.x * 20.0 - uTime * 2.0);
-                gl_FragColor = vec4(col, alpha);
-            }
-        `;
+            const partMat = new THREE.ShaderMaterial({
+                uniforms: this.uniforms,
+                vertexShader: `
+                    uniform float uTime;
+                    attribute vec3 aRandom;
+                    attribute float aPhase;
+                    varying float vAlpha;
+                    void main() {
+                        float life = mod(uTime * 0.3 + aPhase, 1.0);
+                        vec3 newPos = position + aRandom * (life * 3.0);
+                        vec4 mvPosition = modelViewMatrix * vec4(newPos, 1.0);
+                        gl_Position = projectionMatrix * mvPosition;
+                        vAlpha = 1.0 - smoothstep(0.0, 1.0, life);
+                        gl_PointSize = (6.0 * vAlpha) * (100.0 / -mvPosition.z);
+                    }
+                `,
+                fragmentShader: `
+                    varying float vAlpha;
+                    void main() {
+                        if (vAlpha < 0.05) discard;
+                        vec3 color = vec3(1.0, 0.7, 0.2); 
+                        gl_FragColor = vec4(color, vAlpha);
+                    }
+                `,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
 
-        const tubeMat = new THREE.ShaderMaterial({
-            uniforms: this.uniforms,
-            vertexShader: tubeVert,
-            fragmentShader: tubeFrag,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            side: THREE.DoubleSide
-        });
-
-        const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
-        this.scene.add(tubeMesh);
-        this.visualItems.push(tubeMesh);
-
-        const particleCount = 1500;
-        const curvePoints = this.curve.getSpacedPoints(particleCount);
-        
-        const posArray = new Float32Array(particleCount * 3);
-        const randomArray = new Float32Array(particleCount * 3);
-        const phaseArray = new Float32Array(particleCount);
-
-        for(let i=0; i<particleCount; i++) {
-            const pt = curvePoints[i];
-            const theta = Math.random() * Math.PI * 2;
-
-            posArray[i*3] = pt.x + Math.cos(theta) * 0.2;
-            posArray[i*3+1] = pt.y + Math.sin(theta) * 0.2;
-            posArray[i*3+2] = pt.z;
-
-            randomArray[i*3] = (Math.random() - 0.5) * 4.0;
-            randomArray[i*3+1] = (Math.random() - 0.5) * 4.0;
-            randomArray[i*3+2] = (Math.random() - 0.5) * 4.0;
-
-            phaseArray[i] = Math.random();
+            const particles = new THREE.Points(partGeo, partMat);
+            this.scene.add(particles);
+            this.visualItems.push(particles);
         }
-
-        const partGeo = new THREE.BufferGeometry();
-        partGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-        partGeo.setAttribute('aRandom', new THREE.BufferAttribute(randomArray, 3));
-        partGeo.setAttribute('aPhase', new THREE.BufferAttribute(phaseArray, 1));
-
-        const partVert = `
-            uniform float uTime;
-            attribute vec3 aRandom;
-            attribute float aPhase;
-            varying float vAlpha;
-
-            void main() {
-                float life = mod(uTime * 0.3 + aPhase, 1.0);
-                vec3 newPos = position + aRandom * (life * 3.0);
-                vec4 mvPosition = modelViewMatrix * vec4(newPos, 1.0);
-                gl_Position = projectionMatrix * mvPosition;
-                vAlpha = 1.0 - smoothstep(0.0, 1.0, life);
-                gl_PointSize = (6.0 * vAlpha) * (100.0 / -mvPosition.z);
-            }
-        `;
-
-        const partFrag = `
-            varying float vAlpha;
-            void main() {
-                if (vAlpha < 0.05) discard;
-                vec3 color = vec3(1.0, 0.7, 0.2); 
-                gl_FragColor = vec4(color, vAlpha);
-            }
-        `;
-
-        const partMat = new THREE.ShaderMaterial({
-            uniforms: this.uniforms,
-            vertexShader: partVert,
-            fragmentShader: partFrag,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-
-        const particles = new THREE.Points(partGeo, partMat);
-        this.scene.add(particles);
-        this.visualItems.push(particles);
     }
 
-    getPointAtZ(z) {
+    getPointsAtZ(z) {
         return this.pathLookup.get(Math.round(z));
     }
 
     update(dt) {
         this.uniforms.uTime.value += dt;
-        
         const s = 1.0 + Math.sin(this.uniforms.uTime.value * 5) * 0.05;
         for (const ring of this.rings) {
             if (ring.active) {

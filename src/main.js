@@ -9,12 +9,14 @@ import { FPSCounter } from './ui/FPSCounter.js';
 import { settingsManager } from './settings/SettingsManager.js';
 
 // Configuration
-const RENDER_DISTANCE_UNITS = 160;
+// Optimization: Increased render distance to better visualize branching paths
+const RENDER_DISTANCE_UNITS = 200;
 const CHUNK_RENDER_DISTANCE = 10; 
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xA0D0E0, 40, RENDER_DISTANCE_UNITS - 10); 
+// Fog pushed back to reveal branches earlier
+scene.fog = new THREE.Fog(0xA0D0E0, 60, RENDER_DISTANCE_UNITS - 10); 
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
@@ -132,17 +134,14 @@ function animate(time) {
             uiManager.onGameOver();
         }
 
-        // --- COLLISION LOGIC UPDATED ---
         const collisionResult = racePath.checkCollisions(player);
         if (collisionResult.scoreIncrease > 0) {
             gameScore += collisionResult.scoreIncrease;
         }
         
-        // Use the variable boost amount from the smart generator
         if (collisionResult.boostAmount > 0) {
             player.applyBoost(collisionResult.boostAmount);
         }
-        // --------------------------------
 
         uiManager.hud.update(player, gameScore);
         
