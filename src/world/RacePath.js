@@ -16,7 +16,7 @@ export class RacePath {
         this.rings = [];
         this.visualItems = []; // Track visuals to dispose on reset
 
-        this.ringGeometry = new THREE.TorusGeometry(3.5, 0.2, 8, 24);
+        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 24);
         this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
         
         this.uniforms = {
@@ -103,18 +103,18 @@ export class RacePath {
             this.rings.push({
                 mesh: mesh,
                 position: pos,
-                radius: 3.5,
+                radius: 5.5,
                 active: true
             });
         };
 
-        // 1. Spawn a "Starter Ring" close to the player (approx 40 units)
-        const starterDist = 40;
+        // 1. Spawn a "Starter Ring" close to the player
+        const starterDist = 20;
         const starterT = Math.min(starterDist / curveLength, 1.0);
         createRingAt(starterT);
 
         // 2. Spawn regular procedural rings
-        const count = Math.floor(curveLength / 100);
+        const count = Math.floor(curveLength / 70);
         for (let i = 1; i < count; i++) {
             const t = i / count;
             // Avoid placing a random ring too close to the starter ring

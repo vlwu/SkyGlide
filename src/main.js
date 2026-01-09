@@ -135,7 +135,7 @@ function animate(time) {
             gameScore += collisionResult.scoreIncrease;
         }
         if (collisionResult.boosted) {
-            player.applyBoost(40.0);
+            player.applyBoost(20.0);
         }
 
         uiManager.hud.update(player, gameScore);
