@@ -19,6 +19,23 @@ if (!fs.existsSync(distDir)) {
     process.exit(1);
 }
 
+// Sync manifest.json version with package.json
+const manifestPath = path.join(distDir, 'manifest.json');
+if (fs.existsSync(manifestPath)) {
+    try {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        // Chrome requires strictly dot-separated integers (e.g. 1.0.0)
+        // Strip any prerelease tags (e.g. -beta.1)
+        manifest.version = version.split('-')[0];
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+        console.log(`\nUpdated dist/manifest.json to version ${manifest.version}`);
+    } catch (e) {
+        console.warn('Warning: Failed to update manifest.json version', e);
+    }
+} else {
+    console.warn('\nWarning: manifest.json not found in dist/. Skipping version sync.');
+}
+
 // Ensure release directory exists
 if (!fs.existsSync(releaseDir)) {
     fs.mkdirSync(releaseDir);
@@ -32,7 +49,7 @@ const archive = archiver('zip', {
 });
 
 output.on('close', () => {
-    console.log(`\n✅ Release packaged successfully!`);
+    console.log(`✅ Release packaged successfully!`);
     console.log(`📁 File: ${outputFilename}`);
     console.log(`📦 Size: ${(archive.pointer() / 1024 / 1024).toFixed(2)} MB`);
     console.log(`📍 Path: ${outputPath}\n`);
