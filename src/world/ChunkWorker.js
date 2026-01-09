@@ -13,21 +13,70 @@ const BLOCK = {
     ICE: 7
 };
 
-const FACES = [
-    { dir: [1, 0, 0], corners: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] }, // Right
-    { dir: [-1, 0, 0], corners: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] }, // Left
-    { dir: [0, 1, 0], corners: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] }, // Top
-    { dir: [0, -1, 0], corners: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] }, // Bottom
-    { dir: [0, 0, 1], corners: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] }, // Front
-    { dir: [0, 0, -1], corners: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] }  // Back
+// Optimization: Unrolled face data for faster iteration
+// Face order: Right, Left, Top, Bottom, Front, Back
+const FACE_DIRS = [
+    1, 0, 0,
+    -1, 0, 0,
+    0, 1, 0,
+    0, -1, 0,
+    0, 0, 1,
+    0, 0, -1
 ];
 
-// Reusable scratch buffers to avoid allocation loop in worker
-const MAX_VERTICES = 40000; // Increased buffer safety
+// Corners for each face (relative to x,y,z)
+const FACE_CORNERS = [
+    // Right
+    [1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1],
+    // Left
+    [0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0],
+    // Top
+    [0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0],
+    // Bottom
+    [0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1],
+    // Front
+    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1],
+    // Back
+    [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]
+];
+
+const MAX_VERTICES = 40000;
 const BUFFER_POS = new Float32Array(MAX_VERTICES * 3);
 const BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
 const BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
 const BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
+
+// Helper for color (replacing THREE.Color)
+function setHSL(h, s, l, out) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+    const m = l - c / 2;
+    let r=0, g=0, b=0;
+
+    if (0 <= h * 6 && h * 6 < 1) { r = c; g = x; b = 0; }
+    else if (1 <= h * 6 && h * 6 < 2) { r = x; g = c; b = 0; }
+    else if (2 <= h * 6 && h * 6 < 3) { r = 0; g = c; b = x; }
+    else if (3 <= h * 6 && h * 6 < 4) { r = 0; g = x; b = c; }
+    else if (4 <= h * 6 && h * 6 < 5) { r = x; g = 0; b = c; }
+    else if (5 <= h * 6 && h * 6 < 6) { r = c; g = 0; b = x; }
+
+    out[0] = r + m;
+    out[1] = g + m;
+    out[2] = b + m;
+}
+
+function setColor(type, rand, out) {
+    switch (type) {
+        case BLOCK.GRASS: setHSL(0.25 + rand * 0.05, 0.6, 0.4 + rand * 0.1, out); break;
+        case BLOCK.DIRT: setHSL(0.08, 0.4, 0.3 + rand * 0.1, out); break;
+        case BLOCK.STONE: setHSL(0.6, 0.05, 0.4 + rand * 0.1, out); break;
+        case BLOCK.SNOW: setHSL(0.6, 0.2, 0.9 + rand * 0.1, out); break;
+        case BLOCK.SAND: setHSL(0.12, 0.5, 0.7 + rand * 0.1, out); break;
+        case BLOCK.ICE: setHSL(0.5, 0.7, 0.8, out); break;
+        case BLOCK.SPAWN: out[0]=1; out[1]=0.84; out[2]=0; break;
+        default: out[0]=1; out[1]=0; out[2]=1;
+    }
+}
 
 self.onmessage = (e) => {
     const { x, z, size, height, pathSegments } = e.data;
@@ -41,6 +90,10 @@ self.onmessage = (e) => {
     const scaleMount = 0.04;
     const scaleIsland = 0.04;
 
+    // Optimization: Pre-calculate strides
+    const strideY = size;          
+    const strideZ = size * height; 
+
     for (let lx = 0; lx < size; lx++) {
         for (let lz = 0; lz < size; lz++) {
             const wx = startX + lx;
@@ -51,8 +104,12 @@ self.onmessage = (e) => {
             if (mountain > 0) h += mountain * 35;
             const groundHeight = Math.floor(h);
 
+            const colBase = lx + lz * strideZ;
+
+            // Fill Column
             for (let y = 0; y < height; y++) {
                 let blockType = BLOCK.AIR;
+                
                 if (y <= groundHeight) {
                     blockType = BLOCK.STONE; 
                     const depth = groundHeight - y;
@@ -66,6 +123,7 @@ self.onmessage = (e) => {
                         else if (depth < 3) blockType = BLOCK.DIRT;
                     }
                 } else if (y > 45 && y < 90) {
+                    // Floating Islands
                     const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
                     if (islandNoise > 0.45) {
                         if (y > 80) blockType = BLOCK.ICE;
@@ -76,29 +134,29 @@ self.onmessage = (e) => {
                         }
                     }
                 }
+                
                 if (blockType !== BLOCK.AIR) {
-                    data[lx + size * (y + height * lz)] = blockType; 
+                    data[colBase + y * strideY] = blockType; 
                 }
             }
         }
     }
 
     // 2. CARVE TUNNEL
-    // pathSegments is an object: { [localZ]: [{x,y}, {x,y}] }
-    // We only passed points relevant to this chunk Z range
     for (let lz = 0; lz < size; lz++) {
         const wz = startZ + lz;
-        // The main thread passes data keyed by World Z, but mapped to local relative offset if needed
-        // Here we assume pathSegments keys are World Z integers
         const points = pathSegments[wz];
         
         if (!points) continue;
+
+        const strideZ_lz = lz * strideZ;
 
         for (let lx = 0; lx < size; lx++) {
             const wx = startX + lx;
             let tunnelMinY = 999;
             let tunnelMaxY = -999;
 
+            // Simple distance check against path points
             for (let i = 0; i < points.length; i++) {
                 const p = points[i];
                 const dx = wx - p.x;
@@ -115,8 +173,7 @@ self.onmessage = (e) => {
             if (tunnelMaxY > tunnelMinY) {
                 const iMin = Math.max(0, Math.floor(tunnelMinY));
                 const iMax = Math.min(height, Math.ceil(tunnelMaxY));
-                const colBase = lx + lz * size * height;
-                const strideY = size;
+                const colBase = lx + strideZ_lz;
                 
                 for (let y = iMin; y < iMax; y++) {
                     data[colBase + y * strideY] = BLOCK.AIR;
@@ -136,73 +193,45 @@ self.onmessage = (e) => {
     if (loopMinX <= loopMaxX && loopMinZ <= loopMaxZ) {
         for(let lz = loopMinZ; lz <= loopMaxZ; lz++) {
             for(let lx = loopMinX; lx <= loopMaxX; lx++) {
-                data[lx + size * (14 + height * lz)] = BLOCK.SPAWN;
+                data[lx + strideY * 14 + lz * strideZ] = BLOCK.SPAWN;
             }
         }
     }
 
-    // 4. MESH GENERATION (GREEDY-ISH)
+    // 4. MESH GENERATION (OPTIMIZED)
     let vertCount = 0;
     let indexCount = 0;
-    const strideY = size;          
-    const strideZ = size * height; 
-
-    // Helper for color (replacing THREE.Color)
-    function setHSL(h, s, l, out) {
-        // Simple HSL to RGB conversion
-        const c = (1 - Math.abs(2 * l - 1)) * s;
-        const x = c * (1 - Math.abs((h * 6) % 2 - 1));
-        const m = l - c / 2;
-        let r=0, g=0, b=0;
-
-        if (0 <= h * 6 && h * 6 < 1) { r = c; g = x; b = 0; }
-        else if (1 <= h * 6 && h * 6 < 2) { r = x; g = c; b = 0; }
-        else if (2 <= h * 6 && h * 6 < 3) { r = 0; g = c; b = x; }
-        else if (3 <= h * 6 && h * 6 < 4) { r = 0; g = x; b = c; }
-        else if (4 <= h * 6 && h * 6 < 5) { r = x; g = 0; b = c; }
-        else if (5 <= h * 6 && h * 6 < 6) { r = c; g = 0; b = x; }
-
-        out[0] = r + m;
-        out[1] = g + m;
-        out[2] = b + m;
-    }
-
-    function setColor(type, rand, out) {
-        switch (type) {
-            case BLOCK.GRASS: setHSL(0.25 + rand * 0.05, 0.6, 0.4 + rand * 0.1, out); break;
-            case BLOCK.DIRT: setHSL(0.08, 0.4, 0.3 + rand * 0.1, out); break;
-            case BLOCK.STONE: setHSL(0.6, 0.05, 0.4 + rand * 0.1, out); break;
-            case BLOCK.SNOW: setHSL(0.6, 0.2, 0.9 + rand * 0.1, out); break;
-            case BLOCK.SAND: setHSL(0.12, 0.5, 0.7 + rand * 0.1, out); break;
-            case BLOCK.ICE: setHSL(0.5, 0.7, 0.8, out); break;
-            case BLOCK.SPAWN: out[0]=1; out[1]=0.84; out[2]=0; break; // Gold
-            default: out[0]=1; out[1]=0; out[2]=1;
-        }
-    }
-
     const rgb = [0,0,0];
 
+    // Iterating Y outer loop might be better for cache line if data is Y-major?
+    // Current layout: data[lx + y * 16 + lz * 16 * 96]
+    // Inner-most should vary lx (stride 1).
+    // So order: lz -> y -> lx is correct for sequential access.
+
     for (let lz = 0; lz < size; lz++) {
+        const lzStride = lz * strideZ;
+        
         for (let y = 0; y < height; y++) {
+            const yStride = y * strideY;
+            const baseIdx = yStride + lzStride;
+
             for (let lx = 0; lx < size; lx++) {
-                const type = data[lx + y * strideY + lz * strideZ];
+                const type = data[baseIdx + lx];
                 if (type === BLOCK.AIR) continue;
 
+                // Color gen
                 const wx = startX + lx;
                 const wz = startZ + lz;
-                
                 let h = (wx * 374761393) ^ (y * 668265263) ^ (wz * 963469177);
                 h = (h ^ (h >> 13)) * 1274124933;
                 const rand = ((h >>> 0) / 4294967296); 
-
                 setColor(type, rand, rgb);
-                
-                // Check all 6 faces
+
+                // Check 6 faces
                 for (let f = 0; f < 6; f++) {
-                    const face = FACES[f];
-                    const nx = lx + face.dir[0];
-                    const ny = y + face.dir[1];
-                    const nz = lz + face.dir[2];
+                    const nx = lx + FACE_DIRS[f * 3];
+                    const ny = y + FACE_DIRS[f * 3 + 1];
+                    const nz = lz + FACE_DIRS[f * 3 + 2];
 
                     let neighbor = BLOCK.AIR;
                     if (nx >= 0 && nx < size && ny >= 0 && ny < height && nz >= 0 && nz < size) {
@@ -211,25 +240,26 @@ self.onmessage = (e) => {
 
                     if (neighbor !== BLOCK.AIR) continue;
 
-                    let shade = 1.0;
-                    if (face.dir[1] < 0) shade = 0.6;
-                    else if (face.dir[1] > 0) shade = 1.1;
-                    else if (face.dir[0] !== 0) shade = 0.85;
-                    else shade = 0.9;
+                    let shade = 0.9;
+                    const dy = FACE_DIRS[f * 3 + 1];
+                    if (dy < 0) shade = 0.6;
+                    else if (dy > 0) shade = 1.1;
+                    else if (FACE_DIRS[f * 3] !== 0) shade = 0.85;
 
                     const vBase = vertCount;
+                    const cOffset = f * 4;
                     
                     for (let c = 0; c < 4; c++) {
-                        const corner = face.corners[c];
+                        const corner = FACE_CORNERS[cOffset + c];
                         const idx = vertCount * 3;
                         
-                        BUFFER_POS[idx] = lx + corner[0]; // Send Local Pos, offset by chunk mesh pos later
+                        BUFFER_POS[idx] = lx + corner[0];
                         BUFFER_POS[idx+1] = y + corner[1];
                         BUFFER_POS[idx+2] = lz + corner[2];
 
-                        BUFFER_NORM[idx] = face.dir[0];
-                        BUFFER_NORM[idx+1] = face.dir[1];
-                        BUFFER_NORM[idx+2] = face.dir[2];
+                        BUFFER_NORM[idx] = FACE_DIRS[f*3];
+                        BUFFER_NORM[idx+1] = FACE_DIRS[f*3+1];
+                        BUFFER_NORM[idx+2] = FACE_DIRS[f*3+2];
 
                         BUFFER_COL[idx] = rgb[0] * shade;
                         BUFFER_COL[idx+1] = rgb[1] * shade;
@@ -244,12 +274,14 @@ self.onmessage = (e) => {
                     BUFFER_IND[indexCount++] = vBase + 2;
                     BUFFER_IND[indexCount++] = vBase + 3;
                     BUFFER_IND[indexCount++] = vBase;
+                    
+                    if (vertCount >= MAX_VERTICES - 4) break; 
                 }
+                if (vertCount >= MAX_VERTICES - 4) break;
             }
         }
     }
 
-    // Copy to exact-size buffers for transfer
     const posOut = BUFFER_POS.slice(0, vertCount * 3);
     const normOut = BUFFER_NORM.slice(0, vertCount * 3);
     const colOut = BUFFER_COL.slice(0, vertCount * 3);
@@ -257,7 +289,7 @@ self.onmessage = (e) => {
 
     self.postMessage({ 
         key: `${x},${z}`,
-        data: data, // Keep raw data for physics lookups
+        data: data,
         geometry: {
             position: posOut,
             normal: normOut,

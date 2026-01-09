@@ -19,6 +19,7 @@ export class WorldManager {
         this._cameraForward = new THREE.Vector3();
         this.generationQueue = [];
         this.lastUpdate = 0;
+        this.frameCounter = 0; // Optimization: For throttling updates
 
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
         
@@ -48,12 +49,16 @@ export class WorldManager {
     }
 
     update(playerPos, camera) {
+        this.frameCounter++;
         const now = performance.now();
         
-        // 1. Shadow LOD Update (Fast, every frame is okay, or throttled)
-        // We do this every frame to ensure shadows pop in smoothly as player moves
-        for (const chunk of this.chunks.values()) {
-            chunk.update(playerPos.x, playerPos.z);
+        // 1. Shadow LOD Update (Throttled)
+        // Optimization: Only update shadow flags every 15 frames. 
+        // Shadow map updates are expensive, and chunks don't move.
+        if (this.frameCounter % 15 === 0) {
+            for (const chunk of this.chunks.values()) {
+                chunk.update(playerPos.x, playerPos.z);
+            }
         }
 
         // 2. Chunk Queue Update (Throttled)
@@ -70,13 +75,13 @@ export class WorldManager {
             
             if (this.chunks.has(req.key)) continue;
 
-            // Notice: Chunk constructor signature changed (removed racePath)
             const chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial);
             this.chunks.set(req.key, chunk);
 
             const pathSegments = {};
             const startZ = req.z * this.chunkSize;
             
+            // Optimization: Only checking segments relevant to this chunk size
             for (let z = 0; z < this.chunkSize; z++) {
                 const wz = startZ + z;
                 const points = this.racePath.getPointsAtZ(wz);
@@ -111,6 +116,9 @@ export class WorldManager {
         const newQueue = [];
         const range = this.renderDistance;
         
+        // Pre-calculate squared ranges to avoid Math.sqrt inside loops
+        const rangeSq = (range * this.chunkSize) ** 2;
+
         for (let z = -range; z <= range; z++) {
             for (let x = -range; x <= range; x++) {
                 const chunkX = centerChunkX + x;
@@ -120,16 +128,25 @@ export class WorldManager {
                 activeKeys.add(key);
 
                 if (!this.chunks.has(key)) {
+                    // Optimization: Culling based on camera direction (Frustum Cullingish)
                     const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
                     const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
-                    const distSq = (wx - playerPos.x)**2 + (wz - playerPos.z)**2;
+                    
+                    const dirX = wx - playerPos.x;
+                    const dirZ = wz - playerPos.z;
+                    const distSq = dirX*dirX + dirZ*dirZ;
+
+                    // Skip if outside circular render distance (makes corners of square unavailable)
+                    // This saves ~20% of chunk generation
+                    if (distSq > rangeSq * 1.2) continue;
 
                     let score = distSq;
+                    
+                    // Prioritize chunks behind spawn (for initial look)
                     if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
                         score = -99999999;
                     } else if (camera) {
-                        const dirX = wx - playerPos.x;
-                        const dirZ = wz - playerPos.z;
+                        // Prioritize chunks in front of camera
                         const len = Math.sqrt(distSq) || 1;
                         const dot = ((dirX/len) * this._cameraForward.x) + ((dirZ/len) * this._cameraForward.z);
                         score -= (dot * 50000); 
@@ -139,6 +156,7 @@ export class WorldManager {
             }
         }
 
+        // Garbage Collect distant chunks
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 chunk.dispose();
@@ -157,12 +175,15 @@ export class WorldManager {
         const key = `${cx},${cz}`;
         let chunk;
 
+        // Optimization: LRU Cache of 1
         if (key === this.lastChunkKey && this.lastChunk) {
             chunk = this.lastChunk;
         } else {
             chunk = this.chunks.get(key);
-            this.lastChunk = chunk;
-            this.lastChunkKey = key;
+            if (chunk) {
+                this.lastChunk = chunk;
+                this.lastChunkKey = key;
+            }
         }
         
         if (!chunk || !chunk.isLoaded) return false; 

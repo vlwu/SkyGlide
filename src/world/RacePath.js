@@ -7,12 +7,15 @@ export class RacePath {
         this.curves = [];
         
         // Data for logic
-        this.ringData = []; 
+        this.ringData = [];
+        // Spatial Optimization: Bucket rings by Z-index for O(1) collision checks
+        this.ringBuckets = new Map();
+        this.BUCKET_SIZE = 50;
         
         // Visuals
         this.visualItems = []; 
         this.instancedMesh = null;
-        this.dummy = new THREE.Object3D(); // Helper for matrix calculations
+        this.dummy = new THREE.Object3D(); 
         this.colorHelper = new THREE.Color();
 
         // Geometry & Material shared for all rings
@@ -44,6 +47,7 @@ export class RacePath {
         }
 
         this.ringData = [];
+        this.ringBuckets.clear();
         this.curves = [];
         this.pathLookup.clear();
     }
@@ -54,23 +58,19 @@ export class RacePath {
     }
 
     resetRings() {
-        // Reactivate all rings
         for (let i = 0; i < this.ringData.length; i++) {
             const data = this.ringData[i];
             data.active = true;
             
-            // Reset visual scale
             this.dummy.position.copy(data.position);
             this.dummy.lookAt(data.lookAtTarget);
             
-            // Restore boost scale
             const boostScale = 1.0 + (data.boostAmount - 20) * 0.01;
             this.dummy.scale.set(boostScale, boostScale, 1);
             this.dummy.updateMatrix();
             
             this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
             
-            // Restore color
             this.colorHelper.setHex(data.originalColor);
             this.instancedMesh.setColorAt(i, this.colorHelper);
         }
@@ -207,7 +207,6 @@ export class RacePath {
                 const pos = curve.getPointAt(t);
                 
                 let overlapping = false;
-                // Optimization: Simple distance check against last few rings
                 for (let i = Math.max(0, tempRings.length - 10); i < tempRings.length; i++) {
                     if (tempRings[i].position.distanceToSquared(pos) < 100) {
                         overlapping = true;
@@ -218,13 +217,21 @@ export class RacePath {
                 if (!overlapping) {
                     const finalColor = (boost > 30) ? 0xffffff : ringColor;
                     
-                    tempRings.push({
+                    const ring = {
                         position: pos,
                         lookAtTarget: pos.clone().add(tangent),
                         boostAmount: Math.round(boost),
                         originalColor: finalColor,
-                        active: true
-                    });
+                        active: true,
+                        index: tempRings.length // Store index for mesh updates
+                    };
+                    
+                    tempRings.push(ring);
+                    
+                    // Add to bucket
+                    const bucketKey = Math.floor(pos.z / this.BUCKET_SIZE);
+                    if (!this.ringBuckets.has(bucketKey)) this.ringBuckets.set(bucketKey, []);
+                    this.ringBuckets.get(bucketKey).push(ring);
                 }
                 currentDist += spacing;
             }
@@ -238,14 +245,12 @@ export class RacePath {
                 tempRings.length
             );
             
-            // Set initial instances
             for (let i = 0; i < tempRings.length; i++) {
                 const data = tempRings[i];
                 
                 this.dummy.position.copy(data.position);
                 this.dummy.lookAt(data.lookAtTarget);
                 
-                // Boost scaling
                 const boostScale = 1.0 + (data.boostAmount - 20) * 0.01;
                 this.dummy.scale.set(boostScale, boostScale, 1);
                 
@@ -267,44 +272,42 @@ export class RacePath {
         this._collisionResult.boostAmount = 0;
         
         const pPos = player.position;
-        // Optimization: Pre-calculate threshold
-        const rangeZ = 6.0; // Rings are thick, give some leeway
-
-        // Iterate data, update InstancedMesh visual if hit
+        const bucketKey = Math.floor(pPos.z / this.BUCKET_SIZE);
+        
         let meshDirty = false;
         let colorDirty = false;
 
-        for (let i = 0; i < this.ringData.length; i++) {
-            const ring = this.ringData[i];
-            if (!ring.active) continue;
+        // Check current, previous, and next buckets to handle boundaries
+        for (let k = bucketKey - 1; k <= bucketKey + 1; k++) {
+            const bucket = this.ringBuckets.get(k);
+            if (!bucket) continue;
 
-            // 1D check first (fastest)
-            if (Math.abs(pPos.z - ring.position.z) > rangeZ) continue;
+            for (let i = 0; i < bucket.length; i++) {
+                const ring = bucket[i];
+                if (!ring.active) continue;
 
-            // 3D check
-            const distSq = pPos.distanceToSquared(ring.position);
-            
-            // Radius 5.5 squared = ~30
-            if (distSq < 30.25) {
-                ring.active = false;
+                const distSq = pPos.distanceToSquared(ring.position);
                 
-                // Update Instance Visuals to "Deactivated" state
-                this.instancedMesh.getMatrixAt(i, this.dummy.matrix);
-                
-                // Shrink
-                this.dummy.scale.multiplyScalar(0.1); 
-                this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
-                this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
-                
-                // Darken
-                this.colorHelper.setHex(0x333333);
-                this.instancedMesh.setColorAt(i, this.colorHelper);
-                
-                meshDirty = true;
-                colorDirty = true;
+                // Radius 5.5 squared = ~30.25
+                if (distSq < 30.25) {
+                    ring.active = false;
+                    
+                    const idx = ring.index;
+                    this.instancedMesh.getMatrixAt(idx, this.dummy.matrix);
+                    
+                    this.dummy.scale.multiplyScalar(0.1); 
+                    this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
+                    this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
+                    
+                    this.colorHelper.setHex(0x333333);
+                    this.instancedMesh.setColorAt(idx, this.colorHelper);
+                    
+                    meshDirty = true;
+                    colorDirty = true;
 
-                this._collisionResult.scoreIncrease++;
-                this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
+                    this._collisionResult.scoreIncrease++;
+                    this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
+                }
             }
         }
 
@@ -315,10 +318,9 @@ export class RacePath {
     }
 
     createVisuals() {
-        // Visual generation (Tubes/Particles) remains the same
-        // But we add them to this.visualItems for proper cleanup
         for (const { curve } of this.curves) {
-            const tubeGeo = new THREE.TubeGeometry(curve, 150, 0.2, 6, false);
+            // Optimization: Reduce segments from 150 to 100 for tubes
+            const tubeGeo = new THREE.TubeGeometry(curve, 100, 0.2, 6, false);
             
             const tubeVert = `
                 varying vec2 vUv;
@@ -356,12 +358,13 @@ export class RacePath {
             this.scene.add(tubeMesh);
             this.visualItems.push(tubeMesh);
 
-            // Particles logic kept simple for brevity (assumed identical to before)
-             const particleCount = 600; 
+            // Optimization: Reduce particle count from 600 to 300
+            const particleCount = 300; 
             const curvePoints = curve.getSpacedPoints(particleCount);
             const posArray = new Float32Array(particleCount * 3);
             const randomArray = new Float32Array(particleCount * 3);
             const phaseArray = new Float32Array(particleCount);
+            
             for(let i=0; i<particleCount; i++) {
                 const pt = curvePoints[i];
                 const theta = Math.random() * Math.PI * 2;
@@ -373,6 +376,7 @@ export class RacePath {
                 randomArray[i*3+2] = (Math.random() - 0.5) * 4.0;
                 phaseArray[i] = Math.random();
             }
+            
             const partGeo = new THREE.BufferGeometry();
             partGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
             partGeo.setAttribute('aRandom', new THREE.BufferAttribute(randomArray, 3));
@@ -410,12 +414,5 @@ export class RacePath {
 
     update(dt) {
         this.uniforms.uTime.value += dt;
-        
-        // Optimize: We don't need to loop through instances every frame to animate them.
-        // We can just rotate the whole InstancedMesh if we center it? 
-        // No, they are world space. 
-        // To animate rotation of 500 instances individually is expensive on CPU.
-        // We skip rotation animation for performance (or do it in vertex shader).
-        // Current: Skipping rotation update for raw performance.
     }
 }
