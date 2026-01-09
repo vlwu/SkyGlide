@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Chunk } from './Chunk.js';
 
 export class WorldManager {
@@ -12,6 +13,13 @@ export class WorldManager {
         // Cache object to reduce string allocations in loop
         this.lastChunkKey = '';
         this.lastChunk = null;
+
+        // Shared Material: Back to Standard for better lighting quality
+        this.chunkMaterial = new THREE.MeshStandardMaterial({ 
+            vertexColors: true,
+            roughness: 0.8,
+            metalness: 0.1
+        });
     }
 
     update(playerPos) {
@@ -20,11 +28,14 @@ export class WorldManager {
 
         const activeKeys = new Set();
 
-        // Limit generation width to create a "path" feel rather than full open world
-        // This drastically saves performance in high-speed linear games
+        // Limit generation width to create a "path" feel
         const width = 3; 
+        
+        // Dynamic generation window
+        // Keep less chunks behind (performance) but enough to avoid voids when turning (4 chunks)
+        const backDist = Math.min(4, this.renderDistance);
 
-        for (let z = -this.renderDistance; z <= this.renderDistance; z++) {
+        for (let z = -backDist; z <= this.renderDistance; z++) {
             for (let x = -width; x <= width; x++) {
                 const chunkX = centerChunkX + x;
                 const chunkZ = centerChunkZ + z;
@@ -48,7 +59,8 @@ export class WorldManager {
     }
 
     createChunk(x, z, key) {
-        const chunk = new Chunk(x, z, this.scene, this.racePath);
+        // Pass the shared material
+        const chunk = new Chunk(x, z, this.scene, this.racePath, this.chunkMaterial);
         this.chunks.set(key, chunk);
     }
 
@@ -75,7 +87,6 @@ export class WorldManager {
         const ly = Math.floor(y); 
         const lz = Math.floor(z) - (cz * this.chunkSize);
         
-        // Use the new getBlock method from Chunk
         return chunk.getBlock(lx, ly, lz);
     }
 }

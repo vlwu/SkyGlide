@@ -32,11 +32,12 @@ const FACES = [
 ];
 
 export class Chunk {
-    constructor(x, z, scene, racePath) {
+    constructor(x, z, scene, racePath, material) {
         this.x = x;
         this.z = z;
         this.scene = scene;
         this.racePath = racePath;
+        this.material = material; // Use shared material
         
         this.size = 16;
         // Increased height to allow for floating islands and deeper valleys
@@ -218,16 +219,12 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.setIndex(indices);
 
-        // Standard material for lighting support
-        const material = new THREE.MeshStandardMaterial({ 
-            vertexColors: true,
-            roughness: 0.8,
-            metalness: 0.1
-        });
-
-        this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.castShadow = true;
-        this.mesh.receiveShadow = true;
+        // Use the shared material passed from WorldManager
+        this.mesh = new THREE.Mesh(geometry, this.material);
+        
+        // Re-enable shadows for depth
+        this.mesh.castShadow = true; 
+        this.mesh.receiveShadow = true; 
         
         this.scene.add(this.mesh);
     }
@@ -236,7 +233,7 @@ export class Chunk {
         if (this.mesh) {
             this.scene.remove(this.mesh);
             this.mesh.geometry.dispose();
-            this.mesh.material.dispose();
+            // Do not dispose the material as it is shared
             this.mesh = null;
         }
         this.data = null;
