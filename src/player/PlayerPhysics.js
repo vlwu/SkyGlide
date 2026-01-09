@@ -23,14 +23,9 @@ export class PlayerPhysics {
         this._nextPos = new THREE.Vector3();
         this._tempVec = new THREE.Vector3();
         
-        // Collision offsets (radius 0.4)
-        this._checkOffsets = [
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0.4, 0, 0), 
-            new THREE.Vector3(-0.4, 0, 0),
-            new THREE.Vector3(0, 0, 0.4), 
-            new THREE.Vector3(0, 0, -0.4)
-        ];
+        // Pre-calculated offsets for collision
+        // Optimization: Stored as primitives to allow unrolled loops
+        this.radius = 0.4;
     }
 
     update(dt, player) {
@@ -49,7 +44,8 @@ export class PlayerPhysics {
         const feetY = player.position.y - 0.05;
         this._tempVec.set(player.position.x, feetY, player.position.z);
         
-        const blockBelow = this.getWorldBlock(this._tempVec);
+        // We check center point below feet
+        const blockBelow = this.getWorldBlockInternal(this._tempVec.x, this._tempVec.y, this._tempVec.z);
         
         if (player.velocity.y <= 0 && blockBelow !== BLOCK.AIR) {
             player.onGround = true;
@@ -61,11 +57,21 @@ export class PlayerPhysics {
         }
     }
 
-    getWorldBlock(pos) {
-        for (let off of this._checkOffsets) {
-            const val = this.world.getBlock(pos.x + off.x, pos.y + off.y, pos.z + off.z);
-            if (val) return val;
-        }
+    // Optimization: Unrolled offset checking to avoid iterator allocation
+    getWorldBlockInternal(x, y, z) {
+        // Check Center
+        let val = this.world.getBlock(x, y, z);
+        if (val) return val;
+
+        // Check +/- Radius (X and Z only)
+        // This is a manual expansion of "checkOffsets"
+        const r = this.radius;
+        
+        if (val = this.world.getBlock(x + r, y, z)) return val;
+        if (val = this.world.getBlock(x - r, y, z)) return val;
+        if (val = this.world.getBlock(x, y, z + r)) return val;
+        if (val = this.world.getBlock(x, y, z - r)) return val;
+
         return 0;
     }
 
@@ -251,25 +257,15 @@ export class PlayerPhysics {
     }
 
     checkCollisionBody(pos, player) {
-        this._tempVec.copy(pos).setY(pos.y + 0.1);
-        if(this.checkPoint(this._tempVec)) return true;
-        this._tempVec.copy(pos).setY(pos.y + player.dims.height * 0.5);
-        if(this.checkPoint(this._tempVec)) return true;
-        this._tempVec.copy(pos).setY(pos.y + player.dims.height - 0.1);
-        if(this.checkPoint(this._tempVec)) return true;
+        // Unrolled check for 3 distinct points (Feet, Mid, Head)
+        if(this.checkPoint(pos.x, pos.y + 0.1, pos.z)) return true;
+        if(this.checkPoint(pos.x, pos.y + player.dims.height * 0.5, pos.z)) return true;
+        if(this.checkPoint(pos.x, pos.y + player.dims.height - 0.1, pos.z)) return true;
         return false;
     }
 
-    checkPoint(p) {
-        for (let off of this._checkOffsets) {
-            const cx = p.x + off.x;
-            const cy = p.y + off.y;
-            const cz = p.z + off.z;
-            if (this.world.getBlock(cx, cy, cz)) {
-                return true;
-            }
-        }
-        return false;
+    checkPoint(x, y, z) {
+        return this.getWorldBlockInternal(x, y, z) !== 0;
     }
 
     crash(player) {

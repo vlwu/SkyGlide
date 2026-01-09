@@ -31,19 +31,20 @@ export class Player {
 
         this.dims = { height: 1.8, radius: 0.4 }; 
         this.onGround = false;
-        this.groundBlock = 0; // 0 = AIR
+        this.groundBlock = 0; 
         
         // --- Visual Representation ---
-        const geometry = new THREE.CapsuleGeometry(0.4, 1.0, 4, 8);
-        const material = new THREE.MeshPhysicalMaterial({
-            color: 0x88ccff,        
-            metalness: 0.0,
-            roughness: 0.15,        
-            transmission: 1.0,      
-            thickness: 1.5,         
-            ior: 1.5,               
-            opacity: 1.0,
-            transparent: false      
+        // Optimization: Switched from CapsuleGeometry (high poly) to Cylinder (lower poly)
+        // Optimization: Switched from MeshPhysicalMaterial (Transmission/Glass = 2 render passes)
+        // to MeshPhongMaterial (Simple lighting = 1 render pass). This is a massive GPU win.
+        const geometry = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8);
+        const material = new THREE.MeshPhongMaterial({
+            color: 0x00d2ff,        
+            emissive: 0x0044aa,
+            specular: 0xffffff,
+            shininess: 30,
+            opacity: 0.9,
+            transparent: true      
         });
         
         this.mesh = new THREE.Mesh(geometry, material);
@@ -116,13 +117,8 @@ export class Player {
     }
 
     update(dt) {
-        // Physics component updates position, state, velocity based on inputs
         this.physics.update(dt, this);
-        
-        // Reset per-frame flags
         this.jumpPressedThisFrame = false;
-
-        // Camera component follows player
         this.playerCamera.update(dt, this);
     }
 
