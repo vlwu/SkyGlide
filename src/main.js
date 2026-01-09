@@ -10,8 +10,8 @@ import { settingsManager } from './settings/SettingsManager.js';
 
 // Configuration
 // Feature: Increased Render Distance for better visuals
-const RENDER_DISTANCE_UNITS = 400; // Increased from 200
-const CHUNK_RENDER_DISTANCE = 24;  // Increased from 10
+const RENDER_DISTANCE_UNITS = 200; 
+const CHUNK_RENDER_DISTANCE = 12;  
 
 // Scene setup
 const scene = new THREE.Scene();

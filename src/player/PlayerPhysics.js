@@ -27,13 +27,10 @@ export class PlayerPhysics {
 
     update(dt, player) {
         // --- SAFETY CHECK ---
-        // If the chunk under the player isn't loaded yet (async worker delay),
-        // freeze the player to prevent falling into the void.
         const chunkX = Math.floor(player.position.x / 16);
         const chunkZ = Math.floor(player.position.z / 16);
         
         if (!this.world.hasChunk(chunkX, chunkZ)) {
-            // Chunk not ready. Hover in place.
             player.velocity.set(0, 0, 0);
             return;
         }
@@ -66,17 +63,35 @@ export class PlayerPhysics {
     }
 
     getWorldBlockInternal(x, y, z) {
+        // Optimization: Fast integer lookup for center point
+        // If center is solid, return it immediately.
         let val = this.world.getBlock(x, y, z);
-        // getBlock returns false if chunk not loaded, or 0 if Air.
-        // We treat false as Air here (no collision) because the 
-        // safety check at start of Update handles the "Void" case.
         if (val) return val;
 
-        const r = this.radius;
-        if (val = this.world.getBlock(x + r, y, z)) return val;
-        if (val = this.world.getBlock(x - r, y, z)) return val;
-        if (val = this.world.getBlock(x, y, z + r)) return val;
-        if (val = this.world.getBlock(x, y, z - r)) return val;
+        // Only check boundaries if we are very close to an edge.
+        // This avoids 4 extra Map lookups for every single collision check
+        // when the player is safely in the middle of a block.
+        const rx = x % 1; 
+        const rz = z % 1;
+        const buffer = this.radius;
+
+        // Check X+
+        if (rx > 1 - buffer) {
+             if (val = this.world.getBlock(x + buffer, y, z)) return val;
+        }
+        // Check X-
+        else if (rx < buffer) {
+             if (val = this.world.getBlock(x - buffer, y, z)) return val;
+        }
+        
+        // Check Z+
+        if (rz > 1 - buffer) {
+             if (val = this.world.getBlock(x, y, z + buffer)) return val;
+        }
+        // Check Z-
+        else if (rz < buffer) {
+             if (val = this.world.getBlock(x, y, z - buffer)) return val;
+        }
 
         return 0;
     }
@@ -152,13 +167,19 @@ export class PlayerPhysics {
     }
 
     handleFlying(dt, player) {
+        // Optimization: Cap physics steps to avoid death spiral
+        // If fps drops to 5, dt is 0.2. 
+        // 0.2 / 0.05 = 4 iterations.
+        // Cap at 4 to prevent infinite freezing.
         const stepSize = 0.05;
         let remaining = dt;
+        let iterations = 0;
         
-        while (remaining > 0) {
+        while (remaining > 0 && iterations < 4) {
             const currentDt = Math.min(remaining, stepSize);
             this.simulateElytraPhysics(currentDt, player);
             remaining -= currentDt;
+            iterations++;
         }
 
         if (player.velocity.length() < 1.0) {
