@@ -50,6 +50,13 @@ export class WorldManager {
     update(playerPos, camera) {
         const now = performance.now();
         
+        // 1. Shadow LOD Update (Fast, every frame is okay, or throttled)
+        // We do this every frame to ensure shadows pop in smoothly as player moves
+        for (const chunk of this.chunks.values()) {
+            chunk.update(playerPos.x, playerPos.z);
+        }
+
+        // 2. Chunk Queue Update (Throttled)
         if (now - this.lastUpdate > 200) {
             this.lastUpdate = now;
             this.updateQueue(playerPos, camera);
@@ -63,20 +70,17 @@ export class WorldManager {
             
             if (this.chunks.has(req.key)) continue;
 
-            const chunk = new Chunk(req.x, req.z, this.scene, this.racePath, this.chunkMaterial);
+            // Notice: Chunk constructor signature changed (removed racePath)
+            const chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial);
             this.chunks.set(req.key, chunk);
 
-            // Prepare Path Segments for this Chunk
-            // The worker doesn't have THREE.js, so we pass simple objects
             const pathSegments = {};
             const startZ = req.z * this.chunkSize;
             
-            // Collect points for the Z-range of this chunk
             for (let z = 0; z < this.chunkSize; z++) {
                 const wz = startZ + z;
                 const points = this.racePath.getPointsAtZ(wz);
                 if (points && points.length > 0) {
-                    // Map vectors to simple objects {x,y}
                     pathSegments[wz] = points.map(p => ({ x: p.x, y: p.y }));
                 }
             }
@@ -86,7 +90,7 @@ export class WorldManager {
                 z: req.z,
                 size: this.chunkSize,
                 height: 96,
-                pathSegments: pathSegments // Pass the tunnel data
+                pathSegments: pathSegments
             });
 
             dispatched++;

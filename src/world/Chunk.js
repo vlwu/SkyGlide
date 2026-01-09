@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export class Chunk {
-    constructor(x, z, scene, racePath, material) {
+    constructor(x, z, scene, material) {
         this.x = x;
         this.z = z;
         this.scene = scene;
@@ -13,6 +13,10 @@ export class Chunk {
         this.data = null;
         this.mesh = null;
         this.isLoaded = false;
+        
+        // Cache center position for distance checks
+        this.worldX = x * 16 + 8;
+        this.worldZ = z * 16 + 8;
     }
 
     getBlock(x, y, z) {
@@ -24,7 +28,6 @@ export class Chunk {
         this.data = payload.data;
         const geoData = payload.geometry;
 
-        // If no vertices (empty chunk), stop here
         if (geoData.position.length === 0) {
             this.isLoaded = true;
             return;
@@ -36,22 +39,35 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.BufferAttribute(geoData.color, 3));
         geometry.setIndex(new THREE.BufferAttribute(geoData.index, 1));
 
-        // Create Mesh
         this.mesh = new THREE.Mesh(geometry, this.material);
-        
-        // Correctly position the mesh in the world
         this.mesh.position.set(this.x * this.size, 0, this.z * this.size);
         
         this.mesh.castShadow = true; 
         this.mesh.receiveShadow = true; 
         this.mesh.frustumCulled = true;
-        
-        // Matrices don't need auto update for static terrain
         this.mesh.matrixAutoUpdate = false;
         this.mesh.updateMatrix();
 
         this.scene.add(this.mesh);
         this.isLoaded = true;
+    }
+
+    // Optimization: Disable shadows for distant chunks
+    update(playerX, playerZ) {
+        if (!this.mesh) return;
+
+        const dx = this.worldX - playerX;
+        const dz = this.worldZ - playerZ;
+        const distSq = dx*dx + dz*dz;
+
+        // 60 units * 60 units = 3600
+        // If chunk is further than 60 units, disable shadow casting
+        // This keeps the shadow map update extremely cheap
+        if (distSq > 3600) {
+            if (this.mesh.castShadow) this.mesh.castShadow = false;
+        } else {
+            if (!this.mesh.castShadow) this.mesh.castShadow = true;
+        }
     }
 
     dispose() {
