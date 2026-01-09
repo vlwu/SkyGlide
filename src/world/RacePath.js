@@ -31,6 +31,10 @@ export class RacePath {
         this.generate();
     }
 
+    hasPath() {
+        return this.curves.length > 0;
+    }
+
     clear() {
         this.visualItems.forEach(item => {
             this.scene.remove(item);

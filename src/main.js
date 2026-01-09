@@ -82,6 +82,11 @@ uiManager.setRestartHandler((mode) => {
     gameScore = 0;
     player.reset();
 
+    // Fix: If path is empty (initial load), force a hard reset (generation)
+    if (!racePath.hasPath()) {
+        mode = 'hard';
+    }
+
     if (mode === 'hard') {
         // Generate new seed
         racePath.reset();

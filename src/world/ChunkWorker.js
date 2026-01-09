@@ -35,7 +35,7 @@ const FACE_CORNERS = [
     // Bottom
     [0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1],
     // Front
-    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1],
+    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 0, 1],
     // Back
     [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]
 ];
@@ -192,8 +192,15 @@ self.onmessage = (e) => {
 
     if (loopMinX <= loopMaxX && loopMinZ <= loopMaxZ) {
         for(let lz = loopMinZ; lz <= loopMaxZ; lz++) {
+            const zOffset = lz * strideZ;
             for(let lx = loopMinX; lx <= loopMaxX; lx++) {
-                data[lx + strideY * 14 + lz * strideZ] = BLOCK.SPAWN;
+                // Create platform
+                data[lx + strideY * 14 + zOffset] = BLOCK.SPAWN;
+                
+                // Clear area above platform (Safety buffer)
+                for(let y = 15; y <= 20; y++) {
+                    data[lx + strideY * y + zOffset] = BLOCK.AIR;
+                }
             }
         }
     }
