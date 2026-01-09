@@ -26,8 +26,6 @@ export class SettingsMenu {
         const currentFps = settingsManager.get('fpsLimit');
         const currentSens = settingsManager.get('sensitivity');
         
-        // Find the index that corresponds to the current setting
-        // Default to index 0 (VSync) if not found
         let sliderIndex = FPS_STEPS.findIndex(step => step.value === currentFps);
         if (sliderIndex === -1) sliderIndex = 0; 
 
@@ -109,29 +107,33 @@ export class SettingsMenu {
             }
         });
 
-        // Sensitivity Slider Logic
+        // Sensitivity Slider
         const sensSlider = this.element.querySelector('#sens-slider');
         const sensLabel = this.element.querySelector('#sens-value');
 
+        // Update visual label immediately (responsive UI)
         sensSlider.addEventListener('input', (e) => {
-            const val = parseFloat(e.target.value);
-            sensLabel.textContent = val.toFixed(1);
-            settingsManager.set('sensitivity', val);
+            sensLabel.textContent = parseFloat(e.target.value).toFixed(1);
         });
 
-        // FPS Slider Logic
+        // Optimization: Write to disk ONLY when user releases the slider handle
+        sensSlider.addEventListener('change', (e) => {
+            settingsManager.set('sensitivity', parseFloat(e.target.value));
+        });
+
+        // FPS Slider
         const fpsSlider = this.element.querySelector('#fps-slider');
         const fpsLabel = this.element.querySelector('#fps-value');
 
         fpsSlider.addEventListener('input', (e) => {
             const index = parseInt(e.target.value);
-            const step = FPS_STEPS[index];
-            
-            // Update UI immediately
-            fpsLabel.textContent = step.label;
-            
-            // Save setting
-            settingsManager.set('fpsLimit', step.value);
+            fpsLabel.textContent = FPS_STEPS[index].label;
+        });
+
+        // Optimization: Write to disk ONLY when user releases the slider handle
+        fpsSlider.addEventListener('change', (e) => {
+            const index = parseInt(e.target.value);
+            settingsManager.set('fpsLimit', FPS_STEPS[index].value);
         });
 
         const backBtn = this.element.querySelector('#btn-settings-back');

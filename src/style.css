@@ -12,7 +12,7 @@ canvas { display: block; }
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  pointer-events: none; /* Let clicks pass through to canvas when playing */
+  pointer-events: none; 
 }
 
 /* Allow pointer events on menus */
@@ -21,11 +21,13 @@ canvas { display: block; }
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    display: none; /* Hidden by default */
+    display: none; 
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(5px);
+    /* Optimization: Removed backdrop-filter: blur(5px). 
+       This CSS property kills framerate on integrated GPUs. */
+    background: rgba(0, 0, 0, 0.85); /* Slightly darker background to replace blur */
     color: white;
 }
 
@@ -48,7 +50,7 @@ canvas { display: block; }
 #hud {
     position: absolute;
     bottom: 20px; right: 20px;
-    display: none; /* Controlled by JS */
+    display: none; 
     flex-direction: column;
     gap: 10px;
     align-items: flex-end;
@@ -69,7 +71,7 @@ canvas { display: block; }
 
 /* Start Menu */
 .start-menu {
-    background: rgba(12, 20, 31, 0.85);
+    background: rgba(12, 20, 31, 0.95);
 }
 
 .game-title {
@@ -116,7 +118,7 @@ canvas { display: block; }
 
 /* Pause Menu */
 .pause-menu {
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.8);
 }
 
 .pause-menu h1 {
@@ -137,7 +139,7 @@ canvas { display: block; }
     margin-bottom: 2rem;
 }
 
-/* Secondary Button (Settings, Back) */
+/* Secondary Button */
 .btn-secondary {
     background: transparent;
     border: 2px solid #00d2ff;
@@ -158,7 +160,7 @@ canvas { display: block; }
 
 /* Settings Menu Styles */
 .settings-content {
-    background: rgba(12, 20, 31, 0.95);
+    background: rgba(12, 20, 31, 0.98);
     padding: 40px;
     border: 1px solid #00d2ff;
     border-radius: 4px;
@@ -240,7 +242,6 @@ input[type=range]:focus {
     outline: none;
 }
 
-/* Slider Track */
 input[type=range]::-webkit-slider-runnable-track {
     width: 100%;
     height: 6px;
@@ -250,7 +251,6 @@ input[type=range]::-webkit-slider-runnable-track {
     border: 1px solid rgba(0, 210, 255, 0.3);
 }
 
-/* Slider Thumb */
 input[type=range]::-webkit-slider-thumb {
     height: 18px;
     width: 18px;
@@ -259,7 +259,7 @@ input[type=range]::-webkit-slider-thumb {
     cursor: pointer;
     appearance: none;
     -webkit-appearance: none;
-    margin-top: -7px; /* Centers thumb on track */
+    margin-top: -7px; 
     box-shadow: 0 0 10px rgba(0, 210, 255, 0.8);
     transition: transform 0.1s;
 }
@@ -269,7 +269,6 @@ input[type=range]::-webkit-slider-thumb:hover {
     background: #fff;
 }
 
-/* Slider Value Text */
 .slider-value {
     min-width: 80px;
     text-align: right;

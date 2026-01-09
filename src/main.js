@@ -22,14 +22,14 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 const renderer = new THREE.WebGLRenderer({ 
     antialias: true,
     powerPreference: "high-performance",
-    precision: "mediump" 
+    precision: "mediump",
+    // Optimization: Disable stencil buffer. We rely on depth buffer for shadows.
+    // This reduces memory bandwidth usage.
+    stencil: false 
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 // GPU Critical Optimization: Force 1:1 pixel ratio.
-// High-DPI screens (Retina, modern Windows laptops) default to >1.0.
-// Rendering 2x pixels quadruples the fragment shader load.
-// For a voxel game, 1.0 looks perfectly fine and saves massive FPS.
 renderer.setPixelRatio(1);
 
 // Shadow Map Optimization
@@ -53,7 +53,7 @@ dirLight.shadow.camera.right = d;
 dirLight.shadow.camera.top = d;
 dirLight.shadow.camera.bottom = -d;
 
-// Small shadow map for performance
+// Small shadow map
 dirLight.shadow.mapSize.width = 512;
 dirLight.shadow.mapSize.height = 512;
 dirLight.shadow.bias = -0.0005;
