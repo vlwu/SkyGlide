@@ -84,6 +84,7 @@ export class Chunk {
                 
                 if (pathPos) {
                     const dx = wx - pathPos.x;
+                    // Pre-check X distance to avoid expensive math for far blocks
                     if (Math.abs(dx) < 15) {
                         isNearPath = true;
                         pathY = pathPos.y;
@@ -123,7 +124,9 @@ export class Chunk {
                     if (isNearPath && blockType !== BLOCK.AIR) {
                         const dy = y - pathY;
                         const dx = wx - pathPos.x;
-                        if (dx*dx + dy*dy < 64) {
+                        // Optimization: Expanded clearance radius slightly (64 -> 72)
+                        // This helps clear corners when path is diagonal/steep
+                        if (dx*dx + dy*dy < 72) {
                             blockType = BLOCK.AIR;
                         }
                     }
@@ -161,11 +164,9 @@ export class Chunk {
                     const wx = startX + x;
                     const wz = startZ + z;
                     
-                    // Optimization: Fast Integer Hash instead of Math.sin
-                    // Trig is expensive per-block. Bitwise ops are practically free.
                     let h = (wx * 374761393) ^ (y * 668265263) ^ (wz * 963469177);
                     h = (h ^ (h >> 13)) * 1274124933;
-                    const rand = ((h >>> 0) / 4294967296); // Normalize to 0..1
+                    const rand = ((h >>> 0) / 4294967296); 
 
                     this.setColor(colorObj, type, rand);
                     const r = colorObj.r;

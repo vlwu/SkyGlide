@@ -56,7 +56,11 @@ export class Player {
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement !== document.body) return;
 
-            if (Math.abs(e.movementX) > 500 || Math.abs(e.movementY) > 500) return;
+            // --- BUG FIX: MOUSE JUMP ---
+            // Reduced clamp threshold from 500 to 200.
+            // When lag spikes occur, browsers can accumulate mouse deltas.
+            // 200 is fast enough for gameplay but filters out frame-skip glitches.
+            if (Math.abs(e.movementX) > 200 || Math.abs(e.movementY) > 200) return;
 
             const baseSensitivity = 0.002;
             const userSensitivity = settingsManager.get('sensitivity');
@@ -122,7 +126,6 @@ export class Player {
     applyBoost(speedIncrease) {
         if (this.state !== 'FLYING') {
             this.state = 'FLYING';
-            // Lift slightly more if it's a massive boost to clear terrain
             this.position.y += speedIncrease > 30 ? 3.0 : 2.0;
         }
 
@@ -132,7 +135,6 @@ export class Player {
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
 
-        // Direct velocity addition provides the most satisfying "kick"
         this.velocity.add(lookDir.multiplyScalar(speedIncrease));
     }
 }

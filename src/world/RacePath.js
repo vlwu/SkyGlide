@@ -67,13 +67,42 @@ export class RacePath {
         this.curve = new THREE.CatmullRomCurve3(this.points);
         this.curve.tension = 0.5;
 
+        // --- BUG FIX: WALL GENERATION ---
+        // Previously, we just mapped spaced points to integers.
+        // If the curve stepped from Z=10.4 to Z=11.6, the integer 11 was skipped.
+        // Chunk generation would see "undefined" for Z=11 and build a wall.
+        // The fix is to walk the curve and fill EVERY integer Z.
+
         const curveLength = this.curve.getLength();
-        const divisions = Math.floor(curveLength);
+        // Higher resolution for the walk
+        const divisions = Math.floor(curveLength * 2); 
         const spacedPoints = this.curve.getSpacedPoints(divisions);
 
-        spacedPoints.forEach(point => {
-            this.pathLookup.set(Math.round(point.z), point);
-        });
+        // We track the previous Z to fill gaps
+        let prevZ = Math.round(spacedPoints[0].z);
+        this.pathLookup.set(prevZ, spacedPoints[0]);
+
+        for (let i = 1; i < spacedPoints.length; i++) {
+            const pt = spacedPoints[i];
+            const currentZ = Math.round(pt.z);
+
+            // Interpolate/Fill if there is a gap greater than 1
+            // Since we are moving in -Z, prevZ is usually > currentZ
+            // We handle both directions just in case
+            const step = prevZ > currentZ ? -1 : 1;
+            
+            let z = prevZ + step;
+            while (z !== currentZ + step) {
+                // Ensure we don't overwrite if existing (though unlikely in a linear path)
+                if (!this.pathLookup.has(z)) {
+                    // For the gap, we use the current point (approximation is fine for chunks)
+                    this.pathLookup.set(z, pt);
+                }
+                z += step;
+            }
+            
+            prevZ = currentZ;
+        }
 
         this.createVisuals();
         this.spawnRings();
@@ -82,7 +111,6 @@ export class RacePath {
     spawnRings() {
         const curveLength = this.curve.getLength();
         
-        // Helper to create a ring with specific boost properties
         const createRingAt = (t, boostAmount) => {
             const pos = this.curve.getPointAt(t);
             const tangent = this.curve.getTangentAt(t);
@@ -91,10 +119,9 @@ export class RacePath {
             mesh.position.copy(pos);
             mesh.lookAt(pos.clone().add(tangent));
             
-            // Visual feedback for high-boost rings
             if (boostAmount > 30) {
                 mesh.scale.set(1.2, 1.2, 1.0);
-                mesh.material.color.setHex(0xffaa00); // Gold for super boost
+                mesh.material.color.setHex(0xffaa00); 
             } else if (boostAmount < 15) {
                 mesh.scale.set(0.9, 0.9, 1.0);
             }
@@ -110,31 +137,26 @@ export class RacePath {
             });
         };
 
-        // Smart Ring Placement Algorithm
-        let currentDist = 30; // Start slightly ahead
+        let currentDist = 30; 
         
         while (currentDist < curveLength - 30) {
             const t = currentDist / curveLength;
             
-            // Analyze slope (Tangent Y component)
-            // +1 is straight up, -1 is straight down, 0 is flat
             const tangent = this.curve.getTangentAt(t);
             const slope = tangent.y;
 
-            let spacing = 70;   // Default spacing
-            let boost = 20;     // Default boost
+            let spacing = 70;   
+            let boost = 20;     
 
-            // 1. CLIMBING (Needs more rings, more speed)
             if (slope > 0.1) {
-                const intensity = Math.min(slope / 0.6, 1.0); // Normalize 0..1
-                spacing = 70 - (intensity * 40); // Min spacing 30
-                boost = 20 + (intensity * 30);   // Max boost 50
+                const intensity = Math.min(slope / 0.6, 1.0); 
+                spacing = 70 - (intensity * 40); 
+                boost = 20 + (intensity * 30);   
             } 
-            // 2. DIVING (Gravity assists, fewer rings, less boost)
             else if (slope < -0.1) {
                 const intensity = Math.min(Math.abs(slope) / 0.6, 1.0);
-                spacing = 70 + (intensity * 60); // Max spacing 130
-                boost = 20 - (intensity * 10);   // Min boost 10
+                spacing = 70 + (intensity * 60); 
+                boost = 20 - (intensity * 10);   
             }
 
             createRingAt(t, Math.round(boost));
@@ -143,7 +165,6 @@ export class RacePath {
     }
 
     checkCollisions(player) {
-        // Reset result object
         this._collisionResult.scoreIncrease = 0;
         this._collisionResult.boostAmount = 0;
         
@@ -152,10 +173,8 @@ export class RacePath {
         for (const ring of this.rings) {
             if (!ring.active) continue;
 
-            // Fast check: Z distance
             if (Math.abs(pPos.z - ring.position.z) > 10) continue;
 
-            // Full distance check
             const distSq = pPos.distanceToSquared(ring.position);
             
             if (distSq < ring.radius * ring.radius) {
@@ -164,7 +183,6 @@ export class RacePath {
                 ring.mesh.scale.setScalar(0.1); 
                 
                 this._collisionResult.scoreIncrease++;
-                // Accumulate boost if hitting multiple in one frame (rare but possible)
                 this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
             }
         }
@@ -173,7 +191,6 @@ export class RacePath {
     }
 
     createVisuals() {
-        // 1. Tube
         const tubeGeo = new THREE.TubeGeometry(this.curve, 150, 0.2, 6, false);
         
         const tubeVert = `
@@ -214,7 +231,6 @@ export class RacePath {
         this.scene.add(tubeMesh);
         this.visualItems.push(tubeMesh);
 
-        // 2. Particles
         const particleCount = 1500;
         const curvePoints = this.curve.getSpacedPoints(particleCount);
         
@@ -291,7 +307,6 @@ export class RacePath {
         const s = 1.0 + Math.sin(this.uniforms.uTime.value * 5) * 0.05;
         for (const ring of this.rings) {
             if (ring.active) {
-                // Pulse size based on boost power (subtle hint)
                 const boostScale = 1.0 + (ring.boostAmount - 20) * 0.01;
                 ring.mesh.scale.set(s * boostScale, s * boostScale, s);
                 ring.mesh.rotation.z += dt; 
