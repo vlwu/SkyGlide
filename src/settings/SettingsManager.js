@@ -6,7 +6,8 @@ export class SettingsManager {
                 backward: 'KeyS',
                 left: 'KeyA',
                 right: 'KeyD',
-                jump: 'Space'
+                jump: 'Space',
+                reset: 'KeyR'
             },
             fpsLimit: 0, // 0 = VSync (Browser Default)
             sensitivity: 1.0 // Multiplier for mouse sensitivity

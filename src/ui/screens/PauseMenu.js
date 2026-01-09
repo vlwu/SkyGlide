@@ -9,6 +9,7 @@ export class PauseMenu {
             
             <div class="button-group-vertical">
                 <button id="btn-resume" class="btn-primary">RESUME</button>
+                <button id="btn-reset-pause" class="btn-primary" style="background: #ff3333; color: white;">RESET RUN</button>
                 <button id="btn-settings-pause" class="btn-secondary">SETTINGS</button>
             </div>
 
@@ -21,6 +22,20 @@ export class PauseMenu {
             e.stopPropagation();
             this.uiManager.onGameResume();
         });
+
+        const resetBtn = this.element.querySelector('#btn-reset-pause');
+        resetBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            resetBtn.textContent = 'INITIALIZING...';
+            setTimeout(() => {
+                this.uiManager.onGameRestart();
+                resetBtn.textContent = 'RESET RUN';
+            }, 100);
+        });
+
+        // Hover styling logic for the red button
+        resetBtn.addEventListener('mouseenter', () => resetBtn.style.background = '#ff6666');
+        resetBtn.addEventListener('mouseleave', () => resetBtn.style.background = '#ff3333');
 
         this.element.querySelector('#btn-settings-pause').addEventListener('click', (e) => {
             e.stopPropagation();

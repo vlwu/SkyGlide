@@ -70,6 +70,10 @@ export class SettingsMenu {
                         <span>Jump / Fly</span>
                         <button class="btn-bind" data-action="jump">${this.formatKey(keys.jump)}</button>
                     </div>
+                    <div class="setting-row">
+                        <span>Quick Reset</span>
+                        <button class="btn-bind" data-action="reset">${this.formatKey(keys.reset)}</button>
+                    </div>
                 </div>
 
                 <div class="settings-section">
@@ -91,6 +95,7 @@ export class SettingsMenu {
     }
 
     formatKey(code) {
+        if (!code) return '???';
         if (code.startsWith('Key')) return code.slice(3);
         if (code === 'Space') return 'SPACE';
         return code;
