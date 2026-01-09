@@ -9,34 +9,33 @@ import { FPSCounter } from './ui/FPSCounter.js';
 import { settingsManager } from './settings/SettingsManager.js';
 
 // Configuration
-const RENDER_DISTANCE_UNITS = 200;
-const CHUNK_RENDER_DISTANCE = 14; 
+const RENDER_DISTANCE_UNITS = 160;
+// Reduced chunk distance to keep draw calls and geometry generation lower
+const CHUNK_RENDER_DISTANCE = 12; 
 
 // Scene setup
 const scene = new THREE.Scene();
-// Fog matched to Sky bottomColor for seamless horizon
-scene.fog = new THREE.Fog(0xA0D0E0, 60, RENDER_DISTANCE_UNITS - 20); 
+scene.fog = new THREE.Fog(0xA0D0E0, 40, RENDER_DISTANCE_UNITS - 10); 
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
 // Renderer Optimization
 const renderer = new THREE.WebGLRenderer({ 
     antialias: true,
-    powerPreference: "high-performance", // Hint to browser to use dGPU
-    precision: "mediump" // Default is highp, mediump is faster and usually sufficient for games
+    powerPreference: "high-performance",
+    precision: "mediump" 
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 // Shadow Map Optimization
 renderer.shadowMap.enabled = true; 
-// Use PCFShadowMap (faster than Soft, harder edges)
 renderer.shadowMap.type = THREE.PCFShadowMap; 
 
 document.body.appendChild(renderer.domElement);
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.65); // Slightly brighter for new palette
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
 scene.add(ambientLight);
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
@@ -50,9 +49,10 @@ dirLight.shadow.camera.right = d;
 dirLight.shadow.camera.top = d;
 dirLight.shadow.camera.bottom = -d;
 
-// Optimized Shadow Map Size
-dirLight.shadow.mapSize.width = 1024;
-dirLight.shadow.mapSize.height = 1024;
+// Optimization: Reduced Shadow Map size for low-end devices
+// 512 is sufficient for the low-poly style and saves significant VRAM/Fillrate
+dirLight.shadow.mapSize.width = 512;
+dirLight.shadow.mapSize.height = 512;
 dirLight.shadow.bias = -0.0005;
 scene.add(dirLight);
 
@@ -122,7 +122,6 @@ function animate(time) {
     racePath.update(dt);
 
     if (uiManager.activeScreen === 'HUD') {
-        // Check for Quick Reset Input
         if (player.consumeResetInput()) {
             uiManager.onGameRestart();
         }

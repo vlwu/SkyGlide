@@ -14,12 +14,7 @@ export class WorldManager {
         this.lastChunkKey = '';
         this.lastChunk = null;
 
-        // Queue for throttled generation
-        this.chunksToCreate = [];
-
-        // Performance Optimization: Use Lambert Material
-        // Lambert calculates lighting at vertices (Gouraud shading) rather than per-pixel (Phong/PBR).
-        // It is much faster and fits the "low-poly/voxel" aesthetic perfectly.
+        // Optimization: Use Lambert Material (Gouraud shading)
         this.chunkMaterial = new THREE.MeshLambertMaterial({ 
             vertexColors: true
         });
@@ -30,7 +25,6 @@ export class WorldManager {
             chunk.dispose();
         }
         this.chunks.clear();
-        this.chunksToCreate = [];
         this.lastChunk = null;
         this.lastChunkKey = '';
     }
@@ -42,10 +36,10 @@ export class WorldManager {
         const activeKeys = new Set();
         const neededChunks = [];
 
-        // Limit generation width
-        const width = 3; 
-        // Keep chunks behind
-        const backDist = Math.min(4, this.renderDistance);
+        // Optimization: Reduced generation width from 3 to 2
+        // This reduces active chunks from ~120 to ~80, saving draw calls and generation time
+        const width = 2; 
+        const backDist = Math.min(3, this.renderDistance);
 
         for (let z = -backDist; z <= this.renderDistance; z++) {
             for (let x = -width; x <= width; x++) {
@@ -56,14 +50,14 @@ export class WorldManager {
                 activeKeys.add(key);
 
                 if (!this.chunks.has(key)) {
-                    // Instead of creating immediately, add to a list with distance info
+                    // Distance squared for sorting
                     const distSq = x*x + z*z;
                     neededChunks.push({ x: chunkX, z: chunkZ, key, dist: distSq });
                 }
             }
         }
 
-        // 1. Unload distant chunks immediately to free memory
+        // 1. Unload distant chunks
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 chunk.dispose();
@@ -75,14 +69,12 @@ export class WorldManager {
         neededChunks.sort((a, b) => a.dist - b.dist);
 
         // 3. Process generation queue
-        // We only generate 2 chunks per frame to prevent stuttering (Time Slicing)
-        const GENERATION_BUDGET = 2;
+        const GENERATION_BUDGET = 2; // Keep budget tight
         let generated = 0;
 
         for (const req of neededChunks) {
             if (generated >= GENERATION_BUDGET) break;
             
-            // Double check it wasn't created in a previous sub-step (unlikely but safe)
             if (!this.chunks.has(req.key)) {
                 this.createChunk(req.x, req.z, req.key);
                 generated++;

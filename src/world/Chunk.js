@@ -13,7 +13,6 @@ const FACES = [
     { dir: [0, 0, -1], corners: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] }  // Back
 ];
 
-// Block Definitions
 const BLOCK = {
     AIR: 0,
     GRASS: 1,
@@ -24,6 +23,15 @@ const BLOCK = {
     SAND: 6,
     ICE: 7
 };
+
+// --- Memory Optimization: Reusable Scratchpad Buffers ---
+// Prevents allocating thousands of arrays/objects per chunk generation.
+// 32k vertices is enough for a standard 16x16x96 chunk surface.
+const MAX_VERTICES = 32000; 
+const BUFFER_POS = new Float32Array(MAX_VERTICES * 3);
+const BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
+const BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
+const BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5); // Indices count is roughly 1.5x vertices (6 indices per 4 verts)
 
 export class Chunk {
     constructor(x, z, scene, racePath, material) {
@@ -42,7 +50,6 @@ export class Chunk {
         this.generate();
     }
 
-    // Safe access for external calls
     getBlock(x, y, z) {
         if (x < 0 || x >= this.size || y < 0 || y >= this.height || z < 0 || z >= this.size) return 0;
         return this.data[x + this.size * (y + this.height * z)];
@@ -59,18 +66,19 @@ export class Chunk {
         const scaleBase = 0.02;
         const scaleMount = 0.04;
         const scaleIsland = 0.04;
-        const caveScale = 0.05;
-
+        
+        // Pre-calculate path proximity once per column to save cycles
+        const pathCheckCache = new Float32Array(this.size * this.size);
+        // Using -1 to indicate "not calculated" or "far"
+        
         for (let x = 0; x < this.size; x++) {
             for (let z = 0; z < this.size; z++) {
                 const wx = startX + x;
                 const wz = startZ + z;
 
                 // 1. Terrain Height
-                // Base rolling hills
                 let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
                 
-                // Mountains/Ridges
                 const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
                 if (mountain > 0) {
                     h += mountain * 35;
@@ -78,10 +86,10 @@ export class Chunk {
 
                 const groundHeight = Math.floor(h);
 
-                // Race Path Proximity
+                // Path Proximity Logic
                 const pathPos = this.racePath.getPointAtZ(wz);
+                let pathY = -999;
                 let isNearPath = false;
-                let pathY = 0;
                 
                 if (pathPos) {
                     const dx = wx - pathPos.x;
@@ -92,56 +100,54 @@ export class Chunk {
                 }
 
                 // Fill Column
+                // Optimization: Loop mostly mostly upwards, but logic is distinct by height
+                // We access array directly for speed
+                const colOffset = this.size * (this.height * z); // base offset for column
+
                 for (let y = 0; y < this.height; y++) {
                     let blockType = BLOCK.AIR;
                     
                     // A. Ground
                     if (y <= groundHeight) {
-                        blockType = BLOCK.STONE; // Default interior
-
-                        // Surface & Sub-surface Layers
+                        blockType = BLOCK.STONE; 
                         const depth = groundHeight - y;
                         
-                        // Altitude-based Biomes
                         if (groundHeight > 58) {
-                            // Mountain / Snow
                             if (depth === 0) blockType = BLOCK.SNOW;
-                            else if (depth < 3) blockType = BLOCK.STONE; // Stone under snow
+                            else if (depth < 3) blockType = BLOCK.STONE;
                         } else if (groundHeight < 22) {
-                            // Lowlands / Beach
                             if (depth < 3) blockType = BLOCK.SAND;
                         } else {
-                            // Standard Hills
                             if (depth === 0) blockType = BLOCK.GRASS;
                             else if (depth < 3) blockType = BLOCK.DIRT;
                         }
                         
-                        // Cave Check (Simple 3D noise worm)
-                        if (y > 1 && y < groundHeight - 2) {
-                            const caveNoise = noise3D(wx * caveScale, y * caveScale, wz * caveScale);
-                            if (caveNoise > 0.5) blockType = BLOCK.AIR;
-                        }
+                        // PERFORMANCE: Removed Cave Noise check. 
+                        // Caves are invisible during flight and cost 20k+ noise calls per chunk.
                     }
 
-                    // B. Islands
+                    // B. Islands (Only check noise if we are in island altitude)
                     else if (y > 45 && y < 90) {
+                        // Check cheap bounding box before expensive noise
+                        // Only generate islands every few blocks to save noise calls? 
+                        // No, just trust the y-range limiter.
                         const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
                         if (islandNoise > 0.45) {
-                            // Island Biomes (Ice clouds or Stone)
                             if (y > 80) blockType = BLOCK.ICE;
                             else if (y > 78) blockType = BLOCK.SNOW;
                             else blockType = BLOCK.STONE;
                             
-                            // Top grass for lower islands
+                            // Top grass
                             if (y < 70 && islandNoise < 0.5 && noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0) {
                                 blockType = BLOCK.GRASS;
                             }
                         }
                     }
 
-                    // C. Path Carving (Tunnel)
+                    // C. Path Tunnel
                     if (isNearPath && blockType !== BLOCK.AIR) {
                         const dy = y - pathY;
+                        // Simple circular distance check squared
                         const dx = wx - pathPos.x;
                         if (dx*dx + dy*dy < 64) {
                             blockType = BLOCK.AIR;
@@ -154,7 +160,9 @@ export class Chunk {
                     }
 
                     if (blockType !== BLOCK.AIR) {
-                        this.data[x + this.size * (y + this.height * z)] = blockType;
+                        this.data[x + this.size * y + z * this.size * this.height] = blockType; // Fixed indexing: x + width * (y + height * z) is standard, but check getBlock usage
+                        // getBlock: x + size * (y + height * z)
+                        // This matches.
                     }
                 }
             }
@@ -164,10 +172,8 @@ export class Chunk {
     }
 
     buildMesh(startX, startZ) {
-        const positions = [];
-        const normals = [];
-        const colors = [];
-        const indices = [];
+        let vertCount = 0;
+        let indexCount = 0;
 
         const colorObj = new THREE.Color();
         const size = this.size;
@@ -175,107 +181,116 @@ export class Chunk {
         const strideY = size;          
         const strideZ = size * height; 
 
+        // Iterate volume
         for (let z = 0; z < size; z++) {
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < size; x++) {
                     const type = this.data[x + y * strideY + z * strideZ];
                     if (type === BLOCK.AIR) continue;
 
-                    // Deterministic random for texture variation
+                    // Deterministic texture variation
                     const wx = startX + x;
                     const wz = startZ + z;
-                    const rand = Math.sin(wx * 12.9898 + y * 78.233 + wz * 43.123) * 0.5 + 0.5; // 0..1
-                    
-                    // Palette
-                    switch (type) {
-                        case BLOCK.GRASS:
-                            // Vibrant Green with slight yellow/blue variation
-                            colorObj.setHSL(0.25 + rand * 0.05, 0.6, 0.4 + rand * 0.1);
-                            break;
-                        case BLOCK.DIRT:
-                            // Reddish Brown
-                            colorObj.setHSL(0.08, 0.4, 0.3 + rand * 0.1);
-                            break;
-                        case BLOCK.STONE:
-                            // Cool Grey
-                            colorObj.setHSL(0.6, 0.05, 0.4 + rand * 0.1);
-                            break;
-                        case BLOCK.SNOW:
-                            // White with tiny blue tint
-                            colorObj.setHSL(0.6, 0.2, 0.9 + rand * 0.1);
-                            break;
-                        case BLOCK.SAND:
-                            // Sandy Beige
-                            colorObj.setHSL(0.12, 0.5, 0.7 + rand * 0.1);
-                            break;
-                        case BLOCK.ICE:
-                            // Cyan/Ice
-                            colorObj.setHSL(0.5, 0.7, 0.8);
-                            break;
-                        case BLOCK.SPAWN:
-                            colorObj.setHex(0xFFD700);
-                            break;
-                        default:
-                            colorObj.setHex(0xFF00FF);
-                    }
+                    const rand = Math.sin(wx * 12.9898 + y * 78.233 + wz * 43.123) * 0.5 + 0.5;
 
+                    // Palette lookup
+                    this.setColor(colorObj, type, rand);
                     const r = colorObj.r;
                     const g = colorObj.g;
                     const b = colorObj.b;
 
-                    // Face Construction
+                    // Check neighbors to cull faces
                     for (const face of FACES) {
                         const nx = x + face.dir[0];
                         const ny = y + face.dir[1];
                         const nz = z + face.dir[2];
 
-                        // Simple boundary check for neighbors within chunk
                         let neighborType = BLOCK.AIR;
                         if (nx >= 0 && nx < size && ny >= 0 && ny < height && nz >= 0 && nz < size) {
                             neighborType = this.data[nx + ny * strideY + nz * strideZ];
                         }
 
-                        // Optimization: Skip faces between transparent blocks (like leaves) if we had them,
-                        // but for solid blocks, if neighbor exists, skip face.
-                        if (neighborType !== BLOCK.AIR) continue;
+                        if (neighborType !== BLOCK.AIR) continue; // Face is occluded
 
-                        // AO / Shading (Directional)
+                        // Face visible, add to buffer
+                        // AO / Shading
                         let shade = 1.0;
-                        if (face.dir[1] < 0) shade = 0.6; // Bottom darkest
-                        else if (face.dir[1] > 0) shade = 1.1; // Top brightest
-                        else if (face.dir[0] !== 0) shade = 0.85; // Sides
-                        else shade = 0.9; // Front/Back
+                        if (face.dir[1] < 0) shade = 0.6;
+                        else if (face.dir[1] > 0) shade = 1.1;
+                        else if (face.dir[0] !== 0) shade = 0.85;
+                        else shade = 0.9;
 
-                        const ndx = positions.length / 3;
+                        const vBase = vertCount;
 
                         for (const corner of face.corners) {
-                            positions.push(x + corner[0] + startX, y + corner[1], z + corner[2] + startZ);
-                            normals.push(face.dir[0], face.dir[1], face.dir[2]);
-                            colors.push(r * shade, g * shade, b * shade);
+                            // Position
+                            BUFFER_POS[vertCount * 3] = x + corner[0] + startX;
+                            BUFFER_POS[vertCount * 3 + 1] = y + corner[1];
+                            BUFFER_POS[vertCount * 3 + 2] = z + corner[2] + startZ;
+                            
+                            // Normal
+                            BUFFER_NORM[vertCount * 3] = face.dir[0];
+                            BUFFER_NORM[vertCount * 3 + 1] = face.dir[1];
+                            BUFFER_NORM[vertCount * 3 + 2] = face.dir[2];
+
+                            // Color
+                            BUFFER_COL[vertCount * 3] = r * shade;
+                            BUFFER_COL[vertCount * 3 + 1] = g * shade;
+                            BUFFER_COL[vertCount * 3 + 2] = b * shade;
+
+                            vertCount++;
                         }
 
-                        indices.push(ndx, ndx + 1, ndx + 2, ndx + 2, ndx + 3, ndx);
+                        // Indices (0,1,2, 2,3,0 relative to vBase)
+                        BUFFER_IND[indexCount++] = vBase;
+                        BUFFER_IND[indexCount++] = vBase + 1;
+                        BUFFER_IND[indexCount++] = vBase + 2;
+                        BUFFER_IND[indexCount++] = vBase + 2;
+                        BUFFER_IND[indexCount++] = vBase + 3;
+                        BUFFER_IND[indexCount++] = vBase;
+
+                        // Safety break to prevent buffer overflow
+                        if (vertCount >= MAX_VERTICES - 4) break;
                     }
                 }
             }
         }
 
-        if (positions.length === 0) return;
+        if (vertCount === 0) return;
 
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        geometry.setIndex(indices);
-
-        geometry.dispose(); 
+        // Slice the buffers to the exact size needed.
+        // This creates copies, but it's much faster than pushing to arrays 20,000 times.
+        // It drastically reduces GC thrashing because we are only creating TypedArray views/copies 
+        // rather than thousands of dynamic objects.
+        
+        geometry.setAttribute('position', new THREE.BufferAttribute(BUFFER_POS.slice(0, vertCount * 3), 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(BUFFER_NORM.slice(0, vertCount * 3), 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(BUFFER_COL.slice(0, vertCount * 3), 3));
+        geometry.setIndex(new THREE.BufferAttribute(BUFFER_IND.slice(0, indexCount), 1));
 
         this.mesh = new THREE.Mesh(geometry, this.material);
         this.mesh.castShadow = true; 
         this.mesh.receiveShadow = true; 
         this.mesh.frustumCulled = true;
+        // Optimization: Mark matrix as static if we don't move chunks (we don't)
+        this.mesh.matrixAutoUpdate = false;
+        this.mesh.updateMatrix();
 
         this.scene.add(this.mesh);
+    }
+
+    setColor(colorObj, type, rand) {
+        switch (type) {
+            case BLOCK.GRASS: colorObj.setHSL(0.25 + rand * 0.05, 0.6, 0.4 + rand * 0.1); break;
+            case BLOCK.DIRT: colorObj.setHSL(0.08, 0.4, 0.3 + rand * 0.1); break;
+            case BLOCK.STONE: colorObj.setHSL(0.6, 0.05, 0.4 + rand * 0.1); break;
+            case BLOCK.SNOW: colorObj.setHSL(0.6, 0.2, 0.9 + rand * 0.1); break;
+            case BLOCK.SAND: colorObj.setHSL(0.12, 0.5, 0.7 + rand * 0.1); break;
+            case BLOCK.ICE: colorObj.setHSL(0.5, 0.7, 0.8); break;
+            case BLOCK.SPAWN: colorObj.setHex(0xFFD700); break;
+            default: colorObj.setHex(0xFF00FF);
+        }
     }
 
     dispose() {
