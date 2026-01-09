@@ -78,8 +78,7 @@ export class Chunk {
 
                 const groundHeight = Math.floor(h);
 
-                // --- BRANCHING PATH LOGIC ---
-                // We now retrieve an ARRAY of points (or undefined)
+                // Retrieve all branch points for this Z slice
                 const pathPoints = this.racePath.getPointsAtZ(wz);
                 
                 for (let y = 0; y < this.height; y++) {
@@ -115,16 +114,16 @@ export class Chunk {
                     // Check collisions with ANY branch
                     if (pathPoints && blockType !== BLOCK.AIR) {
                         for (const point of pathPoints) {
-                            // Quick AABB check
                             if (Math.abs(wx - point.x) > 15) continue;
 
                             const dy = y - point.y;
                             const dx = wx - point.x;
                             
-                            // Clearance Radius 72 (approx 8.5 blocks radius)
-                            if (dx*dx + dy*dy < 72) {
+                            // Optimization: Increased clearance to 81 (9 blocks radius)
+                            // Makes forks wider and navigation easier
+                            if (dx*dx + dy*dy < 81) {
                                 blockType = BLOCK.AIR;
-                                break; // Optimized: Cleared by one branch, no need to check others
+                                break; 
                             }
                         }
                     }

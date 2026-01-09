@@ -3,11 +3,9 @@ import * as THREE from 'three';
 export class RacePath {
     constructor(scene) {
         this.scene = scene;
-        
-        // Lookup now stores arrays of points: Map<int, Vector3[]>
         this.pathLookup = new Map();
         
-        // Track all created curves for visuals
+        // Store objects: { curve: CatmullRomCurve3, depth: number }
         this.curves = [];
         
         this.rings = [];
@@ -48,13 +46,11 @@ export class RacePath {
     }
 
     generate() {
-        // Start the main trunk
         const startPos = new THREE.Vector3(0, 15, 0);
-        // Initial forward direction (negative Z)
         const startDir = new THREE.Vector3(0, 0, -1);
         
-        // Recursive generation
-        this.createBranch(startPos, startDir, 120, 0);
+        // Main trunk: 250 segments
+        this.createBranch(startPos, startDir, 250, 0);
         
         this.createVisuals();
         this.spawnRings();
@@ -63,23 +59,18 @@ export class RacePath {
     createBranch(startPos, startDir, segments, depth) {
         const points = [];
         
-        // 1. Seamless Connection
-        // The first point is the start position
         points.push(startPos.clone());
-        
-        // The second point projects out along the startDir to ensure tangency continuity.
-        // This prevents "kinks" where branches attach.
+        // Tangent control point
         const controlPoint = startPos.clone().add(startDir.clone().multiplyScalar(20));
         points.push(controlPoint);
 
         let currentPos = controlPoint;
         let currentDir = startDir.clone();
+        
+        let segmentsSinceBranch = 0;
 
-        // 2. Generate Points
         for (let i = 0; i < segments; i++) {
-            const z = currentPos.z - 40; // Step forward
-            
-            // Random wander
+            const z = currentPos.z - 40; 
             const x = currentPos.x + (Math.random() - 0.5) * 60; 
             let y = currentPos.y + (Math.random() - 0.5) * 30; 
             y = Math.max(20, Math.min(80, y));
@@ -87,52 +78,65 @@ export class RacePath {
             const nextPos = new THREE.Vector3(x, y, z);
             points.push(nextPos);
             
-            // Update direction for next iteration's bias
             currentDir.subVectors(nextPos, currentPos).normalize();
             currentPos = nextPos;
 
-            // 3. Forking Logic
-            // Only fork if we aren't too deep and we are far enough along this segment
-            if (depth < 2 && i > 30 && i < segments - 30) {
-                // 3% chance per segment to fork
-                if (Math.random() < 0.03) {
-                    // Left or Right branch
-                    const angle = (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 6); // 30 degrees
+            segmentsSinceBranch++;
+
+            // --- BRANCHING LOGIC ---
+            // 1. Force a split early on the main path (Depth 0, ~Segment 40) so the user SEES it.
+            const forcedSplit = (depth === 0 && i === 40);
+
+            // 2. Random splits
+            // Must have remaining length > 50
+            // Must have cooled down (25 segments)
+            // Depth limit < 3
+            if (depth < 3 && (segments - i) > 50) {
+                if (forcedSplit || (segmentsSinceBranch > 25 && Math.random() < 0.15)) {
+                    
+                    // Branch Angle: 35 degrees
+                    const angle = (Math.PI / 5) * (Math.random() > 0.5 ? 1 : -1);
                     const branchDir = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle).normalize();
                     
-                    // Recursive call
-                    // We reduce the length of branches
                     this.createBranch(nextPos, branchDir, segments - i, depth + 1);
-                    
-                    // Force skip to prevent multiple branches clumping
-                    i += 10; 
+                    segmentsSinceBranch = 0;
+
+                    // 3. Triple Fork Chance (20% or Forced)
+                    // If forced split, always make it a triple for spectacle
+                    if (forcedSplit || Math.random() < 0.2) {
+                        const angle2 = -angle * 0.8; // Opposite side
+                        const branchDir2 = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle2).normalize();
+                        this.createBranch(nextPos, branchDir2, segments - i, depth + 1);
+                    }
                 }
             }
         }
 
         const curve = new THREE.CatmullRomCurve3(points);
         curve.tension = 0.5;
-        this.curves.push(curve);
+        this.curves.push({ curve, depth }); // Store depth for visuals
 
-        // 4. Populate Lookup (Gap Filling)
+        // Populate Lookup
         const length = curve.getLength();
         const divisions = Math.floor(length * 2); 
         const spacedPoints = curve.getSpacedPoints(divisions);
 
-        let prevZ = Math.round(spacedPoints[0].z);
-        this.addToLookup(prevZ, spacedPoints[0]);
+        if (spacedPoints.length > 0) {
+            let prevZ = Math.round(spacedPoints[0].z);
+            this.addToLookup(prevZ, spacedPoints[0]);
 
-        for (let i = 1; i < spacedPoints.length; i++) {
-            const pt = spacedPoints[i];
-            const currentZ = Math.round(pt.z);
-            const step = prevZ > currentZ ? -1 : 1;
-            
-            let z = prevZ + step;
-            while (z !== currentZ + step) {
-                this.addToLookup(z, pt);
-                z += step;
+            for (let i = 1; i < spacedPoints.length; i++) {
+                const pt = spacedPoints[i];
+                const currentZ = Math.round(pt.z);
+                const step = prevZ > currentZ ? -1 : 1;
+                
+                let z = prevZ + step;
+                while (z !== currentZ + step) {
+                    this.addToLookup(z, pt);
+                    z += step;
+                }
+                prevZ = currentZ;
             }
-            prevZ = currentZ;
         }
     }
 
@@ -140,24 +144,26 @@ export class RacePath {
         if (!this.pathLookup.has(z)) {
             this.pathLookup.set(z, []);
         }
-        // Optimization: Don't add if very close to existing point in this slice (dedupe)
         const list = this.pathLookup.get(z);
         if (list.length > 0) {
             const last = list[list.length - 1];
-            if (Math.abs(last.x - point.x) < 1 && Math.abs(last.y - point.y) < 1) return;
+            if (last.distanceToSquared(point) < 4) return; 
         }
         list.push(point);
     }
 
     spawnRings() {
-        for (const curve of this.curves) {
+        for (const { curve, depth } of this.curves) {
             const curveLength = curve.getLength();
             let currentDist = 30;
             
-            // Smart placement per curve
+            // Branch Color Coding
+            let ringColor = 0x00ffff; // Cyan (Main)
+            if (depth === 1) ringColor = 0xc000ff; // Purple (Branch 1)
+            if (depth >= 2) ringColor = 0xff8800;  // Orange (Branch 2)
+
             while (currentDist < curveLength - 30) {
                 const t = currentDist / curveLength;
-                
                 const tangent = curve.getTangentAt(t);
                 const slope = tangent.y;
 
@@ -177,8 +183,6 @@ export class RacePath {
 
                 const pos = curve.getPointAt(t);
                 
-                // Avoid placing rings on top of other rings (intersection check)
-                // This is a simple O(N) check against recent rings
                 let overlapping = false;
                 for (let i = Math.max(0, this.rings.length - 10); i < this.rings.length; i++) {
                     if (this.rings[i].position.distanceToSquared(pos) < 100) {
@@ -188,13 +192,16 @@ export class RacePath {
                 }
 
                 if (!overlapping) {
-                    const mesh = new THREE.Mesh(this.ringGeometry, this.ringMaterial.clone());
+                    const mat = this.ringMaterial.clone();
+                    mat.color.setHex(ringColor);
+
+                    const mesh = new THREE.Mesh(this.ringGeometry, mat);
                     mesh.position.copy(pos);
                     mesh.lookAt(pos.clone().add(tangent));
                     
                     if (boost > 30) {
                         mesh.scale.set(1.2, 1.2, 1.0);
-                        mesh.material.color.setHex(0xffaa00); 
+                        mat.color.setHex(0xffffff); // White hot boost
                     } else if (boost < 15) {
                         mesh.scale.set(0.9, 0.9, 1.0);
                     }
@@ -216,8 +223,6 @@ export class RacePath {
         
         const pPos = player.position;
 
-        // Optimization: Only check rings that are roughly at the player's Z depth
-        // But iterating array is fast enough for < 1000 rings in JS
         for (const ring of this.rings) {
             if (!ring.active) continue;
 
@@ -239,8 +244,8 @@ export class RacePath {
     }
 
     createVisuals() {
-        for (const curve of this.curves) {
-            // 1. Tube
+        for (const { curve } of this.curves) {
+            // Tube
             const tubeGeo = new THREE.TubeGeometry(curve, 150, 0.2, 6, false);
             
             const tubeVert = `
@@ -279,8 +284,8 @@ export class RacePath {
             this.scene.add(tubeMesh);
             this.visualItems.push(tubeMesh);
 
-            // 2. Particles
-            const particleCount = 800; // Lower per branch since we have multiple branches
+            // Particles
+            const particleCount = 600; 
             const curvePoints = curve.getSpacedPoints(particleCount);
             
             const posArray = new Float32Array(particleCount * 3);
