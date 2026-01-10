@@ -16,8 +16,10 @@ export class StartMenu {
                     <span class="hs-value" id="start-highscore">0</span>
                 </div>
 
+                <button id="btn-start" class="btn-primary" style="margin-bottom: 20px;">INITIATE FLIGHT</button>
+
                 <div class="button-group">
-                    <button id="btn-start" class="btn-primary">INITIATE FLIGHT</button>
+                    <button id="btn-htp-start" class="btn-secondary">HOW TO PLAY</button>
                     <button id="btn-settings-start" class="btn-secondary">SETTINGS</button>
                 </div>
                 
@@ -37,6 +39,11 @@ export class StartMenu {
         this.element.querySelector('#btn-settings-start').addEventListener('click', (e) => {
             e.stopPropagation();
             this.uiManager.showScreen('SETTINGS');
+        });
+
+        this.element.querySelector('#btn-htp-start').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.uiManager.showScreen('HOWTOPLAY');
         });
 
         document.getElementById('ui-layer').appendChild(this.element);

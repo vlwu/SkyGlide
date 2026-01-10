@@ -3,6 +3,7 @@ import { HUD } from './screens/HUD.js';
 import { PauseMenu } from './screens/PauseMenu.js';
 import { SettingsMenu } from './screens/SettingsMenu.js';
 import { GameOverMenu } from './screens/GameOverMenu.js';
+import { HowToPlayMenu } from './screens/HowToPlayMenu.js';
 import { statsManager } from '../settings/StatsManager.js';
 
 export class UIManager {
@@ -19,13 +20,15 @@ export class UIManager {
         this.pauseMenu = new PauseMenu(this);
         this.settingsMenu = new SettingsMenu(this);
         this.gameOverMenu = new GameOverMenu(this);
+        this.howToPlayMenu = new HowToPlayMenu(this);
 
         this.screens = [
             this.startMenu, 
             this.hud, 
             this.pauseMenu, 
             this.settingsMenu,
-            this.gameOverMenu
+            this.gameOverMenu,
+            this.howToPlayMenu
         ];
         
         this.activeScreen = null;
@@ -85,6 +88,10 @@ export class UIManager {
             case 'GAMEOVER':
                 this.gameOverMenu.show();
                 this.activeScreen = 'GAMEOVER';
+                break;
+            case 'HOWTOPLAY':
+                this.howToPlayMenu.show();
+                this.activeScreen = 'HOWTOPLAY';
                 break;
         }
     }

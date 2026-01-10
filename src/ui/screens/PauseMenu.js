@@ -13,8 +13,11 @@ export class PauseMenu {
                     <button id="btn-retry-pause" class="btn-secondary">RETRY RUN</button>
                     <button id="btn-new-path-pause" class="btn-secondary">NEW PATH</button>
                 </div>
+                <div class="button-group">
+                    <button id="btn-htp-pause" class="btn-secondary">HOW TO PLAY</button>
+                    <button id="btn-settings-pause" class="btn-secondary">SETTINGS</button>
+                </div>
                 <button id="btn-exit-pause" class="btn-secondary" style="border-color: #ff3333; color: #ff3333;">EXIT TO MENU</button>
-                <button id="btn-settings-pause" class="btn-secondary">SETTINGS</button>
             </div>
 
             <div class="controls-hint">
@@ -65,6 +68,12 @@ export class PauseMenu {
         this.element.querySelector('#btn-settings-pause').addEventListener('click', (e) => {
             e.stopPropagation();
             this.uiManager.showScreen('SETTINGS');
+        });
+
+        // How To Play
+        this.element.querySelector('#btn-htp-pause').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.uiManager.showScreen('HOWTOPLAY');
         });
 
         document.getElementById('ui-layer').appendChild(this.element);
