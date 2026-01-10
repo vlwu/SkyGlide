@@ -8,17 +8,19 @@ export class RacePath {
         
         // Data for logic
         this.ringData = [];
-        // Spatial Optimization: Bucket rings by Z-index for O(1) collision checks
         this.ringBuckets = new Map();
         this.BUCKET_SIZE = 50;
         
         // Visuals
         this.visualItems = []; 
+        // Optimization: Spatial buckets for visual culling
+        this.visualBuckets = new Map();
+        this.VISUAL_BUCKET_SIZE = 100;
+
         this.instancedMesh = null;
         this.dummy = new THREE.Object3D(); 
         this.colorHelper = new THREE.Color();
 
-        // Geometry & Material shared for all rings
         this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 12); 
         this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
         
@@ -42,6 +44,7 @@ export class RacePath {
             if (item.material) item.material.dispose();
         });
         this.visualItems = [];
+        this.visualBuckets.clear();
 
         if (this.instancedMesh) {
             this.scene.remove(this.instancedMesh);
@@ -229,12 +232,11 @@ export class RacePath {
                         boostAmount: Math.round(boost),
                         originalColor: finalColor,
                         active: true,
-                        index: tempRings.length // Store index for mesh updates
+                        index: tempRings.length
                     };
                     
                     tempRings.push(ring);
                     
-                    // Add to bucket
                     const bucketKey = Math.floor(pos.z / this.BUCKET_SIZE);
                     if (!this.ringBuckets.has(bucketKey)) this.ringBuckets.set(bucketKey, []);
                     this.ringBuckets.get(bucketKey).push(ring);
@@ -243,7 +245,6 @@ export class RacePath {
             }
         }
 
-        // Create Instanced Mesh
         if (tempRings.length > 0) {
             this.instancedMesh = new THREE.InstancedMesh(
                 this.ringGeometry, 
@@ -253,22 +254,18 @@ export class RacePath {
             
             for (let i = 0; i < tempRings.length; i++) {
                 const data = tempRings[i];
-                
                 this.dummy.position.copy(data.position);
                 this.dummy.lookAt(data.lookAtTarget);
-                
                 const boostScale = 1.0 + (data.boostAmount - 20) * 0.01;
                 this.dummy.scale.set(boostScale, boostScale, 1);
-                
                 this.dummy.updateMatrix();
                 this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
-                
                 this.colorHelper.setHex(data.originalColor);
                 this.instancedMesh.setColorAt(i, this.colorHelper);
             }
 
             this.instancedMesh.instanceMatrix.needsUpdate = true;
-            this.instancedMesh.frustumCulled = false; // Always render rings (bucket system handles logic)
+            this.instancedMesh.frustumCulled = false; 
             this.scene.add(this.instancedMesh);
             this.ringData = tempRings;
         }
@@ -284,7 +281,6 @@ export class RacePath {
         let meshDirty = false;
         let colorDirty = false;
 
-        // Check current, previous, and next buckets to handle boundaries
         for (let k = bucketKey - 1; k <= bucketKey + 1; k++) {
             const bucket = this.ringBuckets.get(k);
             if (!bucket) continue;
@@ -294,24 +290,17 @@ export class RacePath {
                 if (!ring.active) continue;
 
                 const distSq = pPos.distanceToSquared(ring.position);
-                
-                // Radius 5.5 squared = ~30.25
                 if (distSq < 30.25) {
                     ring.active = false;
-                    
                     const idx = ring.index;
                     this.instancedMesh.getMatrixAt(idx, this.dummy.matrix);
-                    
                     this.dummy.scale.multiplyScalar(0.1); 
                     this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
                     this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
-                    
                     this.colorHelper.setHex(0x333333);
                     this.instancedMesh.setColorAt(idx, this.colorHelper);
-                    
                     meshDirty = true;
                     colorDirty = true;
-
                     this._collisionResult.scoreIncrease++;
                     this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
                 }
@@ -326,9 +315,7 @@ export class RacePath {
 
     createVisuals() {
         for (const { curve } of this.curves) {
-            // Optimization: Reduce segments from 150 to 100 for tubes
             const tubeGeo = new THREE.TubeGeometry(curve, 100, 0.2, 6, false);
-            // Optimization: Compute bbox for culling
             tubeGeo.computeBoundingBox();
             
             const tubeVert = `
@@ -366,9 +353,9 @@ export class RacePath {
             const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
             tubeMesh.userData.bbox = tubeGeo.boundingBox;
             this.scene.add(tubeMesh);
-            this.visualItems.push(tubeMesh);
+            this.addToVisualBucket(tubeMesh);
 
-            // Optimization: Reduce particle count from 600 to 300
+            // Particles
             const particleCount = 300; 
             const curvePoints = curve.getSpacedPoints(particleCount);
             const posArray = new Float32Array(particleCount * 3);
@@ -418,7 +405,23 @@ export class RacePath {
             const particles = new THREE.Points(partGeo, partMat);
             particles.userData.bbox = partGeo.boundingBox;
             this.scene.add(particles);
-            this.visualItems.push(particles);
+            this.addToVisualBucket(particles);
+        }
+    }
+
+    addToVisualBucket(item) {
+        if (!item.userData.bbox) {
+            this.visualItems.push(item);
+            return;
+        }
+        
+        // Add item to every bucket it intersects
+        const minBucket = Math.floor(item.userData.bbox.min.z / this.VISUAL_BUCKET_SIZE);
+        const maxBucket = Math.floor(item.userData.bbox.max.z / this.VISUAL_BUCKET_SIZE);
+
+        for (let b = minBucket; b <= maxBucket; b++) {
+            if (!this.visualBuckets.has(b)) this.visualBuckets.set(b, []);
+            this.visualBuckets.get(b).push(item);
         }
     }
 
@@ -429,21 +432,70 @@ export class RacePath {
     update(dt, playerPos = null) {
         this.uniforms.uTime.value += dt;
 
-        // Optimization: Cull visual items (tubes/particles) based on Z distance
         if (playerPos) {
-            this.visualItems.forEach(item => {
-                if (item.userData.bbox) {
-                    const minZ = item.userData.bbox.min.z;
-                    const maxZ = item.userData.bbox.max.z;
-                    
-                    // Simple Z-check culling (Range approx 300)
-                    if (playerPos.z > maxZ + 100 || playerPos.z < minZ - 250) {
-                        item.visible = false;
-                    } else {
-                        item.visible = true;
+            // Optimization: Only update visibility for nearby buckets
+            const centerBucket = Math.floor(playerPos.z / this.VISUAL_BUCKET_SIZE);
+            
+            // Check range: -3 to +3 buckets (approx 300 units behind, 300 units ahead)
+            const minB = centerBucket - 3;
+            const maxB = centerBucket + 3;
+
+            // 1. Hide everything from previous active buckets?
+            // Actually, easier to hide everything if we track active set, but for now
+            // since we don't have a list of "currently visible", we rely on the fact that
+            // we only turn ON things nearby. 
+            // Ideally we'd turn OFF things leaving the range.
+            // Simplified approach: Iterate all buckets? No, that defeats the point.
+            // Better approach: Keep a set of currently visible items.
+            
+            // For this specific implementation where we need "precise code modifications":
+            // I will use a Set to track items we just checked to avoid double processing,
+            // and I will assume items far away can be culled.
+            // But without iterating ALL, we can't hide the far ones unless we store them.
+            
+            // Revised logic: 
+            // 1. We know which buckets are in range. 
+            // 2. We can't easily "hide everything else" without a list.
+            // 3. Fallback: Iterate the 'visualItems' list but check the bucket index logic?
+            //    No, that's O(N).
+            
+            // Correct logic:
+            // Since we added items to visualBuckets, we can just iterate the active buckets
+            // to SET visible = true.
+            // But we need to set visible = false for others.
+            // Given the constraints, I will iterate the active buckets to set visible=true, 
+            // but we need a way to turn off the others.
+            // The cleanest way without massive refactor is to keep a Set of "last visible items".
+            
+            if (!this._lastVisibleItems) this._lastVisibleItems = new Set();
+            const newVisibleItems = new Set();
+
+            for (let b = minB; b <= maxB; b++) {
+                const bucket = this.visualBuckets.get(b);
+                if (bucket) {
+                    for (let i = 0; i < bucket.length; i++) {
+                        const item = bucket[i];
+                        // Double check precise bounds
+                        if (item.userData.bbox) {
+                            if (playerPos.z > item.userData.bbox.max.z + 100 || playerPos.z < item.userData.bbox.min.z - 250) {
+                                // Out of range (can happen if item spans multiple buckets but we are at edge)
+                                continue; 
+                            }
+                            item.visible = true;
+                            newVisibleItems.add(item);
+                        }
                     }
                 }
+            }
+
+            // Hide items that are no longer in the new set
+            this._lastVisibleItems.forEach(item => {
+                if (!newVisibleItems.has(item)) {
+                    item.visible = false;
+                }
             });
+
+            this._lastVisibleItems = newVisibleItems;
         }
     }
 }

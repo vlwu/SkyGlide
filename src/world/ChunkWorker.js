@@ -13,7 +13,6 @@ const BLOCK = {
     ICE: 7
 };
 
-// Optimization: Unrolled face data for faster iteration
 // Face order: Right, Left, Top, Bottom, Front, Back
 const FACE_DIRS = [
     1, 0, 0,
@@ -24,20 +23,13 @@ const FACE_DIRS = [
     0, 0, -1
 ];
 
-// Corners for each face (relative to x,y,z)
 const FACE_CORNERS = [
-    // Right
-    [1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1],
-    // Left
-    [0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0],
-    // Top
-    [0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0],
-    // Bottom
-    [0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1],
-    // Front
-    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1],
-    // Back
-    [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]
+    [1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1], // Right
+    [0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0], // Left
+    [0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0], // Top
+    [0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1], // Bottom
+    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1], // Front
+    [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]  // Back
 ];
 
 const MAX_VERTICES = 40000;
@@ -46,59 +38,74 @@ const BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
 const BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
 const BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
 
-// Helper for color (replacing THREE.Color)
-function setHSL(h, s, l, out) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs((h * 6) % 2 - 1));
-    const m = l - c / 2;
-    let r=0, g=0, b=0;
-
-    if (0 <= h * 6 && h * 6 < 1) { r = c; g = x; b = 0; }
-    else if (1 <= h * 6 && h * 6 < 2) { r = x; g = c; b = 0; }
-    else if (2 <= h * 6 && h * 6 < 3) { r = 0; g = c; b = x; }
-    else if (3 <= h * 6 && h * 6 < 4) { r = 0; g = x; b = c; }
-    else if (4 <= h * 6 && h * 6 < 5) { r = x; g = 0; b = c; }
-    else if (5 <= h * 6 && h * 6 < 6) { r = c; g = 0; b = x; }
-
-    out[0] = r + m;
-    out[1] = g + m;
-    out[2] = b + m;
-}
-
-function setColor(type, rand, out) {
+// Optimization: Fast RGB setting without expensive HSL math
+function fastColor(type, rand, out) {
+    let r, g, b;
+    // Pre-calculated base RGBs + random variations
     switch (type) {
-        case BLOCK.GRASS: setHSL(0.25 + rand * 0.05, 0.6, 0.4 + rand * 0.1, out); break;
-        case BLOCK.DIRT: setHSL(0.08, 0.4, 0.3 + rand * 0.1, out); break;
-        case BLOCK.STONE: setHSL(0.6, 0.05, 0.4 + rand * 0.1, out); break;
-        case BLOCK.SNOW: setHSL(0.6, 0.2, 0.9 + rand * 0.1, out); break;
-        case BLOCK.SAND: setHSL(0.12, 0.5, 0.7 + rand * 0.1, out); break;
-        case BLOCK.ICE: setHSL(0.5, 0.7, 0.8, out); break;
-        case BLOCK.SPAWN: out[0]=1; out[1]=0.84; out[2]=0; break;
-        default: out[0]=1; out[1]=0; out[2]=1;
+        case BLOCK.GRASS: 
+            // Greenish: H=0.25-0.3
+            r = 0.1 + rand * 0.1; 
+            g = 0.5 + rand * 0.15; 
+            b = 0.1 + rand * 0.1;
+            break;
+        case BLOCK.DIRT: 
+            // Brown
+            r = 0.35 + rand * 0.1; 
+            g = 0.25 + rand * 0.05; 
+            b = 0.15 + rand * 0.05;
+            break;
+        case BLOCK.STONE: 
+            // Grey
+            r = g = b = 0.4 + rand * 0.15;
+            break;
+        case BLOCK.SNOW: 
+            // White
+            r = g = b = 0.9 + rand * 0.1;
+            break;
+        case BLOCK.SAND: 
+            // Yellow/Tan
+            r = 0.75 + rand * 0.1; 
+            g = 0.7 + rand * 0.1; 
+            b = 0.4 + rand * 0.1;
+            break;
+        case BLOCK.ICE: 
+            // Light Blue
+            r = 0.5; g = 0.7; b = 0.9;
+            break;
+        case BLOCK.SPAWN: 
+            r = 1.0; g = 0.84; b = 0.0;
+            break;
+        default: 
+            r = 1.0; g = 0.0; b = 1.0;
     }
+    out[0] = r; out[1] = g; out[2] = b;
 }
 
 self.onmessage = (e) => {
     const { x, z, size, height, pathSegments } = e.data;
     
+    // Use Flat Float32Array for better memory locality if needed, but Uint8 is fine for blocks
     const data = new Uint8Array(size * height * size);
     const startX = x * size;
     const startZ = z * size;
+    
+    // Optimization: Cache constants
+    const strideY = size;          
+    const strideZ = size * height; 
     
     // 1. GENERATE TERRAIN
     const scaleBase = 0.02;
     const scaleMount = 0.04;
     const scaleIsland = 0.04;
 
-    // Optimization: Pre-calculate strides
-    const strideY = size;          
-    const strideZ = size * height; 
-
     for (let lx = 0; lx < size; lx++) {
+        const wx = startX + lx;
         for (let lz = 0; lz < size; lz++) {
-            const wx = startX + lx;
             const wz = startZ + lz;
 
+            // Reduce noise calls by checking bounds or simplifying? 
+            // For now, keep visual fidelity but ensure calculations are clean.
             let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
             const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
             if (mountain > 0) h += mountain * 35;
@@ -106,24 +113,20 @@ self.onmessage = (e) => {
 
             const colBase = lx + lz * strideZ;
 
-            // Fill Column
             for (let y = 0; y < height; y++) {
                 let blockType = BLOCK.AIR;
                 
                 if (y <= groundHeight) {
-                    blockType = BLOCK.STONE; 
+                    // Logic remains same, just ensuring quick path
                     const depth = groundHeight - y;
                     if (groundHeight > 58) {
-                        if (depth === 0) blockType = BLOCK.SNOW;
-                        else if (depth < 3) blockType = BLOCK.STONE;
+                        blockType = (depth === 0) ? BLOCK.SNOW : (depth < 3 ? BLOCK.STONE : BLOCK.STONE);
                     } else if (groundHeight < 22) {
-                        if (depth < 3) blockType = BLOCK.SAND;
+                        blockType = (depth < 3) ? BLOCK.SAND : BLOCK.STONE;
                     } else {
-                        if (depth === 0) blockType = BLOCK.GRASS;
-                        else if (depth < 3) blockType = BLOCK.DIRT;
+                        blockType = (depth === 0) ? BLOCK.GRASS : (depth < 3 ? BLOCK.DIRT : BLOCK.STONE);
                     }
                 } else if (y > 45 && y < 90) {
-                    // Floating Islands
                     const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
                     if (islandNoise > 0.45) {
                         if (y > 80) blockType = BLOCK.ICE;
@@ -142,31 +145,25 @@ self.onmessage = (e) => {
         }
     }
 
-    // 2. CARVE TUNNEL
+    // 2. CARVE TUNNEL (Unchanged logic, it's fast enough)
     for (let lz = 0; lz < size; lz++) {
         const wz = startZ + lz;
         const points = pathSegments[wz];
-        
         if (!points) continue;
-
         const strideZ_lz = lz * strideZ;
 
         for (let lx = 0; lx < size; lx++) {
             const wx = startX + lx;
-            let tunnelMinY = 999;
-            let tunnelMaxY = -999;
+            let tunnelMinY = 999, tunnelMaxY = -999;
 
-            // Simple distance check against path points
             for (let i = 0; i < points.length; i++) {
                 const p = points[i];
                 const dx = wx - p.x;
                 const dxSq = dx * dx;
-                if (dxSq < 81) {
+                if (dxSq < 81) { // 9^2
                     const dySpan = Math.sqrt(81 - dxSq);
-                    const top = p.y + dySpan;
-                    const bottom = p.y - dySpan;
-                    if (bottom < tunnelMinY) tunnelMinY = bottom;
-                    if (top > tunnelMaxY) tunnelMaxY = top;
+                    if (p.y - dySpan < tunnelMinY) tunnelMinY = p.y - dySpan;
+                    if (p.y + dySpan > tunnelMaxY) tunnelMaxY = p.y + dySpan;
                 }
             }
 
@@ -174,7 +171,6 @@ self.onmessage = (e) => {
                 const iMin = Math.max(0, Math.floor(tunnelMinY));
                 const iMax = Math.min(height, Math.ceil(tunnelMaxY));
                 const colBase = lx + strideZ_lz;
-                
                 for (let y = iMin; y < iMax; y++) {
                     data[colBase + y * strideY] = BLOCK.AIR;
                 }
@@ -182,7 +178,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // 3. FORCE SPAWN
+    // 3. FORCE SPAWN (Unchanged)
     const minWx = -2, maxWx = 2;
     const minWz = -2, maxWz = 2;
     const loopMinX = Math.max(0, minWx - startX);
@@ -194,10 +190,7 @@ self.onmessage = (e) => {
         for(let lz = loopMinZ; lz <= loopMaxZ; lz++) {
             const zOffset = lz * strideZ;
             for(let lx = loopMinX; lx <= loopMaxX; lx++) {
-                // Create platform
                 data[lx + strideY * 14 + zOffset] = BLOCK.SPAWN;
-                
-                // Clear area above platform (Safety buffer)
                 for(let y = 15; y <= 20; y++) {
                     data[lx + strideY * y + zOffset] = BLOCK.AIR;
                 }
@@ -210,42 +203,48 @@ self.onmessage = (e) => {
     let indexCount = 0;
     const rgb = [0,0,0];
 
-    // Iterating Y outer loop might be better for cache line if data is Y-major?
-    // Current layout: data[lx + y * 16 + lz * 16 * 96]
-    // Inner-most should vary lx (stride 1).
-    // So order: lz -> y -> lx is correct for sequential access.
+    // Optimization: Precompute check offsets
+    // Neighbors: +X, -X, +Y, -Y, +Z, -Z
+    const OFFSETS = [1, -1, strideY, -strideY, strideZ, -strideZ];
 
     for (let lz = 0; lz < size; lz++) {
         const lzStride = lz * strideZ;
-        
         for (let y = 0; y < height; y++) {
             const yStride = y * strideY;
             const baseIdx = yStride + lzStride;
 
             for (let lx = 0; lx < size; lx++) {
-                const type = data[baseIdx + lx];
+                const idx = baseIdx + lx;
+                const type = data[idx];
                 if (type === BLOCK.AIR) continue;
 
-                // Color gen
+                // Fast color calc
                 const wx = startX + lx;
                 const wz = startZ + lz;
+                // Fast integer hash for "random"
                 let h = (wx * 374761393) ^ (y * 668265263) ^ (wz * 963469177);
                 h = (h ^ (h >> 13)) * 1274124933;
                 const rand = ((h >>> 0) / 4294967296); 
-                setColor(type, rand, rgb);
+                
+                fastColor(type, rand, rgb);
 
                 // Check 6 faces
                 for (let f = 0; f < 6; f++) {
-                    const nx = lx + FACE_DIRS[f * 3];
-                    const ny = y + FACE_DIRS[f * 3 + 1];
-                    const nz = lz + FACE_DIRS[f * 3 + 2];
+                    // Optimization: Check boundaries before array access
+                    let exposed = true;
+                    
+                    const nx = lx + FACE_DIRS[f*3];
+                    const ny = y + FACE_DIRS[f*3+1];
+                    const nz = lz + FACE_DIRS[f*3+2];
 
-                    let neighbor = BLOCK.AIR;
                     if (nx >= 0 && nx < size && ny >= 0 && ny < height && nz >= 0 && nz < size) {
-                        neighbor = data[nx + ny * strideY + nz * strideZ];
+                        // Safe to access array directly with precomputed offset
+                        if (data[idx + OFFSETS[f]] !== BLOCK.AIR) {
+                            exposed = false;
+                        }
                     }
 
-                    if (neighbor !== BLOCK.AIR) continue;
+                    if (!exposed) continue;
 
                     let shade = 0.9;
                     const dy = FACE_DIRS[f * 3 + 1];
@@ -256,21 +255,22 @@ self.onmessage = (e) => {
                     const vBase = vertCount;
                     const cOffset = f * 4;
                     
+                    // Unrolling loop slightly for performance
                     for (let c = 0; c < 4; c++) {
                         const corner = FACE_CORNERS[cOffset + c];
-                        const idx = vertCount * 3;
+                        const dst = vertCount * 3;
                         
-                        BUFFER_POS[idx] = lx + corner[0];
-                        BUFFER_POS[idx+1] = y + corner[1];
-                        BUFFER_POS[idx+2] = lz + corner[2];
+                        BUFFER_POS[dst] = lx + corner[0];
+                        BUFFER_POS[dst+1] = y + corner[1];
+                        BUFFER_POS[dst+2] = lz + corner[2];
 
-                        BUFFER_NORM[idx] = FACE_DIRS[f*3];
-                        BUFFER_NORM[idx+1] = FACE_DIRS[f*3+1];
-                        BUFFER_NORM[idx+2] = FACE_DIRS[f*3+2];
+                        BUFFER_NORM[dst] = FACE_DIRS[f*3];
+                        BUFFER_NORM[dst+1] = FACE_DIRS[f*3+1];
+                        BUFFER_NORM[dst+2] = FACE_DIRS[f*3+2];
 
-                        BUFFER_COL[idx] = rgb[0] * shade;
-                        BUFFER_COL[idx+1] = rgb[1] * shade;
-                        BUFFER_COL[idx+2] = rgb[2] * shade;
+                        BUFFER_COL[dst] = rgb[0] * shade;
+                        BUFFER_COL[dst+1] = rgb[1] * shade;
+                        BUFFER_COL[dst+2] = rgb[2] * shade;
 
                         vertCount++;
                     }

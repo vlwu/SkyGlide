@@ -19,12 +19,10 @@ export class WorldManager {
         this._cameraForward = new THREE.Vector3();
         this.generationQueue = [];
         this.lastUpdate = 0;
-        this.frameCounter = 0; // Optimization: For throttling updates
+        this.frameCounter = 0; 
 
-        // Culling optimizations
         this.frustum = new THREE.Frustum();
         this.projScreenMatrix = new THREE.Matrix4();
-        // Render distance in units (chunkSize * renderDistance) + margin, squared
         this.maxVisibleDistSq = (chunkSize * renderDistance + 32) ** 2;
 
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
@@ -59,9 +57,11 @@ export class WorldManager {
         const now = performance.now();
         
         // 1. Culling & Visibility Update
-        // Update frustum from camera
         this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
+
+        // Optimization: Pre-calculate square distance for "always visible" radius (approx 2 chunks)
+        const safeRadiusSq = 1600; // 40^2
 
         for (const chunk of this.chunks.values()) {
             if (!chunk.mesh) continue;
@@ -70,24 +70,26 @@ export class WorldManager {
             const dz = chunk.worldZ - playerPos.z;
             const distSq = dx*dx + dz*dz;
 
-            // Distance Culling: Skip rendering if beyond max visual range
-            if (distSq > this.maxVisibleDistSq) {
-                chunk.setVisible(false);
-                continue;
+            let isVisible = false;
+
+            if (distSq <= this.maxVisibleDistSq) {
+                // Optimization: Skip frustum check for very close chunks
+                if (distSq < safeRadiusSq) {
+                    isVisible = true;
+                } else if (this.frustum.intersectsBox(chunk.bbox)) {
+                    isVisible = true;
+                }
             }
 
-            // Frustum Culling: Skip if bbox is not in camera view
-            if (!this.frustum.intersectsBox(chunk.bbox)) {
-                chunk.setVisible(false);
-                continue;
+            if (chunk.mesh.visible !== isVisible) {
+                chunk.setVisible(isVisible);
             }
 
-            // If visible
-            chunk.setVisible(true);
-
-            // Shadow LOD (Throttled)
-            if (this.frameCounter % 15 === 0) {
-                chunk.update(distSq);
+            if (isVisible) {
+                // Shadow LOD (Throttled)
+                if (this.frameCounter % 15 === 0) {
+                    chunk.update(distSq);
+                }
             }
         }
 
@@ -111,7 +113,6 @@ export class WorldManager {
             const pathSegments = {};
             const startZ = req.z * this.chunkSize;
             
-            // Optimization: Only checking segments relevant to this chunk size
             for (let z = 0; z < this.chunkSize; z++) {
                 const wz = startZ + z;
                 const points = this.racePath.getPointsAtZ(wz);
@@ -156,7 +157,6 @@ export class WorldManager {
                 activeKeys.add(key);
 
                 if (!this.chunks.has(key)) {
-                    // Optimization: Culling based on camera direction
                     const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
                     const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
                     
@@ -164,7 +164,6 @@ export class WorldManager {
                     const dirZ = wz - playerPos.z;
                     const distSq = dirX*dirX + dirZ*dirZ;
 
-                    // Skip if outside circular render distance
                     if (distSq > rangeSq * 1.2) continue;
 
                     let score = distSq;
@@ -181,7 +180,6 @@ export class WorldManager {
             }
         }
 
-        // Garbage Collect distant chunks
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 chunk.dispose();
@@ -200,7 +198,6 @@ export class WorldManager {
         const key = `${cx},${cz}`;
         let chunk;
 
-        // Optimization: LRU Cache of 1
         if (key === this.lastChunkKey && this.lastChunk) {
             chunk = this.lastChunk;
         } else {
