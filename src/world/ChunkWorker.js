@@ -182,11 +182,35 @@ self.onmessage = (e) => {
                             if (plantNoise > 0.3) {
                                 if (plantNoise > 0.65) {
                                     // Cactus (2 or 3 blocks tall)
-                                    const h = (plantNoise > 0.8) ? 3 : 2;
-                                    for(let k = 0; k < h; k++) {
-                                        const cIdx = idx + strideY * (k + 1);
-                                        if (cIdx < data.length && data[cIdx] === BLOCK.AIR) {
-                                            data[cIdx] = BLOCK.CACTUS;
+                                    // Spacing Check: Check 4 processed neighbors (lz-1, lx-1, diag)
+                                    let neighborCactus = false;
+                                    const offsets = [[0,-1], [-1,0], [-1,-1], [-1,1]];
+                                    
+                                    for(let o of offsets) {
+                                        const nx = lx + o[0];
+                                        const nz = lz + o[1];
+                                        if (nx >= 0 && nx < size && nz >= 0 && nz < size) {
+                                            const nBase = nx + nz * strideZ;
+                                            // Check small vertical range around surface
+                                            const minNy = Math.max(0, y - 2);
+                                            const maxNy = Math.min(height - 1, y + 2);
+                                            for(let ny = minNy; ny <= maxNy; ny++) {
+                                                if(data[nBase + ny * strideY] === BLOCK.CACTUS) {
+                                                    neighborCactus = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if(neighborCactus) break;
+                                    }
+
+                                    if (!neighborCactus) {
+                                        const h = (plantNoise > 0.8) ? 3 : 2;
+                                        for(let k = 0; k < h; k++) {
+                                            const cIdx = idx + strideY * (k + 1);
+                                            if (cIdx < data.length && data[cIdx] === BLOCK.AIR) {
+                                                data[cIdx] = BLOCK.CACTUS;
+                                            }
                                         }
                                     }
                                 } else {
@@ -316,7 +340,7 @@ self.onmessage = (e) => {
                     
                     // Face B (Reverse)
                     pushVert(0.15, 0.8, 0.15, 0, 1, -0.7, 0, -0.7);
-                    pushVert(0.85, 0.8, 0.85, 1, 1, -0.7, 0, -0.7);
+                    pushVert(0.85, 0.8, 0.15, 1, 1, -0.7, 0, -0.7);
                     pushVert(0.85, 0, 0.85, 1, 0, -0.7, 0, -0.7);
                     pushVert(0.15, 0, 0.15, 0, 0, -0.7, 0, -0.7);
 

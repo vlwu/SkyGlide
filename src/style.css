@@ -31,6 +31,18 @@ canvas { display: block; }
     color: white;
 }
 
+/* Generic Menu Content Container */
+.menu-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(12, 20, 31, 0.95);
+    padding: 30px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+}
+
 /* FPS Counter */
 #fps-counter {
     position: absolute;
@@ -71,7 +83,7 @@ canvas { display: block; }
 
 /* Start Menu */
 .start-menu {
-    background: rgba(12, 20, 31, 0.95);
+    /* Uses menu-content */
 }
 
 .game-title {
@@ -150,6 +162,7 @@ canvas { display: block; }
     display: flex;
     flex-direction: column;
     align-items: center;
+    margin: 0 auto; /* Ensure centering within parent flex item if needed */
 }
 
 .stat-row.main-stat {
