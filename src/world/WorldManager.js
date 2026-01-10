@@ -33,29 +33,43 @@ export class WorldManager {
         this._cameraForward = new THREE.Vector3();
         this.generationQueue = [];
         this.applyQueue = [];
+        this.pendingRequests = new Set(); // Track chunks in-flight
         
         this.lastUpdate = 0;
         this.lastVisibilityUpdate = 0;
         this.frameCounter = 0; 
-        
-        this.chunkCooldown = 0;
 
         this.frustum = new THREE.Frustum();
         this.projScreenMatrix = new THREE.Matrix4();
         
         this.updateMaxVisibleDist();
-        this.precomputeLODTemplates(); // Initialize LOD rings
+        this.precomputeLODTemplates(); 
 
         this.disposalQueue = [];
 
-        this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
+        // IMPROVEMENT: Worker Pool Optimization
+        this.workerPool = [];
+        this.freeWorkers = [];
         
-        this.worker.onmessage = (e) => {
-            // Reconstruct key from x,z coordinates
-            const data = e.data;
-            data.key = getChunkKey(data.x, data.z);
-            this.applyQueue.push(data);
-        };
+        // Determine concurrency: Use logical cores - 1 (for main thread), min 2, max 6
+        const concurrency = navigator.hardwareConcurrency || 4;
+        const workerCount = Math.max(2, Math.min(6, concurrency - 1));
+        
+        for (let i = 0; i < workerCount; i++) {
+            const worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
+            worker.onmessage = (e) => {
+                const data = e.data;
+                const key = getChunkKey(data.x, data.z);
+                data.key = key;
+                
+                this.pendingRequests.delete(key);
+                this.applyQueue.push(data);
+                
+                this.freeWorkers.push(worker);
+            };
+            this.workerPool.push(worker);
+            this.freeWorkers.push(worker);
+        }
     }
 
     setRenderDistance(dist) {
@@ -71,14 +85,12 @@ export class WorldManager {
         this.maxVisibleDistSq = (this.chunkSize * this.renderDistance + 32) ** 2;
     }
 
-    // OPTIMIZATION: Pre-calculate relative coordinates for each LOD ring
     precomputeLODTemplates() {
         this.lodTemplates = [];
         const range = this.renderDistance;
         const lodLowRad = CONFIG.WORLD.LOD.DIST_LOW;
         const lodFarRad = CONFIG.WORLD.LOD.DIST_FAR;
 
-        // Flatten grid into array with assigned LOD
         for (let z = -range; z <= range; z++) {
             for (let x = -range; x <= range; x++) {
                 const distChunks = Math.max(Math.abs(x), Math.abs(z));
@@ -103,7 +115,7 @@ export class WorldManager {
         this.generationQueue = [];
         this.applyQueue = [];
         this.disposalQueue = [];
-        this.chunkCooldown = 0;
+        this.pendingRequests.clear();
     }
 
     hasChunk(cx, cz) {
@@ -117,26 +129,27 @@ export class WorldManager {
         const now = performance.now();
         const playerPos = player.position;
         
-        // Process Apply Queue (Batch with time limit)
+        // 1. Process Apply Queue (Meshing)
         const applyStart = performance.now();
+        // Budget 6ms for mesh application (increased from 4ms for better throughput)
         while (this.applyQueue.length > 0) {
-             // 4ms budget for applying meshes to maintain frame rate
-             if (performance.now() - applyStart > 4) break;
+             if (performance.now() - applyStart > 6) break;
 
              const data = this.applyQueue.shift();
              const chunk = this.chunks.get(data.key);
+             
              if (chunk) {
                  chunk.applyMesh(data);
              }
         }
 
-        // Process Disposal Queue (Drain completely)
-        // Disposal is necessary to free memory and happens when chunks go out of range
+        // 2. Process Disposal
         while (this.disposalQueue.length > 0) {
             const chunk = this.disposalQueue.shift();
             chunk.dispose();
         }
 
+        // 3. Visibility Culling (Every ~33ms / 30fps)
         if (now - this.lastVisibilityUpdate > 33) {
             this.lastVisibilityUpdate = now;
 
@@ -148,12 +161,12 @@ export class WorldManager {
             }
 
             const safeRadiusSq = CONFIG.WORLD.SAFE_RADIUS_SQ;
-            
             const chunks = this._chunkArray;
             const len = chunks.length;
 
             for (let i = 0; i < len; i++) {
                 const chunk = chunks[i];
+                // Only update visibility for loaded meshes
                 if (!chunk.mesh && !chunk.waterMesh) continue;
 
                 const dx = chunk.worldX - playerPos.x;
@@ -180,46 +193,63 @@ export class WorldManager {
             }
         }
 
-        if (now - this.lastUpdate > 200) {
+        // 4. Update Generation Queue (Every 100ms) - Increased frequency
+        if (now - this.lastUpdate > 100) {
             this.lastUpdate = now;
             this.updateQueue(playerPos, camera);
         }
 
-        if (this.chunkCooldown > 0) {
-            this.chunkCooldown--;
-        } else if (this.generationQueue.length > 0) {
-            const req = this.generationQueue.shift();
+        // 5. Dispatch Workers
+        while (this.generationQueue.length > 0 && this.freeWorkers.length > 0) {
+            const req = this.generationQueue[0]; // Peek
+            
+            // Skip if already pending
+            if (this.pendingRequests.has(req.key)) {
+                this.generationQueue.shift();
+                continue;
+            }
+
             let chunk = this.chunks.get(req.key);
             
+            // Check if work is actually needed
+            if (chunk && chunk.isLoaded && chunk.lod === req.lod) {
+                this.generationQueue.shift();
+                continue;
+            }
+
+            // Create chunk placeholder if missing
             if (!chunk) {
                 chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial, this.waterMaterial);
                 this.chunks.set(req.key, chunk);
                 this._chunkArray.push(chunk);
             }
 
-            if (!chunk.isLoaded || chunk.lod !== req.lod) {
-                const pathSegments = {};
-                const startZ = req.z * this.chunkSize;
-                
-                for (let z = 0; z < this.chunkSize; z++) {
-                    const wz = startZ + z;
-                    const points = this.racePath.getPointsAtZ(wz);
-                    if (points && points.length > 0) {
-                        pathSegments[wz] = points.map(p => ({ x: p.x, y: p.y }));
-                    }
+            // Consume request
+            this.generationQueue.shift();
+            this.pendingRequests.add(req.key);
+            
+            const worker = this.freeWorkers.pop();
+
+            // Prepare path data for this chunk
+            const pathSegments = {};
+            const startZ = req.z * this.chunkSize;
+            
+            for (let z = 0; z < this.chunkSize; z++) {
+                const wz = startZ + z;
+                const points = this.racePath.getPointsAtZ(wz);
+                if (points && points.length > 0) {
+                    pathSegments[wz] = points.map(p => ({ x: p.x, y: p.y }));
                 }
-
-                this.worker.postMessage({
-                    x: req.x,
-                    z: req.z,
-                    lod: req.lod,
-                    size: this.chunkSize,
-                    height: CONFIG.WORLD.CHUNK_HEIGHT,
-                    pathSegments: pathSegments
-                });
-
-                this.chunkCooldown = 2;
             }
+
+            worker.postMessage({
+                x: req.x,
+                z: req.z,
+                lod: req.lod,
+                size: this.chunkSize,
+                height: CONFIG.WORLD.CHUNK_HEIGHT,
+                pathSegments: pathSegments
+            });
         }
     }
 
@@ -233,7 +263,6 @@ export class WorldManager {
         const templates = this.lodTemplates;
         const len = templates.length;
 
-        // Iterate pre-calculated templates instead of nested loops
         for (let i = 0; i < len; i++) {
             const t = templates[i];
             const chunkX = centerChunkX + t.dx;
@@ -244,8 +273,8 @@ export class WorldManager {
 
             const chunk = this.chunks.get(key);
             
-            // Check if chunk needs generation or update
-            if (!chunk || !chunk.isLoaded || chunk.lod !== t.lod) {
+            // If chunk needs load/update and isn't currently pending
+            if ((!chunk || !chunk.isLoaded || chunk.lod !== t.lod) && !this.pendingRequests.has(key)) {
                 const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
                 const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
                 
@@ -255,27 +284,30 @@ export class WorldManager {
 
                 let score = distSq;
                 
-                // Prioritize behind player less (culling simulation)
+                // Aggressive prioritization for chunks in front of camera
                 if (camera) {
                     const len = Math.sqrt(distSq) || 1;
                     const dot = ((dirX/len) * this._cameraForward.x) + ((dirZ/len) * this._cameraForward.z);
-                    score -= (dot * 50000); 
+                    // Higher dot = more in front. Subtracting large value drastically increases priority.
+                    score -= (dot * 100000); 
                 }
 
-                // Keep spawn loaded with high priority
+                // Spawn priority
                 if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
-                    score = -99999999;
+                    score = -Number.MAX_SAFE_INTEGER;
                 }
                 
                 newQueue.push({ x: chunkX, z: chunkZ, key, score, lod: t.lod });
             }
         }
 
+        // Garbage collect distant chunks
         let reindex = false;
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 this.chunks.delete(key);
                 this.disposalQueue.push(chunk);
+                this.pendingRequests.delete(key);
                 reindex = true;
             }
         }
@@ -293,7 +325,7 @@ export class WorldManager {
         const cx = Math.floor(x / this.chunkSize);
         const cz = Math.floor(z / this.chunkSize);
         
-        // OPTIMIZATION: Check cache first (LRU-ish)
+        // Check cache (LRU)
         for (let i = 0; i < this.chunkCache.length; i++) {
             const c = this.chunkCache[i];
             if (c.x === cx && c.z === cz) {
@@ -313,7 +345,6 @@ export class WorldManager {
             }
         }
 
-        // Slow lookup
         const key = getChunkKey(cx, cz);
         const chunk = this.chunks.get(key);
         

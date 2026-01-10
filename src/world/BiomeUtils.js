@@ -1,8 +1,18 @@
 import { createNoise3D } from 'simplex-noise';
 import { BLOCK } from './BlockDefs.js';
 
-// Shared noise instance for consistency
-export const noise3D = createNoise3D();
+// Deterministic PRNG to ensure all workers generate identical terrain
+function mulberry32(a) {
+    return function() {
+      var t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+}
+
+// Shared noise instance with fixed seed
+export const noise3D = createNoise3D(mulberry32(1337));
 
 // --- Math Helpers ---
 export function smoothstep(min, max, value) {

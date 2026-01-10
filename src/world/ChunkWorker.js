@@ -102,7 +102,10 @@ self.onmessage = (e) => {
                 MAX_VERTICES = Math.floor(MAX_VERTICES * 1.5);
                 const newPos = new Float32Array(MAX_VERTICES * 3); newPos.set(BUFFER_POS); BUFFER_POS = newPos;
                 const newNorm = new Float32Array(MAX_VERTICES * 3); newNorm.set(BUFFER_NORM); BUFFER_NORM = newNorm;
-                const newCol = new Float32Array(MAX_VERTICES_W * 3); newCol.set(BUFFER_COL); BUFFER_COL = newCol;
+                
+                // FIXED: Used MAX_VERTICES instead of MAX_VERTICES_W for opaque color buffer
+                const newCol = new Float32Array(MAX_VERTICES * 3); newCol.set(BUFFER_COL); BUFFER_COL = newCol;
+                
                 const newInd = new Uint16Array(MAX_VERTICES * 1.5); newInd.set(BUFFER_IND); BUFFER_IND = newInd;
             }
         }
