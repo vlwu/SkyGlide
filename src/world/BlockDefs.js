@@ -14,7 +14,13 @@ export const BLOCK = {
     MARBLE: 12,
     BASALT: 13,
     MOSS_STONE: 14,
-    PACKED_ICE: 15
+    PACKED_ICE: 15,
+    // Vegetation
+    OAK_LOG: 16,
+    OAK_LEAVES: 17,
+    TALL_GRASS: 18,
+    RED_FLOWER: 19,
+    YELLOW_FLOWER: 20
 };
 
 // Face order: Right, Left, Top, Bottom, Front, Back
@@ -35,3 +41,16 @@ export const FACE_CORNERS = [
     [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1], // Front
     [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]  // Back
 ];
+
+export function isTransparent(type) {
+    return type === BLOCK.AIR || 
+           type === BLOCK.TALL_GRASS || 
+           type === BLOCK.RED_FLOWER || 
+           type === BLOCK.YELLOW_FLOWER;
+}
+
+export function isPlant(type) {
+    return type === BLOCK.TALL_GRASS || 
+           type === BLOCK.RED_FLOWER || 
+           type === BLOCK.YELLOW_FLOWER;
+}
