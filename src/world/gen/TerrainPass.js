@@ -98,7 +98,12 @@ export class TerrainPass {
                     } 
                     // Water Generation
                     else if (y <= WATER_LEVEL) {
-                        blockType = BLOCK.WATER;
+                        // Freeze water in tundra
+                        if (biome === 'tundra') {
+                            blockType = BLOCK.ICE;
+                        } else {
+                            blockType = BLOCK.WATER;
+                        }
                     }
                     
                     // Floating Islands

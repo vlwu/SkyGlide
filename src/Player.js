@@ -18,7 +18,7 @@ export class Player {
 
         // State
         this.state = 'WALKING';
-        this.position = new THREE.Vector3(0, 16, 0); 
+        this.position = new THREE.Vector3(0, 36, 0); 
         this.velocity = new THREE.Vector3(0, 0, 0);
         
         // Active Abilities State
@@ -150,7 +150,7 @@ export class Player {
     }
 
     reset() {
-        this.position.set(0, 16, 0);
+        this.position.set(0, 36, 0);
         this.velocity.set(0, 0, 0);
         this.pitch = 0;
         this.yaw = Math.PI;

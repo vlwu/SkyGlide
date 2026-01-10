@@ -74,8 +74,8 @@ self.onmessage = (e) => {
         for(let lz = loopMinZ; lz <= loopMaxZ; lz++) {
             const zOffset = lz * strideZ;
             for(let lx = loopMinX; lx <= loopMaxX; lx++) {
-                data[lx + strideY * 15 + zOffset] = BLOCK.SPAWN;
-                for(let y = 16; y <= 30; y++) { 
+                data[lx + strideY * 35 + zOffset] = BLOCK.SPAWN;
+                for(let y = 36; y <= 50; y++) { 
                     data[lx + strideY * y + zOffset] = BLOCK.AIR;
                 }
             }

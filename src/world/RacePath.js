@@ -192,8 +192,8 @@ export class RacePath {
     }
 
     generate() {
-        // Start alignment with player spawn (Y=16)
-        const startPos = new THREE.Vector3(0, 16, 0);
+        // Start alignment with player spawn (Y=36)
+        const startPos = new THREE.Vector3(0, 36, 0);
         const startDir = new THREE.Vector3(0, 0, -1);
         
         this.createBranch(startPos, startDir, 250, 0);
@@ -343,7 +343,7 @@ export class RacePath {
             }
         }
     }
-    // ... existing methods (addToLookup, spawnRings, checkCollisions, createVisuals, getPointsAtZ, update)
+
     addToLookup(z, point) {
         if (!this.pathLookup.has(z)) this.pathLookup.set(z, []);
         const list = this.pathLookup.get(z);

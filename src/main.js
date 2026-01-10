@@ -60,7 +60,7 @@ const player = new Player(scene, camera, worldManager);
 let gameScore = 0;
 let isGameRunning = false; 
 let gameStartTime = 0;
-const spawnPos = new THREE.Vector3(0, 16, 0);
+const spawnPos = new THREE.Vector3(0, 36, 0);
 
 racePath.clear();
 worldManager.reset();
