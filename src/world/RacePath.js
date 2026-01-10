@@ -191,7 +191,8 @@ export class RacePath {
     }
 
     generate() {
-        const startPos = new THREE.Vector3(0, 15, 0);
+        // Start alignment with player spawn (Y=16)
+        const startPos = new THREE.Vector3(0, 16, 0);
         const startDir = new THREE.Vector3(0, 0, -1);
         
         this.createBranch(startPos, startDir, 250, 0);
@@ -216,8 +217,8 @@ export class RacePath {
         let segmentsSinceBranch = 0;
 
         // Force Altitude Variation Logic
-        // Bias determines if we are trending UP or DOWN
-        let verticalBias = (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.4); 
+        // Adjusted: Lowered Y range and bias to stay closer to ground biomes
+        let verticalBias = (Math.random() > 0.5 ? 1 : -1) * (0.3 + Math.random() * 0.3); 
         let stepsUntilBiasChange = 25 + Math.floor(Math.random() * 35);
 
         for (let i = 0; i < segments; i++) {
@@ -236,15 +237,15 @@ export class RacePath {
             const z = currentPos.z - 40; 
             
             const xRange = 60 * varianceMult;
-            // Significantly increased Y Range
-            const yRange = 90 * varianceMult; 
+            // Lowered Y Range to encourage lateral movement over vertical
+            const yRange = 40 * varianceMult; 
             
             // X motion: Random walk
             const x = currentPos.x + (Math.random() - 0.5) * xRange; 
             
             // Y motion: Forced Bias + Randomness
-            // Push altitude up or down based on current bias to create large hills/valleys
-            let yChange = verticalBias * (20 + Math.random() * 20) * (varianceMult * 0.7);
+            // Push altitude up or down based on current bias
+            let yChange = verticalBias * (10 + Math.random() * 15) * (varianceMult * 0.6);
             
             // Add randomness
             yChange += (Math.random() - 0.5) * yRange;
@@ -257,13 +258,13 @@ export class RacePath {
                 verticalBias *= -1; // Flip direction
                 stepsUntilBiasChange = 30 + Math.floor(Math.random() * 40);
                 
-                // If we are too high/low, force bias towards center immediately
-                if (y > 220) verticalBias = -Math.abs(verticalBias);
-                if (y < 60) verticalBias = Math.abs(verticalBias);
+                // Keep bias centered around Y=80 (closer to ground)
+                if (y > 120) verticalBias = -Math.abs(verticalBias);
+                if (y < 50) verticalBias = Math.abs(verticalBias);
             }
 
-            // Hard Limits (Floor/Ceiling)
-            const ceiling = 280;
+            // Hard Limits (Floor/Ceiling) - Tighter constraints
+            const ceiling = 160;
             const floor = 40;
             
             // Soft clamp

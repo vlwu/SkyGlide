@@ -1,4 +1,5 @@
 import { CONFIG } from '../../config/Config.js';
+import { settingsManager } from '../../settings/SettingsManager.js';
 
 export class HUD {
     constructor(uiManager) {
@@ -6,6 +7,8 @@ export class HUD {
         this.element = document.createElement('div');
         this.element.id = 'hud';
         
+        const boostKey = this.formatKey(settingsManager.getKeybind('boost'));
+
         this.element.innerHTML = `
             <div class="hud-top-right">
                 <div class="hud-item hud-score">
@@ -28,6 +31,7 @@ export class HUD {
                     <div class="energy-bar" id="hud-energy"></div>
                     <span class="energy-label">BOOST</span>
                 </div>
+                <div class="boost-hint">[ ${boostKey} ] TO BOOST</div>
             </div>
         `;
 
@@ -48,6 +52,16 @@ export class HUD {
         this.proxAccumulator = 0; // Visual accumulator
         
         this.lastUpdateTime = 0;
+    }
+
+    formatKey(code) {
+        if (!code) return '???';
+        if (code.startsWith('Key')) return code.slice(3);
+        if (code.startsWith('Digit')) return code.slice(5);
+        if (code === 'Space') return 'SPACE';
+        if (code === 'ShiftLeft') return 'L-SHIFT';
+        if (code === 'ControlLeft') return 'L-CTRL';
+        return code.toUpperCase();
     }
 
     update(player, score, dt) {

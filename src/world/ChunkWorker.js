@@ -24,8 +24,8 @@ self.onmessage = (e) => {
     
     // Island parameters
     const islandBaseScale = 0.012; 
-    const islandCenterY = 160;
-    const islandBand = 60; // Spread of islands
+    const islandCenterY = 100; // Lowered from 160 to be closer to terrain
+    const islandBand = 50; // Spread of islands
 
     for (let lx = 0; lx < size; lx++) {
         const wx = startX + lx;
@@ -75,7 +75,7 @@ self.onmessage = (e) => {
                 
                 // --- Floating Islands (Sky Layer) ---
                 // Only spawn if well above ground to keep flight corridors open
-                if (y > 100) {
+                if (y > 70) {
                     // Vertical Density Gradient:
                     // 1.0 at center, 0.0 at edges of band
                     const dist = Math.abs(y - islandCenterY);
@@ -93,8 +93,8 @@ self.onmessage = (e) => {
                         
                         if (noiseVal > threshold) {
                             // Island Biome Logic
-                            if (y > 170) blockType = BLOCK.SNOW;
-                            else if (y > 165) blockType = BLOCK.PACKED_ICE;
+                            if (y > 130) blockType = BLOCK.SNOW;
+                            else if (y > 125) blockType = BLOCK.PACKED_ICE;
                             else if (noiseVal > threshold + 0.15 && densityGradient > 0.8) {
                                 // Top soil for islands
                                 blockType = BLOCK.GRASS;
@@ -185,7 +185,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // Grass/Flowers Pass
+    // Grass/Flowers/Desert Vegetation Pass
     for (let lx = 0; lx < size; lx++) {
         const wx = startX + lx;
         for (let lz = 0; lz < size; lz++) {
@@ -207,6 +207,21 @@ self.onmessage = (e) => {
                                 if (plantNoise > 0.75) data[aboveIdx] = BLOCK.RED_FLOWER;
                                 else if (plantNoise > 0.60) data[aboveIdx] = BLOCK.YELLOW_FLOWER;
                                 else data[aboveIdx] = BLOCK.TALL_GRASS;
+                            }
+                        } else if (block === BLOCK.SAND) {
+                            // Desert Vegetation (Cactus & Dead Bushes)
+                            if (plantNoise > 0.6) {
+                                if (plantNoise > 0.85) {
+                                    // Cactus
+                                    data[aboveIdx] = BLOCK.CACTUS;
+                                    // Make some cacti 2 blocks tall
+                                    if (plantNoise > 0.92 && aboveIdx + strideY < data.length) {
+                                        data[aboveIdx + strideY] = BLOCK.CACTUS;
+                                    }
+                                } else if (plantNoise > 0.70) {
+                                    // Dead Bush
+                                    data[aboveIdx] = BLOCK.DEAD_BUSH;
+                                }
                             }
                         }
                     }
@@ -257,10 +272,10 @@ self.onmessage = (e) => {
         for(let lz = loopMinZ; lz <= loopMaxZ; lz++) {
             const zOffset = lz * strideZ;
             for(let lx = loopMinX; lx <= loopMaxX; lx++) {
-                // Platform at 160
-                data[lx + strideY * 160 + zOffset] = BLOCK.SPAWN;
+                // Platform at 15 (Player is at 16)
+                data[lx + strideY * 15 + zOffset] = BLOCK.SPAWN;
                 // Clear air above platform
-                for(let y = 161; y <= 180; y++) { 
+                for(let y = 16; y <= 30; y++) { 
                     data[lx + strideY * y + zOffset] = BLOCK.AIR;
                 }
             }

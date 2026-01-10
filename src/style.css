@@ -126,6 +126,14 @@ canvas { display: block; }
     text-shadow: 0 0 5px black;
 }
 
+.boost-hint {
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 1.0);
+    text-shadow: 0 0 2px black;
+    letter-spacing: 1px;
+}
+
 .prox-alert {
     color: #ffaa00;
     font-weight: bold;
