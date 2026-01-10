@@ -121,7 +121,7 @@ const applyGraphicsSettings = () => {
     const fogFar = renderDistUnits - CONFIG.GRAPHICS.FOG.FAR_OFFSET;
     
     scene.fog.far = fogFar;
-    scene.fog.near = Math.max(10, fogFar * 0.6); 
+    scene.fog.near = Math.max(50, fogFar * 0.6); 
 };
 
 applyGraphicsSettings();

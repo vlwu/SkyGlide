@@ -7,7 +7,7 @@ export const CONFIG = {
         RENDER_DISTANCE: 16, 
         RENDER_DISTANCE_UNITS: 256,
         SAFE_RADIUS_SQ: 1600, 
-        MAX_SHADOW_DIST: 80, 
+        MAX_SHADOW_DIST: 60, 
         SHADOW_DIST_SQ: 6400, 
         WATER_LEVEL: 18, // New Water Level
         LOD: {
