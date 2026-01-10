@@ -545,41 +545,31 @@ export class RacePath {
         if (this.instancedMesh && this.dirtyRingIndices.size > 0) {
             const MAX_UPDATES_PER_FRAME = 10;
             let count = 0;
-            let minIdx = Number.MAX_SAFE_INTEGER;
-            let maxIdx = Number.MIN_SAFE_INTEGER;
 
-            // Iterate set, process up to limit
-            for (const idx of this.dirtyRingIndices) {
-                if (count >= MAX_UPDATES_PER_FRAME) break;
+            // Convert to array for iteration
+            const dirtyArray = Array.from(this.dirtyRingIndices);
+
+            for (let i = 0; i < Math.min(dirtyArray.length, MAX_UPDATES_PER_FRAME); i++) {
+                const idx = dirtyArray[i];
                 
-                // Retrieve data
-                this.instancedMesh.getMatrixAt(idx, this.dummy.matrix);
-                this.dummy.scale.multiplyScalar(0.1); 
-                this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
+                // Scale ring down to effectively hide it
+                this.dummy.position.set(0, -10000, 0); // Move far away
+                this.dummy.scale.set(0.001, 0.001, 0.001); // Scale to nearly invisible
+                this.dummy.updateMatrix();
                 this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
                 
-                this.colorHelper.setHex(0x333333);
+                // Dim the color
+                this.colorHelper.setHex(0x000000);
                 this.instancedMesh.setColorAt(idx, this.colorHelper);
                 
-                if (idx < minIdx) minIdx = idx;
-                if (idx > maxIdx) maxIdx = idx;
-
                 this.dirtyRingIndices.delete(idx);
                 count++;
             }
 
             if (count > 0) {
-                // Set update ranges to minimize upload bandwidth
-                const itemSize = 16; // matrix is 16 floats
-                const colorSize = 3; // color is 3 floats
-
-                this.instancedMesh.instanceMatrix.updateRange.offset = minIdx * itemSize;
-                this.instancedMesh.instanceMatrix.updateRange.count = (maxIdx - minIdx + 1) * itemSize;
+                // Mark for GPU update
                 this.instancedMesh.instanceMatrix.needsUpdate = true;
-
                 if (this.instancedMesh.instanceColor) {
-                    this.instancedMesh.instanceColor.updateRange.offset = minIdx * colorSize;
-                    this.instancedMesh.instanceColor.updateRange.count = (maxIdx - minIdx + 1) * colorSize;
                     this.instancedMesh.instanceColor.needsUpdate = true;
                 }
             }
