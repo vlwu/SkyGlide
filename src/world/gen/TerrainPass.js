@@ -26,7 +26,7 @@ export class TerrainPass {
                 const bVal = noise3D(wx * biomeScale, 0, wz * biomeScale);
                 const tVal = noise3D(wx * biomeScale * 0.5, 500, wz * biomeScale * 0.5);
 
-                const wMount = smoothstep(0.4, 0.7, bVal); // Matched BiomeUtils
+                const wMount = smoothstep(0.4, 0.7, bVal); 
                 
                 let wBadlands = 0;
                 if (bVal > 0.1 && bVal <= 0.5 && tVal > 0.1) {
@@ -38,23 +38,25 @@ export class TerrainPass {
                 const wTundra = smoothstep(-0.3, -0.7, tVal) * (1.0 - wMount * 0.5);
                 const wDesert = smoothstep(-0.2, -0.6, bVal) * smoothstep(0.2, -0.2, tVal) * (1.0 - wMount);
 
-                let hBase = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
+                // AMPLIFIED BASE TERRAIN
+                let hBase = noise3D(wx * scaleBase, 0, wz * scaleBase) * 25 + 45; // Taller base
                 const mNoise = noise3D(wx * scaleMount, 100, wz * scaleMount);
                 
-                if (mNoise > 0.3) hBase += (mNoise - 0.3) * 30;
+                if (mNoise > 0.3) hBase += (mNoise - 0.3) * 50; // More dramatic variation
 
                 const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
-                const hMountVal = hBase + (mNoise > 0 ? mNoise * 50 : 0) + (ridge * ridge * 60);
+                // Massive Mountains
+                const hMountVal = hBase + (mNoise > 0 ? mNoise * 80 : 0) + (ridge * ridge * 100);
                 
                 // Flat Desert
                 const dunes = Math.abs(noise3D(wx * 0.05, 300, wz * 0.05));
                 const hDesertVal = 25 + dunes * 8;
                 
-                // Badlands Plateau
+                // Badlands Plateau - Steeper
                 const plateauNoise = noise3D(wx * 0.01, 123, wz * 0.01);
-                const hBadlandsVal = 65 + plateauNoise * 15;
+                const hBadlandsVal = 85 + plateauNoise * 30;
 
-                const hTundraVal = hBase * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
+                const hTundraVal = hBase * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 15;
 
                 let h = hBase;
                 if (wDesert > 0) h = mix(h, hDesertVal, wDesert);
@@ -75,17 +77,18 @@ export class TerrainPass {
 
                 const biome = getBiome(wx, wz);
 
-                // --- Badlands Ravines ---
-                if (biome === 'badlands') {
-                    // Similar to rivers but sharper and deeper
-                    const ravScale = 0.02; // Higher frequency
-                    const ravNoise = Math.abs(noise3D(wx * ravScale, 666, wz * ravScale));
-                    const ravThresh = 0.12;
-                    if (ravNoise < ravThresh) {
-                        const depth = (ravThresh - ravNoise) / ravThresh;
-                        // Carve deep, almost vertical walls using power
-                        h -= Math.pow(depth, 0.5) * 50; 
-                    }
+                // --- Ravines ---
+                // General noise for ravines everywhere, not just Badlands
+                const ravScale = 0.025; 
+                const ravNoise = Math.abs(noise3D(wx * ravScale, 666, wz * ravScale));
+                const ravThresh = 0.15; // Wider ravines
+                
+                if (ravNoise < ravThresh) {
+                    const depth = (ravThresh - ravNoise) / ravThresh;
+                    
+                    // Badlands get deeper ravines
+                    const mult = (biome === 'badlands' || biome === 'mountain') ? 60 : 25;
+                    h -= Math.pow(depth, 0.5) * mult; 
                 }
 
                 const groundHeight = Math.floor(h);

@@ -9,7 +9,7 @@ export const CONFIG = {
         SAFE_RADIUS_SQ: 1600, 
         MAX_SHADOW_DIST: 60, 
         SHADOW_DIST_SQ: 6400, 
-        WATER_LEVEL: 18, // New Water Level
+        WATER_LEVEL: 18, 
         LOD: {
             DIST_LOW: 6, 
             DIST_FAR: 10, 
@@ -64,6 +64,8 @@ export const CONFIG = {
     GAME: {
         CEILING_LIMIT: 320, 
         FLOOR_LIMIT: -30,
+        MAX_PATH_DIST: 65, // Distance before warning starts
+        SIGNAL_LOST_TIME: 5.0, // Seconds to return
         CYCLE_DURATION: 300, 
         PROXIMITY: {
             DIST: 3.5, 

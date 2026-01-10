@@ -60,6 +60,9 @@ const player = new Player(scene, camera, worldManager);
 let gameScore = 0;
 let isGameRunning = false; 
 let gameStartTime = 0;
+// Stray warning timer
+let strayTimer = CONFIG.GAME.SIGNAL_LOST_TIME;
+
 const spawnPos = new THREE.Vector3(0, 36, 0);
 
 racePath.clear();
@@ -132,6 +135,9 @@ uiManager.setRestartHandler((mode) => {
     isGameRunning = true;
     gameScore = 0;
     gameStartTime = Date.now();
+    strayTimer = CONFIG.GAME.SIGNAL_LOST_TIME;
+    uiManager.hud.updateWarning(0, false);
+    
     player.reset();
 
     if (!racePath.hasPath()) {
@@ -158,6 +164,7 @@ uiManager.setExitHandler(() => {
 });
 
 const triggerGameOver = () => {
+    uiManager.hud.updateWarning(0, false);
     const dist = player.position.distanceTo(spawnPos);
     const time = (Date.now() - gameStartTime) / 1000;
     uiManager.onGameOver({
@@ -223,6 +230,19 @@ function animate(time) {
             // Add Score from Proximity
             if (player.isNearTerrain) {
                 gameScore += CONFIG.GAME.PROXIMITY.SCORE_RATE * dt;
+            }
+
+            // Signal Lost Logic
+            const distFromPath = racePath.getDistanceFromPath(player.position);
+            if (distFromPath > CONFIG.GAME.MAX_PATH_DIST) {
+                strayTimer -= dt;
+                uiManager.hud.updateWarning(strayTimer, true);
+                if (strayTimer <= 0) {
+                    triggerGameOver();
+                }
+            } else {
+                strayTimer = CONFIG.GAME.SIGNAL_LOST_TIME;
+                uiManager.hud.updateWarning(0, false);
             }
 
             // Pass dt and FPS to WorldManager for AutoLOD

@@ -15,7 +15,7 @@ export class RacePath {
         this.ringBuckets = new Map();
         
         // OPTIMIZATION: Reduce bucket size for finer spatial hashing
-        this.BUCKET_SIZE = 30; // Increased to 30 to reduce bucket count overhead
+        this.BUCKET_SIZE = 30; 
         
         // Visuals
         this.visualItems = []; 
@@ -227,48 +227,44 @@ export class RacePath {
         let currentDir = startDir.clone();
         let segmentsSinceBranch = 0;
 
-        let verticalBias = (Math.random() > 0.5 ? 1 : -1) * (0.3 + Math.random() * 0.3); 
-        let stepsUntilBiasChange = 25 + Math.floor(Math.random() * 35);
+        // Tunnel Logic
+        let isInTunnel = false;
+        let tunnelLength = 0;
 
         for (let i = 0; i < segments; i++) {
-            const dist = Math.abs(currentPos.z);
-            const estimatedRings = dist / 70.0;
-            
-            let varianceMult = 1.0;
-            if (estimatedRings >= 10) { 
-                const tier = Math.floor((estimatedRings - 10) / 20) + 1;
-                varianceMult = 1.5 + (tier * 0.5); 
-            }
-            
-            varianceMult = Math.min(5.0, varianceMult);
-
             const z = currentPos.z - 40; 
-            const xRange = 120 * varianceMult;
-            const yRange = 25 * varianceMult; 
-            
-            const x = currentPos.x + (Math.random() - 0.5) * xRange; 
-            
-            let yChange = verticalBias * (10 + Math.random() * 15) * (varianceMult * 0.6);
-            yChange += (Math.random() - 0.5) * yRange;
+            const x = currentPos.x + (Math.random() - 0.5) * 60; 
 
-            let y = currentPos.y + yChange; 
+            // Sample Terrain
+            const groundH = getTerrainHeightMap(x, z);
             
-            stepsUntilBiasChange--;
-            if (stepsUntilBiasChange <= 0) {
-                verticalBias *= -1; 
-                stepsUntilBiasChange = 40 + Math.floor(Math.random() * 50); 
-                
-                if (y > 120) verticalBias = -Math.abs(verticalBias);
-                if (y < 50) verticalBias = Math.abs(verticalBias);
+            let targetY;
+            
+            // Randomly decide to dive into tunnel
+            if (!isInTunnel) {
+                if (Math.random() < 0.08 && depth === 0) { // 8% chance to start tunnel
+                    isInTunnel = true;
+                    tunnelLength = 20 + Math.random() * 30;
+                }
             }
 
-            const groundH = getTerrainHeightMap(x, z);
-            const maxH = getMaxTerrainHeight(x, z);
+            if (isInTunnel) {
+                targetY = groundH - 15; // Dive below ground
+                tunnelLength--;
+                if (tunnelLength <= 0) {
+                    isInTunnel = false;
+                }
+            } else {
+                // Hug terrain: Fly 15-40 units above ground
+                const altitude = 15 + Math.random() * 25;
+                targetY = groundH + altitude;
+                
+                // Soft cap for islands/sky
+                if (targetY > 180) targetY = 180;
+            }
 
-            const floorLimit = groundH + 15;
-            const ceilingLimit = maxH + 20;
-
-            y = Math.max(floorLimit, Math.min(y, ceilingLimit));
+            // Smooth Y transition
+            const y = currentPos.y + (targetY - currentPos.y) * 0.3;
 
             const nextPos = new THREE.Vector3(x, y, z);
             points.push(nextPos);
@@ -344,6 +340,26 @@ export class RacePath {
             if (last.distanceToSquared(point) < 0.25) return; 
         }
         list.push(point);
+    }
+
+    getDistanceFromPath(pos) {
+        if (!this.hasPath()) return 0;
+        
+        const centerZ = Math.round(pos.z);
+        let minSq = Infinity;
+        
+        // Search neighbor buckets
+        for (let z = centerZ - 2; z <= centerZ + 2; z++) {
+            const points = this.pathLookup.get(z);
+            if (points) {
+                for (let i = 0; i < points.length; i++) {
+                    const dSq = points[i].distanceToSquared(pos);
+                    if (dSq < minSq) minSq = dSq;
+                }
+            }
+        }
+
+        return Math.sqrt(minSq);
     }
 
     spawnRings() {

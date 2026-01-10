@@ -25,6 +25,11 @@ export class HUD {
                 </div>
             </div>
 
+            <div id="warning-overlay" class="warning-overlay">
+                <div class="warning-text">SIGNAL LOST</div>
+                <div class="warning-sub">RETURN TO COURSE <span id="warn-timer">5.0</span></div>
+            </div>
+
             <div class="hud-center-bottom">
                 <div id="prox-alert" class="prox-alert">PROXIMITY +<span id="prox-val">0</span></div>
                 <div class="energy-bar-container">
@@ -45,6 +50,9 @@ export class HUD {
         this.elProx = this.element.querySelector('#prox-alert');
         this.elProxVal = this.element.querySelector('#prox-val');
 
+        this.elWarning = this.element.querySelector('#warning-overlay');
+        this.elWarnTimer = this.element.querySelector('#warn-timer');
+
         this.lastScore = -1;
         this.lastAlt = -1;
         this.lastSpeed = -1;
@@ -62,6 +70,15 @@ export class HUD {
         if (code === 'ShiftLeft') return 'L-SHIFT';
         if (code === 'ControlLeft') return 'L-CTRL';
         return code.toUpperCase();
+    }
+
+    updateWarning(remainingTime, isVisible) {
+        if (isVisible) {
+            this.elWarning.style.display = 'flex';
+            this.elWarnTimer.textContent = remainingTime.toFixed(1);
+        } else {
+            this.elWarning.style.display = 'none';
+        }
     }
 
     update(player, score, dt) {
