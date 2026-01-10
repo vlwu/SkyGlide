@@ -42,19 +42,17 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.BufferAttribute(geoData.color, 3));
         geometry.setIndex(new THREE.BufferAttribute(geoData.index, 1));
 
-        // Compute bounding box for optimized culling
         geometry.computeBoundingBox();
         this.bbox.copy(geometry.boundingBox);
-        // Translate bbox to world position
         this.bbox.translate(new THREE.Vector3(this.x * this.size, 0, this.z * this.size));
 
         this.mesh = new THREE.Mesh(geometry, this.material);
         this.mesh.position.set(this.x * this.size, 0, this.z * this.size);
         
-        this.mesh.castShadow = true; 
+        // Performance: Shadows default to false, enabled only when close
+        this.mesh.castShadow = false; 
         this.mesh.receiveShadow = true; 
         
-        // We handle culling manually in WorldManager for better efficiency
         this.mesh.frustumCulled = false;
         
         this.mesh.matrixAutoUpdate = false;
@@ -64,12 +62,13 @@ export class Chunk {
         this.isLoaded = true;
     }
 
-    // Optimization: Disable shadows and handle visibility
     update(distSq) {
         if (!this.mesh) return;
 
-        // Shadow Culling: 60^2 = 3600
-        const shadowDistSq = 3600;
+        // Performance: Strict Shadow Culling
+        // Only cast shadows if within 35 units (35^2 = 1225)
+        // This keeps the shadow caster count very low.
+        const shadowDistSq = 1225;
 
         if (distSq > shadowDistSq) {
             if (this.mesh.castShadow) this.mesh.castShadow = false;

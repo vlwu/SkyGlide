@@ -22,6 +22,9 @@ export class WorldManager {
 
         this._cameraForward = new THREE.Vector3();
         this.generationQueue = [];
+        // Feature: Apply Queue to prevent GPU upload spikes
+        this.applyQueue = [];
+        
         this.lastUpdate = 0;
         this.frameCounter = 0; 
 
@@ -32,11 +35,8 @@ export class WorldManager {
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
         
         this.worker.onmessage = (e) => {
-            const { key } = e.data;
-            const chunk = this.chunks.get(key);
-            if (chunk) {
-                chunk.applyMesh(e.data);
-            }
+            // Don't apply immediately. Queue it to prevent frame drops.
+            this.applyQueue.push(e.data);
         };
     }
 
@@ -50,6 +50,7 @@ export class WorldManager {
         this.lastCX = null;
         this.lastCZ = null;
         this.generationQueue = [];
+        this.applyQueue = [];
     }
 
     hasChunk(cx, cz) {
@@ -62,7 +63,17 @@ export class WorldManager {
         this.frameCounter++;
         const now = performance.now();
         
-        // 1. Culling & Visibility Update
+        // 1. Process Apply Queue (Max 1 per frame to eliminate stutter)
+        if (this.applyQueue.length > 0) {
+            const data = this.applyQueue.shift();
+            const chunk = this.chunks.get(data.key);
+            // Verify chunk still exists (might have been reset)
+            if (chunk) {
+                chunk.applyMesh(data);
+            }
+        }
+
+        // 2. Culling & Visibility Update
         this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
 
@@ -70,7 +81,6 @@ export class WorldManager {
             camera.getWorldDirection(this._cameraForward);
         }
 
-        // Optimization: Pre-calculate square distance for "always visible" radius (approx 2 chunks)
         const safeRadiusSq = 1600; // 40^2
 
         for (const chunk of this.chunks.values()) {
@@ -83,14 +93,10 @@ export class WorldManager {
             let isVisible = false;
 
             if (distSq <= this.maxVisibleDistSq) {
-                // OPTIMIZATION: Simple dot product check before frustum check
-                // If chunk is far away and behind the camera, skip it immediately.
                 if (distSq > safeRadiusSq) {
-                    // Normalize direction to chunk roughly
                     const invLen = 1.0 / Math.sqrt(distSq);
                     const dot = (dx * invLen * this._cameraForward.x) + (dz * invLen * this._cameraForward.z);
                     
-                    // If dot > -0.5, it's roughly in front or side. If < -0.5, it's behind.
                     if (dot > -0.5) {
                          if (this.frustum.intersectsBox(chunk.bbox)) {
                             isVisible = true;
@@ -106,14 +112,15 @@ export class WorldManager {
             }
 
             if (isVisible) {
-                // Shadow LOD (Throttled)
-                if (this.frameCounter % 15 === 0) {
+                // Shadow LOD: Update more frequently for smoothness (every 3 frames instead of 15)
+                // but relying on the tighter distance check in Chunk.js
+                if (this.frameCounter % 3 === 0) {
                     chunk.update(distSq);
                 }
             }
         }
 
-        // 2. Chunk Queue Update (Throttled)
+        // 3. Chunk Queue Update (Throttled)
         if (now - this.lastUpdate > 200) {
             this.lastUpdate = now;
             this.updateQueue(playerPos, camera);

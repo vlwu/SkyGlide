@@ -44,8 +44,10 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
 dirLight.position.set(50, 100, 50);
 dirLight.castShadow = true;
 
-// Tight Shadow Frustum
-const d = 50; 
+// Performance: Tight Shadow Frustum
+// Reduced from 50 to 35. Matches the new chunk shadow culling distance (35).
+// This reduces the workload on the shadow map significantly.
+const d = 35; 
 dirLight.shadow.camera.left = -d;
 dirLight.shadow.camera.right = d;
 dirLight.shadow.camera.top = d;
