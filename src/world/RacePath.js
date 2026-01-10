@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config/Config.js';
 import { settingsManager } from '../settings/SettingsManager.js';
 import { vec3Pool } from '../utils/ObjectPool.js';
+import { getMaxTerrainHeight, getTerrainHeightMap } from './BiomeUtils.js';
 
 export class RacePath {
     constructor(scene) {
@@ -236,9 +237,10 @@ export class RacePath {
 
             const z = currentPos.z - 40; 
             
-            const xRange = 60 * varianceMult;
-            // Lowered Y Range to encourage lateral movement over vertical
-            const yRange = 40 * varianceMult; 
+            // INCREASED horizontal variance (was 60)
+            const xRange = 120 * varianceMult;
+            // DECREASED vertical variance (was 40)
+            const yRange = 25 * varianceMult; 
             
             // X motion: Random walk
             const x = currentPos.x + (Math.random() - 0.5) * xRange; 
@@ -256,26 +258,25 @@ export class RacePath {
             stepsUntilBiasChange--;
             if (stepsUntilBiasChange <= 0) {
                 verticalBias *= -1; // Flip direction
-                stepsUntilBiasChange = 30 + Math.floor(Math.random() * 40);
+                stepsUntilBiasChange = 40 + Math.floor(Math.random() * 50); // Slower vertical frequency
                 
-                // Keep bias centered around Y=80 (closer to ground)
+                // Keep bias centered around Y=80
                 if (y > 120) verticalBias = -Math.abs(verticalBias);
                 if (y < 50) verticalBias = Math.abs(verticalBias);
             }
 
-            // Hard Limits (Floor/Ceiling) - Tighter constraints
-            const ceiling = 160;
-            const floor = 40;
+            // --- TERRAIN HEIGHT CLAMPING ---
+            const groundH = getTerrainHeightMap(x, z);
+            const maxH = getMaxTerrainHeight(x, z);
+
+            // Ensure we don't crash into ground: Keep at least 15 units above ground
+            const floorLimit = groundH + 15;
             
-            // Soft clamp
-            if (y > ceiling) {
-                y = ceiling - (y - ceiling) * 0.5;
-                verticalBias = -1; // Force down next
-            }
-            if (y < floor) {
-                y = floor + (floor - y) * 0.5;
-                verticalBias = 1; // Force up next
-            }
+            // Ensure we don't fly too high above terrain structures (islands/mountains)
+            // Allow going 20 units above max structure, but not more
+            const ceilingLimit = maxH + 20;
+
+            y = Math.max(floorLimit, Math.min(y, ceilingLimit));
 
             const nextPos = new THREE.Vector3(x, y, z);
             points.push(nextPos);
@@ -342,7 +343,7 @@ export class RacePath {
             }
         }
     }
-
+    // ... existing methods (addToLookup, spawnRings, checkCollisions, createVisuals, getPointsAtZ, update)
     addToLookup(z, point) {
         if (!this.pathLookup.has(z)) this.pathLookup.set(z, []);
         const list = this.pathLookup.get(z);

@@ -68,3 +68,53 @@ export function getBiomeBlock(biome, depth, y, groundHeight) {
     }
     return BLOCK.STONE;
 }
+
+// Calculates ground height (ignoring floating islands)
+export function getTerrainHeightMap(wx, wz) {
+    const scaleBase = 0.02;
+    const scaleMount = 0.015; 
+    const biomeScale = 0.002;
+
+    const bVal = noise3D(wx * biomeScale, 0, wz * biomeScale);
+    const tVal = noise3D(wx * biomeScale * 0.5, 500, wz * biomeScale * 0.5);
+
+    const wMount = smoothstep(0.2, 0.6, bVal);
+    const wTundra = smoothstep(-0.3, -0.7, tVal) * (1.0 - wMount * 0.5);
+    const wDesert = smoothstep(-0.2, -0.6, bVal) * smoothstep(0.2, -0.2, tVal) * (1.0 - wMount);
+
+    let hBase = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
+    const mNoise = noise3D(wx * scaleMount, 100, wz * scaleMount);
+    
+    if (mNoise > 0.3) hBase += (mNoise - 0.3) * 30;
+
+    const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
+    const hMountVal = hBase + (mNoise > 0 ? mNoise * 50 : 0) + (ridge * ridge * 60);
+    const dunes = Math.abs(noise3D(wx * 0.05, 300, wz * 0.05));
+    const hDesertVal = hBase * 0.6 + dunes * 15;
+    const hTundraVal = hBase * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
+
+    let h = hBase;
+    if (wDesert > 0) h = mix(h, hDesertVal, wDesert);
+    if (wTundra > 0) h = mix(h, hTundraVal, wTundra);
+    if (wMount > 0)  h = mix(h, hMountVal, wMount);
+
+    return h;
+}
+
+// Calculates max terrain height including potential islands
+export function getMaxTerrainHeight(wx, wz) {
+    const groundH = getTerrainHeightMap(wx, wz);
+    
+    const islandBaseScale = 0.012; 
+    // Check center of island band (Y=100)
+    const n1 = noise3D(wx * islandBaseScale, 2.0, wz * islandBaseScale); // 100 * 0.02 = 2.0
+    
+    // Threshold from TerrainPass (approx)
+    // threshold = 0.2 + (1.0 - density) * 0.6. Center density is 1.0, so threshold ~0.2.
+    if (n1 > 0.2) {
+        // Islands exist, usually top out around 140-150
+        return Math.max(groundH, 150);
+    }
+    
+    return groundH;
+}
