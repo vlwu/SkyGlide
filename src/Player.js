@@ -74,10 +74,10 @@ export class Player {
         this.leftWingPivot.position.set(-0.2, 0, 0);
         this.mesh.add(this.leftWingPivot);
 
+        // OPTIMIZATION: Remove geometry translation, use mesh position
         const lWingGeo = new THREE.BoxGeometry(1.4, 0.05, 0.6);
-        lWingGeo.translate(-0.7, 0, 0.1);
-        
         this.leftWing = new THREE.Mesh(lWingGeo, matWing);
+        this.leftWing.position.set(-0.7, 0, 0.1); // Applied here
         this.leftWing.castShadow = true;
         this.leftWing.receiveShadow = true;
         this.leftWingPivot.add(this.leftWing);
@@ -88,9 +88,8 @@ export class Player {
         this.mesh.add(this.rightWingPivot);
 
         const rWingGeo = new THREE.BoxGeometry(1.4, 0.05, 0.6);
-        rWingGeo.translate(0.7, 0, 0.1); 
-
         this.rightWing = new THREE.Mesh(rWingGeo, matWing);
+        this.rightWing.position.set(0.7, 0, 0.1); // Applied here
         this.rightWing.castShadow = true;
         this.rightWing.receiveShadow = true;
         this.rightWingPivot.add(this.rightWing);

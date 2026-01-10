@@ -192,10 +192,7 @@ self.onmessage = (e) => {
 
                     if (isWaterBlock) {
                         // Water draws if neighbor is NOT water (Air, Solid, etc)
-                        // This handles surface and edges against glass/air
                         drawFace = !isWater(nType);
-                        // Optimization: Don't draw water faces against solid blocks if desired, 
-                        // but sticking to standard "draw if boundary"
                         if (drawFace && nType !== BLOCK.AIR && !isTransparent(nType)) {
                             drawFace = false; // Cull water against solid ground
                         }
@@ -203,8 +200,6 @@ self.onmessage = (e) => {
                         // Solid block
                         const nTrans = isTransparent(nType);
                         const nWater = isWater(nType);
-                        
-                        // Draw if neighbor is transparent (Air/Plant) or Water
                         if (nTrans || nWater) {
                             drawFace = true;
                         }
@@ -296,8 +291,10 @@ self.onmessage = (e) => {
         posOutW.buffer, normOutW.buffer, colOutW.buffer, indOutW.buffer
     ];
 
+    // OPTIMIZATION: Return raw coordinates (x, z) instead of string key
     self.postMessage({ 
-        key: `${x},${z}`,
+        x: x,
+        z: z,
         lod: lod,
         data: data,
         geometry: { position: posOut, normal: normOut, color: colOut, index: indOut },

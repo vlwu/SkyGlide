@@ -18,10 +18,16 @@ export class Chunk {
         this.isLoaded = false;
         this.lod = 1; 
         
+        // Center for distance checks
         this.worldX = x * 16 + 8;
         this.worldZ = z * 16 + 8;
 
+        // OPTIMIZATION: Analytic BBox instead of geometry.computeBoundingBox()
         this.bbox = new THREE.Box3();
+        const minX = x * this.size;
+        const minZ = z * this.size;
+        this.bbox.min.set(minX, 0, minZ);
+        this.bbox.max.set(minX + this.size, this.height, minZ + this.size);
         
         this._lastShadowState = false;
     }
@@ -53,8 +59,7 @@ export class Chunk {
             geometry.setAttribute('color', new THREE.BufferAttribute(geoData.color, 3));
             geometry.setIndex(new THREE.BufferAttribute(geoData.index, 1));
 
-            geometry.computeBoundingBox();
-            this.bbox.copy(geometry.boundingBox);
+            // OPTIMIZATION: Skipped computeBoundingBox, using fixed this.bbox
 
             this.mesh = new THREE.Mesh(geometry, this.material);
             this.mesh.castShadow = false; 
@@ -62,16 +67,6 @@ export class Chunk {
             this.mesh.frustumCulled = false;
             this.mesh.matrixAutoUpdate = false;
             this.scene.add(this.mesh);
-        } else {
-             // If only water, set bbox from water?
-             // For simplicity, we assume solid ground exists for bbox logic usually.
-             // If not, we might need a dummy bbox.
-             if (waterGeoData.position.length > 0) {
-                 // Use simple bounds for water only chunks
-                 const min = new THREE.Vector3(this.x * 16, 0, this.z * 16);
-                 const max = new THREE.Vector3((this.x+1) * 16, 256, (this.z+1) * 16);
-                 this.bbox.set(min, max);
-             }
         }
 
         // --- Water Mesh ---

@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { Chunk } from './Chunk.js';
 import { CONFIG } from '../config/Config.js';
 
+// Helper for bitwise packing of chunk coordinates to 32-bit int
+const getChunkKey = (x, z) => (x & 0xFFFF) << 16 | (z & 0xFFFF);
+
 export class WorldManager {
     constructor(scene, racePath) {
         this.scene = scene;
@@ -9,10 +12,11 @@ export class WorldManager {
         this.chunkSize = CONFIG.WORLD.CHUNK_SIZE;
         this.renderDistance = CONFIG.WORLD.RENDER_DISTANCE;
 
+        // OPTIMIZATION: Use integer keys for map lookups
         this.chunks = new Map(); 
         this._chunkArray = [];
         
-        // OPTIMIZATION: Small cache of recent chunks to avoid Map lookup in tight loops
+        // Cache for fast lookups
         this.chunkCache = []; 
 
         this.chunkMaterial = new THREE.MeshLambertMaterial({ 
@@ -40,13 +44,17 @@ export class WorldManager {
         this.projScreenMatrix = new THREE.Matrix4();
         
         this.updateMaxVisibleDist();
+        this.precomputeLODTemplates(); // Initialize LOD rings
 
         this.disposalQueue = [];
 
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
         
         this.worker.onmessage = (e) => {
-            this.applyQueue.push(e.data);
+            // Reconstruct key from x,z coordinates
+            const data = e.data;
+            data.key = getChunkKey(data.x, data.z);
+            this.applyQueue.push(data);
         };
     }
 
@@ -54,12 +62,33 @@ export class WorldManager {
         if (this.renderDistance !== dist) {
             this.renderDistance = dist;
             this.updateMaxVisibleDist();
+            this.precomputeLODTemplates();
             this.lastUpdate = 0;
         }
     }
 
     updateMaxVisibleDist() {
         this.maxVisibleDistSq = (this.chunkSize * this.renderDistance + 32) ** 2;
+    }
+
+    // OPTIMIZATION: Pre-calculate relative coordinates for each LOD ring
+    precomputeLODTemplates() {
+        this.lodTemplates = [];
+        const range = this.renderDistance;
+        const lodLowRad = CONFIG.WORLD.LOD.DIST_LOW;
+        const lodFarRad = CONFIG.WORLD.LOD.DIST_FAR;
+
+        // Flatten grid into array with assigned LOD
+        for (let z = -range; z <= range; z++) {
+            for (let x = -range; x <= range; x++) {
+                const distChunks = Math.max(Math.abs(x), Math.abs(z));
+                let targetLOD = 1;
+                if (distChunks > lodFarRad) targetLOD = 4;
+                else if (distChunks > lodLowRad) targetLOD = 2;
+                
+                this.lodTemplates.push({ dx: x, dz: z, lod: targetLOD });
+            }
+        }
     }
 
     reset() {
@@ -78,7 +107,7 @@ export class WorldManager {
     }
 
     hasChunk(cx, cz) {
-        const key = `${cx},${cz}`;
+        const key = getChunkKey(cx, cz);
         const chunk = this.chunks.get(key);
         return chunk && chunk.isLoaded;
     }
@@ -193,45 +222,45 @@ export class WorldManager {
 
         const activeKeys = new Set();
         const newQueue = [];
-        const range = this.renderDistance;
         
-        const lodLowRad = CONFIG.WORLD.LOD.DIST_LOW;
-        const lodFarRad = CONFIG.WORLD.LOD.DIST_FAR;
+        const templates = this.lodTemplates;
+        const len = templates.length;
 
-        for (let z = -range; z <= range; z++) {
-            for (let x = -range; x <= range; x++) {
-                const chunkX = centerChunkX + x;
-                const chunkZ = centerChunkZ + z;
-                const key = `${chunkX},${chunkZ}`;
+        // Iterate pre-calculated templates instead of nested loops
+        for (let i = 0; i < len; i++) {
+            const t = templates[i];
+            const chunkX = centerChunkX + t.dx;
+            const chunkZ = centerChunkZ + t.dz;
+            const key = getChunkKey(chunkX, chunkZ);
+            
+            activeKeys.add(key);
+
+            const chunk = this.chunks.get(key);
+            
+            // Check if chunk needs generation or update
+            if (!chunk || !chunk.isLoaded || chunk.lod !== t.lod) {
+                const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
+                const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
                 
-                activeKeys.add(key);
+                const dirX = wx - playerPos.x;
+                const dirZ = wz - playerPos.z;
+                const distSq = dirX*dirX + dirZ*dirZ;
 
-                const distChunks = Math.max(Math.abs(x), Math.abs(z));
-                let targetLOD = 1;
-                if (distChunks > lodFarRad) targetLOD = 4;
-                else if (distChunks > lodLowRad) targetLOD = 2;
-
-                const chunk = this.chunks.get(key);
+                let score = distSq;
                 
-                if (!chunk || !chunk.isLoaded || chunk.lod !== targetLOD) {
-                    const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
-                    const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
-                    
-                    const dirX = wx - playerPos.x;
-                    const dirZ = wz - playerPos.z;
-                    const distSq = dirX*dirX + dirZ*dirZ;
-
-                    let score = distSq;
-                    
-                    if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
-                        score = -99999999;
-                    } else if (camera) {
-                        const len = Math.sqrt(distSq) || 1;
-                        const dot = ((dirX/len) * this._cameraForward.x) + ((dirZ/len) * this._cameraForward.z);
-                        score -= (dot * 50000); 
-                    }
-                    newQueue.push({ x: chunkX, z: chunkZ, key, score, lod: targetLOD });
+                // Prioritize behind player less (culling simulation)
+                if (camera) {
+                    const len = Math.sqrt(distSq) || 1;
+                    const dot = ((dirX/len) * this._cameraForward.x) + ((dirZ/len) * this._cameraForward.z);
+                    score -= (dot * 50000); 
                 }
+
+                // Keep spawn loaded with high priority
+                if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
+                    score = -99999999;
+                }
+                
+                newQueue.push({ x: chunkX, z: chunkZ, key, score, lod: t.lod });
             }
         }
 
@@ -262,12 +291,10 @@ export class WorldManager {
             const c = this.chunkCache[i];
             if (c.x === cx && c.z === cz) {
                 if (c.isLoaded && c.data) {
-                    // Move to front if not already
                     if (i > 0) {
                         this.chunkCache.splice(i, 1);
                         this.chunkCache.unshift(c);
                     }
-                    // Inline array indexing math
                     const lx = Math.floor(x) - (cx * this.chunkSize);
                     const ly = Math.floor(y);
                     const lz = Math.floor(z) - (cz * this.chunkSize);
@@ -280,7 +307,7 @@ export class WorldManager {
         }
 
         // Slow lookup
-        const key = `${cx},${cz}`;
+        const key = getChunkKey(cx, cz);
         const chunk = this.chunks.get(key);
         
         if (chunk && chunk.isLoaded && chunk.data) {
