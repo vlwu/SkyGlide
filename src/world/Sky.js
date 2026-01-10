@@ -89,13 +89,12 @@ export class Sky {
         // 0.7 - 0.8: Sunrise
         // 0.8 - 1.0: Day
         
-        let targetTop, targetBot, nextTop, nextBot, t;
+        let t;
 
         if (cyclePos < 0.3) {
             // Day Hold
             this.uniforms.uTopColor.value.copy(this.palette.dayTop);
             this.uniforms.uBotColor.value.copy(this.palette.dayBot);
-            return;
         } else if (cyclePos < 0.4) {
             // Day -> Sunset
             t = (cyclePos - 0.3) / 0.1;
@@ -121,6 +120,11 @@ export class Sky {
             t = (cyclePos - 0.8) / 0.2;
             this.uniforms.uTopColor.value.copy(this.palette.riseTop).lerp(this.palette.dayTop, t);
             this.uniforms.uBotColor.value.copy(this.palette.riseBot).lerp(this.palette.dayBot, t);
+        }
+
+        // Sync fog color with the sky's bottom (horizon) color
+        if (this.scene.fog) {
+            this.scene.fog.color.copy(this.uniforms.uBotColor.value);
         }
     }
 }
