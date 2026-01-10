@@ -161,7 +161,7 @@ export class VegetationPass {
                 else if (plantNoise > 0.60) data[idx] = BLOCK.YELLOW_FLOWER;
                 else data[idx] = BLOCK.TALL_GRASS;
             }
-        } else if (soilBlock === BLOCK.SAND) {
+        } else if (soilBlock === BLOCK.SAND || soilBlock === BLOCK.RED_SAND || soilBlock === BLOCK.TERRACOTTA) {
             if (plantNoise > 0.6) {
                 if (plantNoise > 0.85) {
                     // Check isolation for Cactus

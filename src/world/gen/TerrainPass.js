@@ -26,7 +26,15 @@ export class TerrainPass {
                 const bVal = noise3D(wx * biomeScale, 0, wz * biomeScale);
                 const tVal = noise3D(wx * biomeScale * 0.5, 500, wz * biomeScale * 0.5);
 
-                const wMount = smoothstep(0.2, 0.6, bVal);
+                const wMount = smoothstep(0.4, 0.7, bVal); // Matched BiomeUtils
+                
+                let wBadlands = 0;
+                if (bVal > 0.1 && bVal <= 0.5 && tVal > 0.1) {
+                    const wb = smoothstep(0.1, 0.2, bVal) * smoothstep(0.5, 0.4, bVal);
+                    const wt = smoothstep(0.1, 0.2, tVal);
+                    wBadlands = wb * wt;
+                }
+
                 const wTundra = smoothstep(-0.3, -0.7, tVal) * (1.0 - wMount * 0.5);
                 const wDesert = smoothstep(-0.2, -0.6, bVal) * smoothstep(0.2, -0.2, tVal) * (1.0 - wMount);
 
@@ -37,13 +45,21 @@ export class TerrainPass {
 
                 const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
                 const hMountVal = hBase + (mNoise > 0 ? mNoise * 50 : 0) + (ridge * ridge * 60);
+                
+                // Flat Desert
                 const dunes = Math.abs(noise3D(wx * 0.05, 300, wz * 0.05));
-                const hDesertVal = hBase * 0.6 + dunes * 15;
+                const hDesertVal = 25 + dunes * 8;
+                
+                // Badlands Plateau
+                const plateauNoise = noise3D(wx * 0.01, 123, wz * 0.01);
+                const hBadlandsVal = 65 + plateauNoise * 15;
+
                 const hTundraVal = hBase * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
 
                 let h = hBase;
                 if (wDesert > 0) h = mix(h, hDesertVal, wDesert);
                 if (wTundra > 0) h = mix(h, hTundraVal, wTundra);
+                if (wBadlands > 0) h = mix(h, hBadlandsVal, wBadlands);
                 if (wMount > 0)  h = mix(h, hMountVal, wMount);
 
                 // --- River Carving ---
@@ -54,18 +70,25 @@ export class TerrainPass {
                 const riverThresh = 0.08;
                 if (riverNoise < riverThresh) {
                     const depth = (riverThresh - riverNoise) / riverThresh; // 0 to 1
-                    // Dig down, ensuring we go below water level to create a river
                     h -= depth * 15;
                 }
 
-                const groundHeight = Math.floor(h);
+                const biome = getBiome(wx, wz);
 
-                // --- Biome Jitter ---
-                const jitterScale = 0.1;
-                const jitterAmt = 8.0;
-                const jx = noise3D(wx * jitterScale, 50, wz * jitterScale) * jitterAmt;
-                const jz = noise3D(wx * jitterScale, -50, wz * jitterScale) * jitterAmt;
-                const biome = getBiome(wx + jx, wz + jz);
+                // --- Badlands Ravines ---
+                if (biome === 'badlands') {
+                    // Similar to rivers but sharper and deeper
+                    const ravScale = 0.02; // Higher frequency
+                    const ravNoise = Math.abs(noise3D(wx * ravScale, 666, wz * ravScale));
+                    const ravThresh = 0.12;
+                    if (ravNoise < ravThresh) {
+                        const depth = (ravThresh - ravNoise) / ravThresh;
+                        // Carve deep, almost vertical walls using power
+                        h -= Math.pow(depth, 0.5) * 50; 
+                    }
+                }
+
+                const groundHeight = Math.floor(h);
 
                 // --- Fill Loop ---
                 for (let y = 0; y < height; y++) {
@@ -78,7 +101,7 @@ export class TerrainPass {
                         
                         // Beaches: Sand near water level if not in extreme biomes
                         if (y >= WATER_LEVEL - 2 && y <= WATER_LEVEL + 1) {
-                            if (biome !== 'tundra' && biome !== 'mountain' && biome !== 'volcanic') {
+                            if (biome !== 'tundra' && biome !== 'mountain' && biome !== 'volcanic' && biome !== 'badlands') {
                                 if (blockType === BLOCK.GRASS || blockType === BLOCK.DIRT) {
                                     blockType = BLOCK.SAND;
                                 }
@@ -96,13 +119,15 @@ export class TerrainPass {
                             if (biome === 'mountain' && groundHeight > 80 && detail < -0.5) blockType = BLOCK.SNOW;
                         }
                     } 
-                    // Water Generation
+                    // Water Generation - Prevent water in Deserts and Badlands
                     else if (y <= WATER_LEVEL) {
-                        // Freeze water in tundra
-                        if (biome === 'tundra') {
-                            blockType = BLOCK.ICE;
-                        } else {
-                            blockType = BLOCK.WATER;
+                        if (biome !== 'desert' && biome !== 'badlands') {
+                            // Freeze water in tundra
+                            if (biome === 'tundra') {
+                                blockType = BLOCK.ICE;
+                            } else {
+                                blockType = BLOCK.WATER;
+                            }
                         }
                     }
                     

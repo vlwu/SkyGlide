@@ -39,6 +39,18 @@ export function fastColor(type, rand, out, yRatio = 0.5) {
         case BLOCK.WATER:
             r = 0.2; g = 0.5; b = 0.8; break; // Alpha handled in material
             
+        // Badlands
+        case BLOCK.RED_SAND:
+            r = 0.82 + rand * 0.05; g = 0.45 + rand * 0.05; b = 0.15 + rand * 0.05; break;
+        case BLOCK.TERRACOTTA:
+            r = 0.60 + rand * 0.1; g = 0.40 + rand * 0.1; b = 0.30 + rand * 0.1; break;
+        case BLOCK.TERRACOTTA_YELLOW:
+            r = 0.75 + rand * 0.05; g = 0.55 + rand * 0.05; b = 0.20 + rand * 0.05; break;
+        case BLOCK.TERRACOTTA_BROWN:
+            r = 0.45 + rand * 0.05; g = 0.30 + rand * 0.05; b = 0.20 + rand * 0.05; break;
+        case BLOCK.TERRACOTTA_RED:
+            r = 0.55 + rand * 0.05; g = 0.30 + rand * 0.05; b = 0.20 + rand * 0.05; break;
+
         // Vegetation
         case BLOCK.OAK_LOG:
             r = 0.4 + rand * 0.1; g = 0.3 + rand * 0.05; b = 0.2 + rand * 0.05; break;

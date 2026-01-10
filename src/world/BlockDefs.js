@@ -26,7 +26,13 @@ export const BLOCK = {
     SPRUCE_LOG: 23,
     SPRUCE_LEAVES: 24,
     // Liquids
-    WATER: 25
+    WATER: 25,
+    // Badlands
+    RED_SAND: 26,
+    TERRACOTTA: 27,
+    TERRACOTTA_YELLOW: 28,
+    TERRACOTTA_BROWN: 29,
+    TERRACOTTA_RED: 30
 };
 
 // Face order: Right, Left, Top, Bottom, Front, Back

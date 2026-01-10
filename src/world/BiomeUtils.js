@@ -20,7 +20,12 @@ export function getBiome(wx, wz) {
     const biomeNoise = noise3D(wx * biomeScale, 0, wz * biomeScale);
     const tempNoise = noise3D(wx * biomeScale * 0.5, 500, wz * biomeScale * 0.5);
     
-    if (biomeNoise > 0.4) return 'mountain';
+    // Adjusted thresholds to include Badlands
+    if (biomeNoise > 0.5) return 'mountain';
+    
+    // Badlands: Moderate biome noise, hot temp
+    if (biomeNoise > 0.1 && biomeNoise <= 0.5 && tempNoise > 0.1) return 'badlands';
+
     if (biomeNoise < -0.4 && tempNoise < 0) return 'desert';
     if (tempNoise < -0.5) return 'tundra';
     if (biomeNoise < -0.2 && tempNoise > 0.3) return 'volcanic';
@@ -33,6 +38,20 @@ export function getBiomeBlock(biome, depth, y, groundHeight) {
         if (depth < 4) return BLOCK.SANDSTONE;
         if (depth < 8) return BLOCK.CLAY;
         return BLOCK.STONE;
+    }
+    if (biome === 'badlands') {
+        if (depth === 0) return BLOCK.RED_SAND;
+        
+        // Stratified layers based on world height (y) for canyon look
+        const layer = y % 15;
+        if (depth < 3) return BLOCK.RED_SANDSTONE;
+        
+        // Terracotta bands
+        if (layer < 2) return BLOCK.TERRACOTTA_BROWN;
+        if (layer < 5) return BLOCK.TERRACOTTA_RED;
+        if (layer < 6) return BLOCK.TERRACOTTA_YELLOW;
+        if (layer < 10) return BLOCK.TERRACOTTA;
+        return BLOCK.TERRACOTTA_BROWN;
     }
     if (biome === 'tundra') {
         if (depth === 0) return BLOCK.SNOW;
@@ -78,7 +97,17 @@ export function getTerrainHeightMap(wx, wz) {
     const bVal = noise3D(wx * biomeScale, 0, wz * biomeScale);
     const tVal = noise3D(wx * biomeScale * 0.5, 500, wz * biomeScale * 0.5);
 
-    const wMount = smoothstep(0.2, 0.6, bVal);
+    const wMount = smoothstep(0.4, 0.7, bVal); // Adjusted for new biome range
+    
+    // Badlands Weight
+    let wBadlands = 0;
+    if (bVal > 0.1 && bVal <= 0.5 && tVal > 0.1) {
+        // Simple rectangular window approximation with smooth edges
+        const wb = smoothstep(0.1, 0.2, bVal) * smoothstep(0.5, 0.4, bVal);
+        const wt = smoothstep(0.1, 0.2, tVal);
+        wBadlands = wb * wt;
+    }
+
     const wTundra = smoothstep(-0.3, -0.7, tVal) * (1.0 - wMount * 0.5);
     const wDesert = smoothstep(-0.2, -0.6, bVal) * smoothstep(0.2, -0.2, tVal) * (1.0 - wMount);
 
@@ -89,13 +118,22 @@ export function getTerrainHeightMap(wx, wz) {
 
     const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
     const hMountVal = hBase + (mNoise > 0 ? mNoise * 50 : 0) + (ridge * ridge * 60);
+    
+    // Desert: Much flatter now
     const dunes = Math.abs(noise3D(wx * 0.05, 300, wz * 0.05));
-    const hDesertVal = hBase * 0.6 + dunes * 15;
+    // Base 25 ensures it stays above standard water level (18) mostly, + small dunes
+    const hDesertVal = 25 + dunes * 8; 
+
+    // Badlands: High Plateaus
+    const plateauNoise = noise3D(wx * 0.01, 123, wz * 0.01);
+    const hBadlandsVal = 65 + plateauNoise * 15; 
+
     const hTundraVal = hBase * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
 
     let h = hBase;
     if (wDesert > 0) h = mix(h, hDesertVal, wDesert);
     if (wTundra > 0) h = mix(h, hTundraVal, wTundra);
+    if (wBadlands > 0) h = mix(h, hBadlandsVal, wBadlands);
     if (wMount > 0)  h = mix(h, hMountVal, wMount);
 
     return h;
@@ -109,10 +147,7 @@ export function getMaxTerrainHeight(wx, wz) {
     // Check center of island band (Y=100)
     const n1 = noise3D(wx * islandBaseScale, 2.0, wz * islandBaseScale); // 100 * 0.02 = 2.0
     
-    // Threshold from TerrainPass (approx)
-    // threshold = 0.2 + (1.0 - density) * 0.6. Center density is 1.0, so threshold ~0.2.
     if (n1 > 0.2) {
-        // Islands exist, usually top out around 140-150
         return Math.max(groundH, 150);
     }
     
