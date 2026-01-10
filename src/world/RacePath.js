@@ -13,7 +13,9 @@ export class RacePath {
         // Data for logic
         this.ringData = [];
         this.ringBuckets = new Map();
-        this.BUCKET_SIZE = CONFIG.GAME.RINGS.BUCKET_SIZE;
+        
+        // OPTIMIZATION: Reduce bucket size for finer spatial hashing
+        this.BUCKET_SIZE = 10;
         
         // Visuals
         this.visualItems = []; 
@@ -27,6 +29,7 @@ export class RacePath {
         // Cached Arrays for Collision to avoid GC
         this._activeRings = []; 
         this._lastCollisionBucket = -999999;
+        this._lastCheckPos = new THREE.Vector3(0, -999, 0);
         
         // OPTIMIZATION: Object pooling for collision result
         this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
@@ -217,8 +220,6 @@ export class RacePath {
         let currentDir = startDir.clone();
         let segmentsSinceBranch = 0;
 
-        // Force Altitude Variation Logic
-        // Adjusted: Lowered Y range and bias to stay closer to ground biomes
         let verticalBias = (Math.random() > 0.5 ? 1 : -1) * (0.3 + Math.random() * 0.3); 
         let stepsUntilBiasChange = 25 + Math.floor(Math.random() * 35);
 
@@ -226,7 +227,6 @@ export class RacePath {
             const dist = Math.abs(currentPos.z);
             const estimatedRings = dist / 70.0;
             
-            // Increase variance multiplier based on distance
             let varianceMult = 1.0;
             if (estimatedRings >= 10) { 
                 const tier = Math.floor((estimatedRings - 10) / 20) + 1;
@@ -236,44 +236,29 @@ export class RacePath {
             varianceMult = Math.min(5.0, varianceMult);
 
             const z = currentPos.z - 40; 
-            
-            // INCREASED horizontal variance (was 60)
             const xRange = 120 * varianceMult;
-            // DECREASED vertical variance (was 40)
             const yRange = 25 * varianceMult; 
             
-            // X motion: Random walk
             const x = currentPos.x + (Math.random() - 0.5) * xRange; 
             
-            // Y motion: Forced Bias + Randomness
-            // Push altitude up or down based on current bias
             let yChange = verticalBias * (10 + Math.random() * 15) * (varianceMult * 0.6);
-            
-            // Add randomness
             yChange += (Math.random() - 0.5) * yRange;
 
             let y = currentPos.y + yChange; 
             
-            // Update Bias logic
             stepsUntilBiasChange--;
             if (stepsUntilBiasChange <= 0) {
-                verticalBias *= -1; // Flip direction
-                stepsUntilBiasChange = 40 + Math.floor(Math.random() * 50); // Slower vertical frequency
+                verticalBias *= -1; 
+                stepsUntilBiasChange = 40 + Math.floor(Math.random() * 50); 
                 
-                // Keep bias centered around Y=80
                 if (y > 120) verticalBias = -Math.abs(verticalBias);
                 if (y < 50) verticalBias = Math.abs(verticalBias);
             }
 
-            // --- TERRAIN HEIGHT CLAMPING ---
             const groundH = getTerrainHeightMap(x, z);
             const maxH = getMaxTerrainHeight(x, z);
 
-            // Ensure we don't crash into ground: Keep at least 15 units above ground
             const floorLimit = groundH + 15;
-            
-            // Ensure we don't fly too high above terrain structures (islands/mountains)
-            // Allow going 20 units above max structure, but not more
             const ceilingLimit = maxH + 20;
 
             y = Math.max(floorLimit, Math.min(y, ceilingLimit));
@@ -442,20 +427,24 @@ export class RacePath {
     }
 
     checkCollisions(player) {
+        // OPTIMIZATION: Cache check if player hasn't moved much
+        if (player.position.distanceToSquared(this._lastCheckPos) < 1.0) {
+            return this._collisionResult;
+        }
+        this._lastCheckPos.copy(player.position);
+
         // RESET POOL and result
         vec3Pool.reset();
         this._collisionResult.scoreIncrease = 0;
         this._collisionResult.boostAmount = 0;
         
         const pPos = player.position;
-        // BUCKET LOOKUP - Use finer buckets
         const bucketKey = Math.floor(pPos.z / this.BUCKET_SIZE);
         
-        // Populate active rings list only when changing buckets
         if (bucketKey !== this._lastCollisionBucket) {
-            this._activeRings.length = 0; // Clear without GC
+            this._activeRings.length = 0; 
             
-            // Check current and immediate neighbors (z-1, z, z+1)
+            // Check current and immediate neighbors
             for (let k = bucketKey - 1; k <= bucketKey + 1; k++) {
                 const bucket = this.ringBuckets.get(k);
                 if (bucket) {
@@ -476,15 +465,13 @@ export class RacePath {
             const ring = this._activeRings[i];
             if (!ring.active) continue;
 
-            // Simple Axis check first
-            const dz = pPos.z - ring.position.z;
-            if (dz > 6.0 || dz < -6.0) continue; 
+            // OPTIMIZATION: Z-Filter before distance calc
+            if (Math.abs(pPos.z - ring.position.z) > 6.0) continue; 
 
             const distSq = pPos.distanceToSquared(ring.position);
             if (distSq < collisionDistSq) {
                 ring.active = false;
                 
-                // OPTIMIZATION: Mark dirty instead of updating immediately
                 this.dirtyRingIndices.add(ring.index);
                 
                 this._collisionResult.scoreIncrease++;
@@ -575,30 +562,26 @@ export class RacePath {
         this.uniforms.uTime.value += dt;
         this._frameCount++;
 
-        // Update Ring Rotation Uniform (Skip on LOW quality)
         const quality = settingsManager.get('quality');
         if (quality !== 'LOW') {
             this.ringUniforms.uTime.value += dt;
         }
 
-        // OPTIMIZATION: Batched partial updates for Rings
+        // OPTIMIZATION: Batched partial updates with higher limit
         if (this.instancedMesh && this.dirtyRingIndices.size > 0) {
-            const MAX_UPDATES_PER_FRAME = 10;
+            const MAX_UPDATES_PER_FRAME = 100; // Increased from 10
             let count = 0;
 
-            // Convert to array for iteration
             const dirtyArray = Array.from(this.dirtyRingIndices);
 
             for (let i = 0; i < Math.min(dirtyArray.length, MAX_UPDATES_PER_FRAME); i++) {
                 const idx = dirtyArray[i];
                 
-                // Scale ring down to effectively hide it
-                this.dummy.position.set(0, -10000, 0); // Move far away
-                this.dummy.scale.set(0.001, 0.001, 0.001); // Scale to nearly invisible
+                this.dummy.position.set(0, -10000, 0); 
+                this.dummy.scale.set(0.001, 0.001, 0.001); 
                 this.dummy.updateMatrix();
                 this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
                 
-                // Dim the color
                 this.colorHelper.setHex(0x000000);
                 this.instancedMesh.setColorAt(idx, this.colorHelper);
                 
@@ -607,7 +590,6 @@ export class RacePath {
             }
 
             if (count > 0) {
-                // Mark for GPU update
                 this.instancedMesh.instanceMatrix.needsUpdate = true;
                 if (this.instancedMesh.instanceColor) {
                     this.instancedMesh.instanceColor.needsUpdate = true;

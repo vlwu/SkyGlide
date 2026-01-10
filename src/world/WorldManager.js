@@ -12,22 +12,18 @@ export class WorldManager {
         this.chunks = new Map(); 
         this._chunkArray = [];
         
-        // Optimization: Integer cache for fast lookups
-        this.lastChunk = null;
-        this.lastChunkKey = '';
-        this.lastCX = null;
-        this.lastCZ = null;
+        // OPTIMIZATION: Small cache of recent chunks to avoid Map lookup in tight loops
+        this.chunkCache = []; 
 
         this.chunkMaterial = new THREE.MeshLambertMaterial({ 
             vertexColors: true
         });
 
-        // Semi-transparent Water Material
         this.waterMaterial = new THREE.MeshLambertMaterial({
             vertexColors: true,
             transparent: true,
             opacity: 0.75,
-            side: THREE.DoubleSide // Visible from below too
+            side: THREE.DoubleSide 
         });
 
         this._cameraForward = new THREE.Vector3();
@@ -38,7 +34,6 @@ export class WorldManager {
         this.lastVisibilityUpdate = 0;
         this.frameCounter = 0; 
         
-        // Chunk Generation Throttling
         this.chunkCooldown = 0;
 
         this.frustum = new THREE.Frustum();
@@ -74,11 +69,8 @@ export class WorldManager {
         }
         this.chunks.clear();
         this._chunkArray = [];
+        this.chunkCache = [];
         
-        this.lastChunk = null;
-        this.lastChunkKey = '';
-        this.lastCX = null;
-        this.lastCZ = null;
         this.generationQueue = [];
         this.applyQueue = [];
         this.disposalQueue = [];
@@ -96,7 +88,6 @@ export class WorldManager {
         const now = performance.now();
         const playerPos = player.position;
         
-        // OPTIMIZATION: Strict budget for mesh application (1/frame)
         if (this.applyQueue.length > 0) {
              const data = this.applyQueue.shift();
              const chunk = this.chunks.get(data.key);
@@ -105,13 +96,11 @@ export class WorldManager {
              }
         }
 
-        // Throttle disposal
         if (this.disposalQueue.length > 0) {
             const chunk = this.disposalQueue.shift();
             chunk.dispose();
         }
 
-        // OPTIMIZATION: Throttle visibility checks to ~33Hz (30FPS)
         if (now - this.lastVisibilityUpdate > 33) {
             this.lastVisibilityUpdate = now;
 
@@ -129,7 +118,6 @@ export class WorldManager {
 
             for (let i = 0; i < len; i++) {
                 const chunk = chunks[i];
-                // Check if either mesh exists
                 if (!chunk.mesh && !chunk.waterMesh) continue;
 
                 const dx = chunk.worldX - playerPos.x;
@@ -140,7 +128,6 @@ export class WorldManager {
 
                 if (distSq <= this.maxVisibleDistSq) {
                     if (distSq > safeRadiusSq) {
-                        // Check bounds (bbox handles both meshes if implemented, or mainly ground)
                         if (this.frustum.intersectsBox(chunk.bbox)) {
                             isVisible = true;
                         }
@@ -157,28 +144,23 @@ export class WorldManager {
             }
         }
 
-        // OPTIMIZATION: Update chunk generation queue less frequently
         if (now - this.lastUpdate > 200) {
             this.lastUpdate = now;
             this.updateQueue(playerPos, camera);
         }
 
-        // OPTIMIZATION: Throttled Dispatch
         if (this.chunkCooldown > 0) {
             this.chunkCooldown--;
         } else if (this.generationQueue.length > 0) {
             const req = this.generationQueue.shift();
             let chunk = this.chunks.get(req.key);
             
-            // If new chunk
             if (!chunk) {
-                // Pass water material here
                 chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial, this.waterMaterial);
                 this.chunks.set(req.key, chunk);
                 this._chunkArray.push(chunk);
             }
 
-            // Dispatch if new or LOD changed
             if (!chunk.isLoaded || chunk.lod !== req.lod) {
                 const pathSegments = {};
                 const startZ = req.z * this.chunkSize;
@@ -200,7 +182,6 @@ export class WorldManager {
                     pathSegments: pathSegments
                 });
 
-                // Set cooldown to skip next 2 frames
                 this.chunkCooldown = 2;
             }
         }
@@ -265,6 +246,7 @@ export class WorldManager {
 
         if (reindex) {
             this._chunkArray = Array.from(this.chunks.values());
+            this.chunkCache = []; 
         }
 
         newQueue.sort((a, b) => a.score - b.score);
@@ -275,27 +257,44 @@ export class WorldManager {
         const cx = Math.floor(x / this.chunkSize);
         const cz = Math.floor(z / this.chunkSize);
         
-        let chunk;
-
-        if (this.lastChunk && this.lastCX === cx && this.lastCZ === cz) {
-            chunk = this.lastChunk;
-        } else {
-            const key = `${cx},${cz}`;
-            chunk = this.chunks.get(key);
-            if (chunk) {
-                this.lastChunk = chunk;
-                this.lastChunkKey = key;
-                this.lastCX = cx;
-                this.lastCZ = cz;
+        // OPTIMIZATION: Check cache first (LRU-ish)
+        for (let i = 0; i < this.chunkCache.length; i++) {
+            const c = this.chunkCache[i];
+            if (c.x === cx && c.z === cz) {
+                if (c.isLoaded && c.data) {
+                    // Move to front if not already
+                    if (i > 0) {
+                        this.chunkCache.splice(i, 1);
+                        this.chunkCache.unshift(c);
+                    }
+                    // Inline array indexing math
+                    const lx = Math.floor(x) - (cx * this.chunkSize);
+                    const ly = Math.floor(y);
+                    const lz = Math.floor(z) - (cz * this.chunkSize);
+                    
+                    if (lx < 0 || lx >= this.chunkSize || ly < 0 || ly >= CONFIG.WORLD.CHUNK_HEIGHT || lz < 0 || lz >= this.chunkSize) return 0;
+                    return c.data[lx + this.chunkSize * (ly + CONFIG.WORLD.CHUNK_HEIGHT * lz)];
+                }
+                return 0;
             }
         }
+
+        // Slow lookup
+        const key = `${cx},${cz}`;
+        const chunk = this.chunks.get(key);
         
-        if (!chunk || !chunk.isLoaded) return false; 
+        if (chunk && chunk.isLoaded && chunk.data) {
+            this.chunkCache.unshift(chunk);
+            if (this.chunkCache.length > 4) this.chunkCache.pop();
+
+            const lx = Math.floor(x) - (cx * this.chunkSize);
+            const ly = Math.floor(y);
+            const lz = Math.floor(z) - (cz * this.chunkSize);
+
+            if (lx < 0 || lx >= this.chunkSize || ly < 0 || ly >= CONFIG.WORLD.CHUNK_HEIGHT || lz < 0 || lz >= this.chunkSize) return 0;
+            return chunk.data[lx + this.chunkSize * (ly + CONFIG.WORLD.CHUNK_HEIGHT * lz)];
+        }
         
-        const lx = Math.floor(x) - (cx * this.chunkSize);
-        const ly = Math.floor(y); 
-        const lz = Math.floor(z) - (cz * this.chunkSize);
-        
-        return chunk.getBlock(lx, ly, lz);
+        return 0; 
     }
 }

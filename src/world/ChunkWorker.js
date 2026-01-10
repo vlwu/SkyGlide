@@ -4,13 +4,11 @@ import { TerrainPass } from './gen/TerrainPass.js';
 import { VegetationPass } from './gen/VegetationPass.js';
 
 let MAX_VERTICES = 40000;
-// Buffers for Opaque Geometry
 let BUFFER_POS = new Float32Array(MAX_VERTICES * 3);
 let BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
 let BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
 let BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
 
-// Buffers for Water Geometry
 let MAX_VERTICES_W = 10000;
 let BUFFER_POS_W = new Float32Array(MAX_VERTICES_W * 3);
 let BUFFER_NORM_W = new Float32Array(MAX_VERTICES_W * 3);
@@ -26,13 +24,11 @@ self.onmessage = (e) => {
     const strideY = size;          
     const strideZ = size * height; 
     
-    // --- 1. Terrain Pass ---
+    // --- Generation Passes ---
     TerrainPass.generate(data, startX, startZ, size, height);
-
-    // --- 2. Vegetation Pass ---
     VegetationPass.generate(data, startX, startZ, size, height);
     
-    // --- 3. Path/Structure Pass (Carving) ---
+    // --- Path Carving ---
     for (let lz = 0; lz < size; lz++) {
         const wz = startZ + lz;
         const points = pathSegments[wz];
@@ -62,9 +58,8 @@ self.onmessage = (e) => {
         }
     }
 
-    // --- 4. Spawn Area Override ---
-    const minWx = -2, maxWx = 2;
-    const minWz = -2, maxWz = 2;
+    // --- Spawn Override ---
+    const minWx = -2, maxWx = 2, minWz = -2, maxWz = 2;
     const loopMinX = Math.max(0, minWx - startX);
     const loopMaxX = Math.min(size - 1, maxWx - startX);
     const loopMinZ = Math.max(0, minWz - startZ);
@@ -82,30 +77,17 @@ self.onmessage = (e) => {
         }
     }
 
-    // --- 5. Meshing ---
+    // --- Meshing (Simple Culling) ---
     let vertCount = 0;
     let indexCount = 0;
-    
     let vertCountW = 0;
     let indexCountW = 0;
-    
     const rgb = [0,0,0];
 
     const step = lod;
     const lSize = Math.ceil(size / step);
     const lHeight = Math.ceil(height / step);
 
-    const getLODBlock = (lx, ly, lz) => {
-        const x = lx * step;
-        const y = ly * step;
-        const z = lz * step;
-        if (x >= size || y >= height || z >= size) return BLOCK.AIR;
-        return data[x + z * strideZ + y * strideY];
-    };
-
-    const mask = new Int32Array(Math.max(lSize, lHeight) * Math.max(lSize, lHeight));
-
-    // Helper to grow buffers
     const ensureBufferCapacity = (needed, isWater) => {
         if (isWater) {
              if (vertCountW + needed >= MAX_VERTICES_W) {
@@ -120,177 +102,177 @@ self.onmessage = (e) => {
                 MAX_VERTICES = Math.floor(MAX_VERTICES * 1.5);
                 const newPos = new Float32Array(MAX_VERTICES * 3); newPos.set(BUFFER_POS); BUFFER_POS = newPos;
                 const newNorm = new Float32Array(MAX_VERTICES * 3); newNorm.set(BUFFER_NORM); BUFFER_NORM = newNorm;
-                const newCol = new Float32Array(MAX_VERTICES * 3); newCol.set(BUFFER_COL); BUFFER_COL = newCol;
+                const newCol = new Float32Array(MAX_VERTICES_W * 3); newCol.set(BUFFER_COL); BUFFER_COL = newCol;
                 const newInd = new Uint16Array(MAX_VERTICES * 1.5); newInd.set(BUFFER_IND); BUFFER_IND = newInd;
             }
         }
     };
 
-    // Standard Block Meshing
-    for (let d = 0; d < 3; d++) {
-        let i, j, k, l, w, h, u = (d + 1) % 3, v = (d + 2) % 3;
-        const x = [0, 0, 0];
-        const q = [0, 0, 0];
-        
-        const dims = [lSize, lHeight, lSize];
-        q[d] = 1;
+    const getBlock = (x, y, z) => {
+        if (x < 0 || x >= size || y < 0 || y >= height || z < 0 || z >= size) return BLOCK.AIR;
+        return data[x + z * strideZ + y * strideY];
+    };
 
-        for (x[d] = -1; x[d] < dims[d]; ) {
-            let n = 0;
-            for (x[v] = 0; x[v] < dims[v]; x[v]++) {
-                for (x[u] = 0; x[u] < dims[u]; x[u]++) {
-                    const b1 = (x[d] >= 0) ? getLODBlock(x[0], x[1], x[2]) : BLOCK.AIR;
-                    const b2 = (x[d] < dims[d] - 1) ? getLODBlock(x[0] + q[0], x[1] + q[1], x[2] + q[2]) : BLOCK.AIR;
-                    
-                    let faceType = 0;
-                    
-                    const t1 = isTransparent(b1);
-                    const t2 = isTransparent(b2);
-                    const w1 = isWater(b1);
-                    const w2 = isWater(b2);
+    // Pre-calculated face normals and vertices offset
+    // 0:Right, 1:Left, 2:Top, 3:Bottom, 4:Front, 5:Back
+    const F_NORM = [
+        [1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]
+    ];
+    // Quad vertices for each face [x,y,z] relative to block origin
+    const F_VERTS = [
+        [[1,0,1], [1,0,0], [1,1,0], [1,1,1]], // Right
+        [[0,0,0], [0,0,1], [0,1,1], [0,1,0]], // Left
+        [[0,1,1], [1,1,1], [1,1,0], [0,1,0]], // Top
+        [[0,0,0], [1,0,0], [1,0,1], [0,0,1]], // Bottom
+        [[0,0,1], [1,0,1], [1,1,1], [0,1,1]], // Front
+        [[1,0,0], [0,0,0], [0,1,0], [1,1,0]]  // Back
+    ];
 
-                    // Refined visibility logic for Transparent/Water
-                    if (!t1 && t2) {
-                        // Solid next to Transparent -> Draw Solid
-                        faceType = b1; 
-                    } else if (t1 && !t2) {
-                        // Transparent next to Solid -> Draw Solid (neighbor)
-                        faceType = -b2; 
-                    } else if (t1 && t2) {
-                        // Both transparent
-                        // Draw water if next to Air/Plant, but not next to Water
-                        if (w1 && !w2) faceType = b1;
-                        else if (w2 && !w1) faceType = -b2;
-                    }
-                    
-                    mask[n++] = faceType;
-                }
-            }
-            x[d]++;
-            n = 0;
-            for (j = 0; j < dims[v]; j++) {
-                for (i = 0; i < dims[u]; ) {
-                    const c = mask[n];
-                    if (c !== 0) {
-                        for (w = 1; c === mask[n + w] && i + w < dims[u]; w++) {}
-                        let done = false;
-                        for (h = 1; j + h < dims[v]; h++) {
-                            for (k = 0; k < w; k++) {
-                                if (c !== mask[n + k + h * dims[u]]) { done = true; break; }
-                            }
-                            if (done) break;
-                        }
-                        x[u] = i; x[v] = j;
-                        const du = [0, 0, 0]; du[u] = w;
-                        const dv = [0, 0, 0]; dv[v] = h;
-                        
-                        const type = Math.abs(c);
-                        const isWaterBlock = isWater(type);
-                        
-                        // Select Buffers
-                        const vBase = isWaterBlock ? vertCountW : vertCount;
-                        
-                        const start = [x[0] * step, x[1] * step, x[2] * step];
-                        const spanU = [du[0] * step, du[1] * step, du[2] * step];
-                        const spanV = [dv[0] * step, dv[1] * step, dv[2] * step];
-                        const corners = [[0, 0, 0], spanU, [spanU[0]+spanV[0], spanU[1]+spanV[1], spanU[2]+spanV[2]], spanV];
-                        
-                        const isBack = c < 0;
-                        const wx = startX + start[0];
-                        const wz = startZ + start[2];
-                        let seedH = (wx * 374761393) ^ (start[1] * 668265263) ^ (wz * 963469177);
+    for (let y = 0; y < lHeight; y++) {
+        const wy = y * step;
+        for (let z = 0; z < lSize; z++) {
+            const wz = z * step;
+            for (let x = 0; x < lSize; x++) {
+                const wx = x * step;
+                
+                const type = data[wx + wz * strideZ + wy * strideY];
+                if (type === BLOCK.AIR) continue;
+
+                // --- Plant Meshing (Billboard - 4 Vertices) ---
+                if (isPlant(type)) {
+                    // Only high LOD
+                    if (lod === 1) {
+                        const worldX = startX + wx;
+                        const worldZ = startZ + wz;
+                        let seedH = (worldX * 374761393) ^ (wy * 668265263) ^ (worldZ * 963469177);
                         seedH = (seedH ^ (seedH >> 13)) * 1274124933;
                         const rand = ((seedH >>> 0) / 4294967296);
-                        
-                        fastColor(type, rand, rgb);
-                        let shade = 1.0;
-                        if (d === 1) shade = isBack ? 0.6 : 1.1; 
-                        else if (d === 0) shade = 0.85; 
-                        else shade = 0.9; 
 
-                        ensureBufferCapacity(4, isWaterBlock);
+                        fastColor(type, rand, rgb, wy);
+                        ensureBufferCapacity(4, false);
+
+                        const vBase = vertCount;
+                        const dst = vBase * 3;
                         
-                        // Buffer References
+                        // Single diagonal quad (0,0) to (1,1)
+                        BUFFER_POS[dst]   = worldX + 0.15; BUFFER_POS[dst+1] = wy;       BUFFER_POS[dst+2] = worldZ + 0.15;
+                        BUFFER_POS[dst+3] = worldX + 0.85; BUFFER_POS[dst+4] = wy;       BUFFER_POS[dst+5] = worldZ + 0.85;
+                        BUFFER_POS[dst+6] = worldX + 0.85; BUFFER_POS[dst+7] = wy + 0.8; BUFFER_POS[dst+8] = worldZ + 0.85;
+                        BUFFER_POS[dst+9] = worldX + 0.15; BUFFER_POS[dst+10]= wy + 0.8; BUFFER_POS[dst+11]= worldZ + 0.15;
+
+                        // Upward normals
+                        for(let k=0; k<4; k++) {
+                            BUFFER_NORM[dst + k*3] = 0; BUFFER_NORM[dst + k*3 + 1] = 1; BUFFER_NORM[dst + k*3 + 2] = 0;
+                            BUFFER_COL[dst + k*3] = rgb[0]; BUFFER_COL[dst + k*3 + 1] = rgb[1]; BUFFER_COL[dst + k*3 + 2] = rgb[2];
+                        }
+                        
+                        BUFFER_IND[indexCount++] = vBase; BUFFER_IND[indexCount++] = vBase+1; BUFFER_IND[indexCount++] = vBase+2;
+                        BUFFER_IND[indexCount++] = vBase+2; BUFFER_IND[indexCount++] = vBase+3; BUFFER_IND[indexCount++] = vBase;
+                        // Double side
+                        BUFFER_IND[indexCount++] = vBase; BUFFER_IND[indexCount++] = vBase+3; BUFFER_IND[indexCount++] = vBase+2;
+                        BUFFER_IND[indexCount++] = vBase+2; BUFFER_IND[indexCount++] = vBase+1; BUFFER_IND[indexCount++] = vBase;
+                        
+                        vertCount += 4;
+                    }
+                    continue; // Skip cube meshing for plants
+                }
+
+                // --- Cube Meshing ---
+                const isWaterBlock = isWater(type);
+                const isTrans = isTransparent(type);
+
+                // Check 6 neighbors
+                for (let d = 0; d < 6; d++) {
+                    const nx = wx + F_NORM[d][0] * step;
+                    const ny = wy + F_NORM[d][1] * step;
+                    const nz = wz + F_NORM[d][2] * step;
+
+                    const nType = getBlock(nx, ny, nz);
+                    let drawFace = false;
+
+                    if (isWaterBlock) {
+                        // Water draws if neighbor is NOT water (Air, Solid, etc)
+                        // This handles surface and edges against glass/air
+                        drawFace = !isWater(nType);
+                        // Optimization: Don't draw water faces against solid blocks if desired, 
+                        // but sticking to standard "draw if boundary"
+                        if (drawFace && nType !== BLOCK.AIR && !isTransparent(nType)) {
+                            drawFace = false; // Cull water against solid ground
+                        }
+                    } else {
+                        // Solid block
+                        const nTrans = isTransparent(nType);
+                        const nWater = isWater(nType);
+                        
+                        // Draw if neighbor is transparent (Air/Plant) or Water
+                        if (nTrans || nWater) {
+                            drawFace = true;
+                        }
+                    }
+
+                    if (drawFace) {
+                        ensureBufferCapacity(4, isWaterBlock);
+
                         const POS = isWaterBlock ? BUFFER_POS_W : BUFFER_POS;
                         const NORM = isWaterBlock ? BUFFER_NORM_W : BUFFER_NORM;
                         const COL = isWaterBlock ? BUFFER_COL_W : BUFFER_COL;
                         const IND = isWaterBlock ? BUFFER_IND_W : BUFFER_IND;
+                        
+                        let vBase = isWaterBlock ? vertCountW : vertCount;
+                        let iBase = isWaterBlock ? indexCountW : indexCount;
+                        
+                        // Seed for color variation
+                        const worldX = startX + wx;
+                        const worldZ = startZ + wz;
+                        let seedH = (worldX * 374761393) ^ (wy * 668265263) ^ (worldZ * 963469177);
+                        seedH = (seedH ^ (seedH >> 13)) * 1274124933;
+                        const rand = ((seedH >>> 0) / 4294967296);
 
-                        let vc = isWaterBlock ? vertCountW : vertCount;
-                        let ic = isWaterBlock ? indexCountW : indexCount;
+                        fastColor(type, rand, rgb);
+                        
+                        // Fake AO / Shading
+                        let shade = 1.0;
+                        if (d === 3) shade = 0.6; // Bottom
+                        else if (d === 1 || d === 5) shade = 0.85; // Sides
+                        else if (d === 0 || d === 4) shade = 0.9;
+                        
+                        // Water specific color
+                        if (isWaterBlock) {
+                            rgb[0] = 0.2; rgb[1] = 0.5; rgb[2] = 0.8;
+                            shade = 1.0;
+                        }
 
-                        for (let k = 0; k < 4; k++) {
-                            const p = isBack ? corners[3-k] : corners[k];
-                            const dst = vc * 3;
-                            POS[dst] = startX + start[0] + p[0];
-                            POS[dst+1] = start[1] + p[1];
-                            POS[dst+2] = startZ + start[2] + p[2];
-                            NORM[dst] = q[0] * (isBack ? -1 : 1);
-                            NORM[dst+1] = q[1] * (isBack ? -1 : 1);
-                            NORM[dst+2] = q[2] * (isBack ? -1 : 1);
-                            COL[dst] = rgb[0] * shade;
+                        const verts = F_VERTS[d];
+                        const nxVal = F_NORM[d][0], nyVal = F_NORM[d][1], nzVal = F_NORM[d][2];
+
+                        for(let k=0; k<4; k++) {
+                            const dst = vBase * 3;
+                            POS[dst]   = startX + wx + verts[k][0] * step;
+                            POS[dst+1] = wy + verts[k][1] * step;
+                            POS[dst+2] = startZ + wz + verts[k][2] * step;
+                            
+                            NORM[dst]   = nxVal;
+                            NORM[dst+1] = nyVal;
+                            NORM[dst+2] = nzVal;
+                            
+                            COL[dst]   = rgb[0] * shade;
                             COL[dst+1] = rgb[1] * shade;
                             COL[dst+2] = rgb[2] * shade;
-                            vc++;
+                            
+                            vBase++;
                         }
-                        
-                        IND[ic++] = vBase; IND[ic++] = vBase + 1; IND[ic++] = vBase + 2;
-                        IND[ic++] = vBase + 2; IND[ic++] = vBase + 3; IND[ic++] = vBase;
+
+                        // Indices
+                        const vb = isWaterBlock ? vertCountW : vertCount;
+                        IND[iBase++] = vb;     IND[iBase++] = vb + 1; IND[iBase++] = vb + 2;
+                        IND[iBase++] = vb + 2; IND[iBase++] = vb + 3; IND[iBase++] = vb;
 
                         if (isWaterBlock) {
-                            vertCountW = vc;
-                            indexCountW = ic;
+                            vertCountW = vBase;
+                            indexCountW = iBase;
                         } else {
-                            vertCount = vc;
-                            indexCount = ic;
-                        }
-
-                        for (l = 0; l < h; ++l) { for (k = 0; k < w; ++k) { mask[n + k + l * dims[u]] = 0; } }
-                        i += w; n += w;
-                    } else { i++; n++; }
-                }
-            }
-        }
-    }
-
-    // Plant Meshing (Only Opaque/Cutout, No Water)
-    if (lod === 1) {
-        for (let lx = 0; lx < size; lx++) {
-            for (let ly = 0; ly < height; ly++) {
-                for (let lz = 0; lz < size; lz++) {
-                    const idx = lx + lz * strideZ + ly * strideY;
-                    const type = data[idx];
-                    
-                    if (isPlant(type)) {
-                        const wx = startX + lx;
-                        const wz = startZ + lz;
-                        let seedH = (wx * 374761393) ^ (ly * 668265263) ^ (wz * 963469177);
-                        seedH = (seedH ^ (seedH >> 13)) * 1274124933;
-                        const rand = ((seedH >>> 0) / 4294967296); 
-
-                        ensureBufferCapacity(8, false);
-                        const vBase = vertCount;
-                        
-                        const pushVert = (vx, vy, vz, nx, ny, nz) => {
-                            const dst = vertCount * 3;
-                            BUFFER_POS[dst] = startX + lx + vx; BUFFER_POS[dst+1] = ly + vy; BUFFER_POS[dst+2] = startZ + lz + vz;
-                            BUFFER_NORM[dst] = nx; BUFFER_NORM[dst+1] = ny; BUFFER_NORM[dst+2] = nz;
-                            fastColor(type, rand, rgb, vy); 
-                            BUFFER_COL[dst] = rgb[0]; BUFFER_COL[dst+1] = rgb[1]; BUFFER_COL[dst+2] = rgb[2];
-                            vertCount++;
-                        };
-
-                        pushVert(0.15, 0, 0.15, 0.7, 0, 0.7); pushVert(0.85, 0, 0.85, 0.7, 0, 0.7);
-                        pushVert(0.85, 0.8, 0.85, 0.7, 0, 0.7); pushVert(0.15, 0.8, 0.15, 0.7, 0, 0.7);
-                        pushVert(0.15, 0, 0.85, 0.7, 0, -0.7); pushVert(0.85, 0, 0.15, 0.7, 0, -0.7);
-                        pushVert(0.85, 0.8, 0.15, 0.7, 0, -0.7); pushVert(0.15, 0.8, 0.85, 0.7, 0, -0.7);
-
-                        for(let i=0; i<2; i++) {
-                            const base = vBase + i * 4;
-                            BUFFER_IND[indexCount++] = base; BUFFER_IND[indexCount++] = base + 1; BUFFER_IND[indexCount++] = base + 2;
-                            BUFFER_IND[indexCount++] = base + 2; BUFFER_IND[indexCount++] = base + 3; BUFFER_IND[indexCount++] = base;
-                            BUFFER_IND[indexCount++] = base; BUFFER_IND[indexCount++] = base + 3; BUFFER_IND[indexCount++] = base + 2;
-                            BUFFER_IND[indexCount++] = base + 2; BUFFER_IND[indexCount++] = base + 1; BUFFER_IND[indexCount++] = base;
+                            vertCount = vBase;
+                            indexCount = iBase;
                         }
                     }
                 }
