@@ -37,6 +37,8 @@ export function fastColor(type, rand, out, yRatio = 0.5) {
             r = 0.65 + rand * 0.05; g = 0.75 + rand * 0.05; b = 0.95 + rand * 0.05; break;
         case BLOCK.SPAWN: 
             r = 1.0; g = 0.84; b = 0.0; break;
+        case BLOCK.CACTUS:
+            r = 0.1 + rand * 0.1; g = 0.5 + rand * 0.1; b = 0.1 + rand * 0.05; break;
         
         // Vegetation
         case BLOCK.OAK_LOG:
@@ -64,6 +66,8 @@ export function fastColor(type, rand, out, yRatio = 0.5) {
                 r = 0.1; g = 0.5; b = 0.1;
             }
             break;
+        case BLOCK.DEAD_BUSH:
+            r = 0.4 + rand * 0.1; g = 0.25 + rand * 0.05; b = 0.1 + rand * 0.05; break;
 
         default: 
             r = 1.0; g = 0.0; b = 1.0;

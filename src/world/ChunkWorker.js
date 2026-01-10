@@ -152,7 +152,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // Grass/Flowers (Strictly inside chunk)
+    // Grass/Flowers/Desert Vegetation (Strictly inside chunk)
     for (let lx = 0; lx < size; lx++) {
         const wx = startX + lx;
         for (let lz = 0; lz < size; lz++) {
@@ -165,15 +165,34 @@ self.onmessage = (e) => {
                 
                 // Found top block?
                 if (block !== BLOCK.AIR && !isTransparent(block)) {
-                    // If grass, chance to spawn plant above
-                    if (block === BLOCK.GRASS) {
-                        const aboveIdx = idx + strideY;
-                        if (aboveIdx < data.length && data[aboveIdx] === BLOCK.AIR) {
-                            const plantNoise = noise3D(wx * 0.9, y * 0.9, wz * 0.9);
+                    const aboveIdx = idx + strideY;
+                    if (aboveIdx < data.length && data[aboveIdx] === BLOCK.AIR) {
+                        const plantNoise = noise3D(wx * 0.9, y * 0.9, wz * 0.9);
+
+                        // If grass, chance to spawn plant above
+                        if (block === BLOCK.GRASS) {
                             if (plantNoise > 0.2) {
                                 if (plantNoise > 0.75) data[aboveIdx] = BLOCK.RED_FLOWER;
                                 else if (plantNoise > 0.60) data[aboveIdx] = BLOCK.YELLOW_FLOWER;
                                 else data[aboveIdx] = BLOCK.TALL_GRASS;
+                            }
+                        }
+                        // If sand (Desert), chance to spawn Cactus or Dead Bush
+                        else if (block === BLOCK.SAND) {
+                            if (plantNoise > 0.3) {
+                                if (plantNoise > 0.65) {
+                                    // Cactus (2 or 3 blocks tall)
+                                    const h = (plantNoise > 0.8) ? 3 : 2;
+                                    for(let k = 0; k < h; k++) {
+                                        const cIdx = idx + strideY * (k + 1);
+                                        if (cIdx < data.length && data[cIdx] === BLOCK.AIR) {
+                                            data[cIdx] = BLOCK.CACTUS;
+                                        }
+                                    }
+                                } else {
+                                    // Dead Bush
+                                    data[aboveIdx] = BLOCK.DEAD_BUSH;
+                                }
                             }
                         }
                     }

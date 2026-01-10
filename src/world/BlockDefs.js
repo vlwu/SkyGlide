@@ -20,7 +20,9 @@ export const BLOCK = {
     OAK_LEAVES: 17,
     TALL_GRASS: 18,
     RED_FLOWER: 19,
-    YELLOW_FLOWER: 20
+    YELLOW_FLOWER: 20,
+    CACTUS: 21,
+    DEAD_BUSH: 22
 };
 
 // Face order: Right, Left, Top, Bottom, Front, Back
@@ -46,11 +48,13 @@ export function isTransparent(type) {
     return type === BLOCK.AIR || 
            type === BLOCK.TALL_GRASS || 
            type === BLOCK.RED_FLOWER || 
-           type === BLOCK.YELLOW_FLOWER;
+           type === BLOCK.YELLOW_FLOWER ||
+           type === BLOCK.DEAD_BUSH;
 }
 
 export function isPlant(type) {
     return type === BLOCK.TALL_GRASS || 
            type === BLOCK.RED_FLOWER || 
-           type === BLOCK.YELLOW_FLOWER;
+           type === BLOCK.YELLOW_FLOWER ||
+           type === BLOCK.DEAD_BUSH;
 }
