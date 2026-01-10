@@ -95,7 +95,8 @@ export class PlayerPhysics {
             case BLOCK.CLAY:
                 friction = 14.0; moveSpeed = 7.5; break;
             case BLOCK.MARBLE:
-            case BLOCK.OBSIDIAN:
+            case BLOCK.BASALT:
+            case BLOCK.OBSIDIAN: // Fallback safety
                 friction = 8.0; moveSpeed = 11.0; break;
             case BLOCK.MOSS_STONE:
                 friction = 11.0; moveSpeed = 9.5; break;

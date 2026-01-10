@@ -12,7 +12,7 @@ export const BLOCK = {
     SANDSTONE: 10,
     GRANITE: 11,
     MARBLE: 12,
-    OBSIDIAN: 13,
+    BASALT: 13,
     MOSS_STONE: 14,
     PACKED_ICE: 15
 };

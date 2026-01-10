@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config/Config.js';
+import { settingsManager } from '../settings/SettingsManager.js';
 
 export class RacePath {
     constructor(scene) {
@@ -23,8 +24,45 @@ export class RacePath {
 
         // OPTIMIZATION: Reduced segments from 8/12 to 6/8
         this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 6, 8); 
+        
+        // --- Shader-Based Rotation ---
+        this.ringUniforms = {
+            uTime: { value: 0 }
+        };
+
         this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
         
+        // Inject shader logic for performant GPU rotation
+        this.ringMaterial.onBeforeCompile = (shader) => {
+            shader.uniforms.uTime = this.ringUniforms.uTime;
+            
+            // Add rotation matrix function
+            shader.vertexShader = `
+                uniform float uTime;
+                mat3 rotateZ(float angle) {
+                    float c = cos(angle);
+                    float s = sin(angle);
+                    return mat3(
+                        c, -s, 0.0,
+                        s,  c, 0.0,
+                        0.0, 0.0, 1.0
+                    );
+                }
+            ` + shader.vertexShader;
+
+            // Apply rotation to 'transformed' (local space position) before instance matrix
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                `
+                #include <begin_vertex>
+                if (uTime > 0.0) {
+                    float angle = uTime * 1.5;
+                    transformed = rotateZ(angle) * transformed;
+                }
+                `
+            );
+        };
+
         this.uniforms = {
             uTime: { value: 0 }
         };
@@ -506,6 +544,12 @@ export class RacePath {
     update(dt, playerPos = null) {
         this.uniforms.uTime.value += dt;
         this._frameCount++;
+
+        // Update Ring Rotation Uniform (Skip on LOW quality)
+        const quality = settingsManager.get('quality');
+        if (quality !== 'LOW') {
+            this.ringUniforms.uTime.value += dt;
+        }
 
         // OPTIMIZATION: Batch matrix updates to 100ms interval instead of 33ms
         const now = performance.now();

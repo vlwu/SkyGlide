@@ -29,8 +29,8 @@ export function fastColor(type, rand, out) {
             r = 0.50 + rand * 0.1; g = 0.35 + rand * 0.1; b = 0.30 + rand * 0.1; break;
         case BLOCK.MARBLE:
             r = g = b = 0.85 + rand * 0.15; break;
-        case BLOCK.OBSIDIAN:
-            r = 0.05 + rand * 0.05; g = 0.0 + rand * 0.05; b = 0.1 + rand * 0.05; break;
+        case BLOCK.BASALT:
+            r = 0.20 + rand * 0.1; g = 0.20 + rand * 0.1; b = 0.23 + rand * 0.1; break;
         case BLOCK.MOSS_STONE:
             r = 0.25 + rand * 0.1; g = 0.40 + rand * 0.1; b = 0.25 + rand * 0.1; break;
         case BLOCK.PACKED_ICE:
@@ -44,7 +44,7 @@ export function fastColor(type, rand, out) {
 }
 
 export function getBiome(wx, wz) {
-    const biomeScale = 0.008;
+    const biomeScale = 0.002;
     const biomeNoise = noise3D(wx * biomeScale, 0, wz * biomeScale);
     const tempNoise = noise3D(wx * biomeScale * 0.5, 500, wz * biomeScale * 0.5);
     
@@ -79,7 +79,7 @@ export function getBiomeBlock(biome, depth, y, groundHeight) {
         return BLOCK.STONE;
     }
     if (biome === 'volcanic') {
-        if (depth === 0) return BLOCK.OBSIDIAN;
+        if (depth === 0) return BLOCK.BASALT;
         if (depth < 3) return BLOCK.GRAVEL;
         if (depth < 7) return BLOCK.GRANITE;
         return BLOCK.STONE;
