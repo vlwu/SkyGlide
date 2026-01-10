@@ -170,7 +170,8 @@ function animate(time) {
             // Pass camera to WorldManager for smart frustration/direction culling
             worldManager.update(player.position, camera);
 
-            if (player.position.y < -30) {
+            // Feature: Added ceiling limit (250) alongside floor limit (-30)
+            if (player.position.y < -30 || player.position.y > 250) {
                 uiManager.onGameOver();
             }
 
