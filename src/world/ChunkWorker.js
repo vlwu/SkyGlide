@@ -7,6 +7,17 @@ let BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
 let BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
 let BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
 
+// Helper for smooth interpolation
+function smoothstep(min, max, value) {
+    const x = Math.max(0, Math.min(1, (value - min) / (max - min)));
+    return x * x * (3 - 2 * x);
+}
+
+// Helper to mix values based on t (0..1)
+function mix(a, b, t) {
+    return a * (1 - t) + b * t;
+}
+
 self.onmessage = (e) => {
     const { x, z, size, height, pathSegments, lod = 1 } = e.data;
     
@@ -19,45 +30,85 @@ self.onmessage = (e) => {
     
     // 1. GENERATE TERRAIN
     const scaleBase = 0.02;
-    const scaleMount = 0.015; // Slower frequency for larger mountains
+    const scaleMount = 0.015; 
     const scaleDetail = 0.1;
     
     // Island parameters
     const islandBaseScale = 0.012; 
-    const islandCenterY = 100; // Lowered from 160 to be closer to terrain
-    const islandBand = 50; // Spread of islands
+    const islandCenterY = 100;
+    const islandBand = 50; 
+
+    // Biome Noise Constants (Must match BiomeUtils roughly for consistency)
+    const biomeScale = 0.002;
 
     for (let lx = 0; lx < size; lx++) {
         const wx = startX + lx;
         for (let lz = 0; lz < size; lz++) {
             const wz = startZ + lz;
-            const biome = getBiome(wx, wz);
 
-            // --- Ground Terrain ---
-            let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
+            // --- 1a. Biome & Height Blending ---
             
-            // Base Mountain Mass
+            // Raw noise values for biome determination
+            const bVal = noise3D(wx * biomeScale, 0, wz * biomeScale);
+            const tVal = noise3D(wx * biomeScale * 0.5, 500, wz * biomeScale * 0.5);
+
+            // Calculate Biome Weights using smooth transitions
+            // Mountain: bVal > 0.4
+            const wMount = smoothstep(0.2, 0.6, bVal);
+            
+            // Tundra: tVal < -0.5
+            // We mask it slightly so it doesn't override mountains completely if they overlap
+            const wTundraRaw = smoothstep(-0.3, -0.7, tVal);
+            const wTundra = wTundraRaw * (1.0 - wMount * 0.5);
+
+            // Desert: bVal < -0.4 && tVal < 0
+            const wDesertRaw = smoothstep(-0.2, -0.6, bVal) * smoothstep(0.2, -0.2, tVal);
+            const wDesert = wDesertRaw * (1.0 - wMount);
+
+            // Base Terrain (Plains/Default)
+            let hBase = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
             const mNoise = noise3D(wx * scaleMount, 100, wz * scaleMount);
             
-            if (biome === 'mountain') {
-                // Ridged Multifractal: 1.0 - abs(noise) creates sharp creases
-                const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
-                const ridgeHeight = ridge * ridge * 60; // Square it for sharper peaks
-                
-                h += (mNoise > 0 ? mNoise * 50 : 0) + ridgeHeight;
-            } else if (biome === 'desert') {
-                const dunes = Math.abs(noise3D(wx * 0.05, 300, wz * 0.05));
-                h = h * 0.6 + dunes * 15;
-            } else if (biome === 'tundra') {
-                h = h * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
-            } else {
-                // Plains/Volcanic
-                if (mNoise > 0.3) h += (mNoise - 0.3) * 30;
-            }
+            // Apply Plains variation (slight hills) to base
+            if (mNoise > 0.3) hBase += (mNoise - 0.3) * 30;
+
+            // -- Height Variations --
+
+            // 1. Mountain Height
+            // Ridged Multifractal
+            const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
+            const hMountVal = hBase + (mNoise > 0 ? mNoise * 50 : 0) + (ridge * ridge * 60);
+
+            // 2. Desert Height (Dunes)
+            const dunes = Math.abs(noise3D(wx * 0.05, 300, wz * 0.05));
+            const hDesertVal = hBase * 0.6 + dunes * 15;
+
+            // 3. Tundra Height (Smoother)
+            const hTundraVal = hBase * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
+
+            // Blend Heights
+            // Start with Base, blend others on top based on weights
+            let h = hBase;
             
+            // We use a hierarchical blend or additive mix? 
+            // Lerp is safer to prevent explosion.
+            if (wDesert > 0) h = mix(h, hDesertVal, wDesert);
+            if (wTundra > 0) h = mix(h, hTundraVal, wTundra);
+            if (wMount > 0)  h = mix(h, hMountVal, wMount);
+
             const groundHeight = Math.floor(h);
 
-            // Fill loop (0 to height) to handle both ground and islands
+            // --- 1b. Block Selection with Dithering ---
+            // Jitter the coordinates for getBiome to create jagged/dithered block transitions
+            // instead of straight lines.
+            const jitterScale = 0.1;
+            const jitterAmt = 8.0;
+            const jx = noise3D(wx * jitterScale, 50, wz * jitterScale) * jitterAmt;
+            const jz = noise3D(wx * jitterScale, -50, wz * jitterScale) * jitterAmt;
+            
+            const biome = getBiome(wx + jx, wz + jz);
+
+            // Fill loop
             for (let y = 0; y < height; y++) {
                 let blockType = BLOCK.AIR;
                 
@@ -74,32 +125,23 @@ self.onmessage = (e) => {
                 } 
                 
                 // --- Floating Islands (Sky Layer) ---
-                // Only spawn if well above ground to keep flight corridors open
                 if (y > 70) {
-                    // Vertical Density Gradient:
-                    // 1.0 at center, 0.0 at edges of band
                     const dist = Math.abs(y - islandCenterY);
                     const densityGradient = Math.max(0, 1.0 - (dist / islandBand));
                     
                     if (densityGradient > 0) {
-                        // Squeeze Y coord to make islands flat (plateaus)
                         const n1 = noise3D(wx * islandBaseScale, y * 0.02, wz * islandBaseScale);
-                        const n2 = noise3D(wx * 0.05, y * 0.05, wz * 0.05) * 0.15; // Detail
+                        const n2 = noise3D(wx * 0.05, y * 0.05, wz * 0.05) * 0.15;
                         
-                        // Combine and apply gradient
-                        // We need a high threshold at edges, low at center
                         const noiseVal = n1 + n2;
                         const threshold = 0.2 + (1.0 - densityGradient) * 0.6;
                         
                         if (noiseVal > threshold) {
-                            // Island Biome Logic
                             if (y > 130) blockType = BLOCK.SNOW;
                             else if (y > 125) blockType = BLOCK.PACKED_ICE;
                             else if (noiseVal > threshold + 0.15 && densityGradient > 0.8) {
-                                // Top soil for islands
                                 blockType = BLOCK.GRASS;
                             } else {
-                                // Underside
                                 blockType = BLOCK.STONE;
                                 if (noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0.3) blockType = BLOCK.MOSS_STONE;
                             }
@@ -115,7 +157,6 @@ self.onmessage = (e) => {
     }
 
     // 2. VEGETATION PASS
-    // Update ranges for new height
     const treeCheckRange = 3; 
     for (let lx = -treeCheckRange; lx < size + treeCheckRange; lx++) {
         const wx = startX + lx;
@@ -124,35 +165,30 @@ self.onmessage = (e) => {
 
             const treeNoise = noise3D(wx * 0.8, 999, wz * 0.8);
             if (treeNoise > 0.75) {
-                // ... (Recalculate h for tree placement - simplified copy of ground logic)
-                // Note: For performance, we only spawn trees on the "Ground" layer we calculated before.
-                // Since we don't have random access to the generated 'h' here without recalculating,
-                // we reconstruct basic height.
+                // Re-calculate h for tree placement (simplified for perf)
+                // Use simplified logic or the main biome noise to guess roughly
+                // For trees, we just check the ground layer we just generated.
+                // Since we can't easily query neighboring chunks' exact height without data,
+                // we'll stick to the safe "inside chunk" check we had, but we must use the generated data to find Y.
                 
-                let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
-                // Simplified biome check for trees to avoid full recalc cost
-                // Just checking basic mountains
-                const mNoise = noise3D(wx * scaleMount, 100, wz * scaleMount);
-                 if (getBiome(wx, wz) === 'mountain') {
-                    const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
-                    h += (mNoise > 0 ? mNoise * 50 : 0) + (ridge * ridge * 60);
-                } else {
-                     if (mNoise > 0.3) h += (mNoise - 0.3) * 30;
-                }
-                
-                const groundY = Math.floor(h);
+                if (lx >= 0 && lx < size && lz >= 0 && lz < size) {
+                     // Find top block
+                     let groundY = -1;
+                     for (let y = height - 1; y > 0; y--) {
+                         const idx = lx + lz * strideZ + y * strideY;
+                         if (data[idx] !== BLOCK.AIR && !isTransparent(data[idx])) {
+                             // Ignore islands for trees? Or allow them?
+                             // Let's filter out very high blocks if we only want ground trees
+                             if (y < 100) {
+                                 groundY = y;
+                                 break;
+                             }
+                         }
+                     }
 
-                // Ensure we are inside chunk bounds and surface is valid
-                if (groundY > 10 && groundY < height - 10) {
-                     // Check if there is actually a block here (could be tunnel)
-                     // Since we can't easily check neighbors across chunks here for tree bases,
-                     // we rely on the deterministic heightmap.
-                     
-                     // Only spawn if within this chunk
-                     if (lx >= 0 && lx < size && lz >= 0 && lz < size) {
-                         const idx = lx + lz * strideZ + groundY * strideY;
-                         // Verify ground block is "soil"
-                         const b = data[idx];
+                     if (groundY > 10) {
+                         const b = data[lx + lz * strideZ + groundY * strideY];
+                         // Allow trees on Grass/Dirt/Snow
                          if (b === BLOCK.GRASS || b === BLOCK.DIRT || b === BLOCK.SNOW) {
                              const treeHeight = 4 + Math.floor((treeNoise - 0.75) * 20); 
                              const leafStart = groundY + treeHeight - 2;
@@ -191,8 +227,6 @@ self.onmessage = (e) => {
         for (let lz = 0; lz < size; lz++) {
             const wz = startZ + lz;
             
-            // Scan from top down, but handling both Islands and Ground
-            // We scan the whole column
             for (let y = height - 2; y > 0; y--) {
                 const idx = lx + lz * strideZ + y * strideY;
                 const block = data[idx];
@@ -209,17 +243,22 @@ self.onmessage = (e) => {
                                 else data[aboveIdx] = BLOCK.TALL_GRASS;
                             }
                         } else if (block === BLOCK.SAND) {
-                            // Desert Vegetation (Cactus & Dead Bushes)
+                            // Desert Vegetation
                             if (plantNoise > 0.6) {
                                 if (plantNoise > 0.85) {
-                                    // Cactus
+                                    // Cactus Base
                                     data[aboveIdx] = BLOCK.CACTUS;
-                                    // Make some cacti 2 blocks tall
-                                    if (plantNoise > 0.92 && aboveIdx + strideY < data.length) {
+                                    
+                                    // 2nd Block
+                                    if (plantNoise > 0.88 && aboveIdx + strideY < data.length) {
                                         data[aboveIdx + strideY] = BLOCK.CACTUS;
+                                        
+                                        // 3rd Block (New Logic)
+                                        if (plantNoise > 0.94 && aboveIdx + strideY * 2 < data.length) {
+                                            data[aboveIdx + strideY * 2] = BLOCK.CACTUS;
+                                        }
                                     }
                                 } else if (plantNoise > 0.70) {
-                                    // Dead Bush
                                     data[aboveIdx] = BLOCK.DEAD_BUSH;
                                 }
                             }
@@ -230,7 +269,7 @@ self.onmessage = (e) => {
         }
     }
     
-    // 3. CARVE TUNNEL (Unchanged, just ensures bounds)
+    // 3. CARVE TUNNEL
     for (let lz = 0; lz < size; lz++) {
         const wz = startZ + lz;
         const points = pathSegments[wz];
@@ -260,7 +299,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // 4. FORCE SPAWN (Clear area)
+    // 4. FORCE SPAWN
     const minWx = -2, maxWx = 2;
     const minWz = -2, maxWz = 2;
     const loopMinX = Math.max(0, minWx - startX);
@@ -272,9 +311,7 @@ self.onmessage = (e) => {
         for(let lz = loopMinZ; lz <= loopMaxZ; lz++) {
             const zOffset = lz * strideZ;
             for(let lx = loopMinX; lx <= loopMaxX; lx++) {
-                // Platform at 15 (Player is at 16)
                 data[lx + strideY * 15 + zOffset] = BLOCK.SPAWN;
-                // Clear air above platform
                 for(let y = 16; y <= 30; y++) { 
                     data[lx + strideY * y + zOffset] = BLOCK.AIR;
                 }
@@ -282,7 +319,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // 5. GREEDY MESHING
+    // 5. GREEDY MESHING (Standard)
     let vertCount = 0;
     let indexCount = 0;
     const rgb = [0,0,0];

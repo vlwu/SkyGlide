@@ -38,22 +38,47 @@ export class Sky {
             uniform vec3 uBotColor;
             varying vec3 vWorldPosition;
 
+            // Simple random for stars
+            float random(vec3 st) {
+                return fract(sin(dot(st.xyz, vec3(12.9898,78.233, 45.156))) * 43758.5453123);
+            }
+
             void main() {
                 vec3 dir = normalize(vWorldPosition);
                 // Map y (-1 to 1) to (0 to 1), clamped
                 float t = clamp(dir.y, 0.0, 1.0);
                 
                 // Procedural gradient mixing
-                // Non-linear mixing for better horizon blend
                 float mixFactor = pow(t, 0.7);
                 vec3 skyColor = mix(uBotColor, uTopColor, mixFactor);
                 
                 // Horizon Glow
                 float horizon = 1.0 - smoothstep(0.0, 0.2, abs(dir.y));
-                // Add brightness at horizon based on bottom color intensity
                 vec3 glow = uBotColor * horizon * 0.4;
                 
-                gl_FragColor = vec4(skyColor + glow, 1.0);
+                // --- Star Field ---
+                // Generate noisy value based on direction
+                float starNoise = random(floor(dir * 300.0)); // Tiled direction for varying size
+                float starThreshold = 0.985; // Very sparse
+                
+                // Twinkle/Size Variation
+                float starVal = 0.0;
+                if (starNoise > starThreshold) {
+                    float brightness = (starNoise - starThreshold) / (1.0 - starThreshold);
+                    starVal = brightness;
+                }
+
+                // Mask stars by sky brightness (stars only visible at night)
+                // We use the length of the bottom color as a proxy for day/night brightness
+                float skyBrightness = length(uBotColor);
+                float nightFactor = 1.0 - smoothstep(0.2, 0.8, skyBrightness);
+                
+                // Fade stars near horizon
+                float starHorizonFade = smoothstep(0.0, 0.3, abs(dir.y));
+                
+                vec3 starColor = vec3(starVal) * nightFactor * starHorizonFade;
+
+                gl_FragColor = vec4(skyColor + glow + starColor, 1.0);
             }
         `;
 
@@ -83,12 +108,6 @@ export class Sky {
         const cycleDuration = CONFIG.GAME.CYCLE_DURATION; 
         const cyclePos = (time % cycleDuration) / cycleDuration; // 0.0 to 1.0
         
-        // 0.0 - 0.3: Day
-        // 0.3 - 0.4: Sunset
-        // 0.4 - 0.7: Night
-        // 0.7 - 0.8: Sunrise
-        // 0.8 - 1.0: Day
-        
         let t;
 
         if (cyclePos < 0.3) {
@@ -101,7 +120,7 @@ export class Sky {
             this.uniforms.uTopColor.value.copy(this.palette.dayTop).lerp(this.palette.setTop, t);
             this.uniforms.uBotColor.value.copy(this.palette.dayBot).lerp(this.palette.setBot, t);
         } else if (cyclePos < 0.7) {
-            // Night Hold (interpolate slightly from sunset to deep night then hold)
+            // Night Hold
             if (cyclePos < 0.5) {
                 t = (cyclePos - 0.4) / 0.1;
                 this.uniforms.uTopColor.value.copy(this.palette.setTop).lerp(this.palette.nightTop, t);
@@ -122,7 +141,7 @@ export class Sky {
             this.uniforms.uBotColor.value.copy(this.palette.riseBot).lerp(this.palette.dayBot, t);
         }
 
-        // Sync fog color with the sky's bottom (horizon) color
+        // Sync fog color
         if (this.scene.fog) {
             this.scene.fog.color.copy(this.uniforms.uBotColor.value);
         }
