@@ -31,7 +31,6 @@ export class RacePath {
         };
 
         // OPTIMIZATION: Create shared materials once.
-        // Compiling shaders is expensive; doing it for every tube segment caused the freeze.
         this.sharedTubeMat = new THREE.ShaderMaterial({
             uniforms: this.uniforms,
             vertexShader: `
@@ -196,8 +195,7 @@ export class RacePath {
         this.curves.push({ curve, depth }); 
 
         const length = curve.getLength();
-        // OPTIMIZATION: Reduced sampling resolution (from *10 to *2). 
-        // We don't need mm-precision for the path lookup.
+        // OPTIMIZATION: Reduced sampling resolution
         const divisions = Math.floor(length * 2); 
         const spacedPoints = curve.getSpacedPoints(divisions);
 
@@ -373,13 +371,10 @@ export class RacePath {
     createVisuals() {
         for (const { curve } of this.curves) {
             // OPTIMIZATION: Reduced Segments
-            // Before: length * 2 | After: length * 0.5
-            // This cuts vertex count by 75% without noticeable degradation at speed.
             const curveLength = curve.getLength();
             const segments = Math.floor(curveLength * 0.5); 
 
             // OPTIMIZATION: Reduced Radial Segments
-            // Before: 6 | After: 4 (Square tubes). Fits voxel style, 33% less geometry.
             const tubeGeo = new THREE.TubeGeometry(curve, segments, 0.2, 4, false);
             tubeGeo.computeBoundingBox();
 
@@ -390,7 +385,7 @@ export class RacePath {
             this.addToVisualBucket(tubeMesh);
 
             // Particles
-            // OPTIMIZATION: Reduced particle density (0.4 -> 0.2)
+            // OPTIMIZATION: Reduced particle density
             const particleCount = Math.floor(curveLength * 0.2); 
             const curvePoints = curve.getSpacedPoints(particleCount);
             const posArray = new Float32Array(particleCount * 3);
@@ -448,9 +443,14 @@ export class RacePath {
         this._frameCount++;
 
         if (playerPos) {
+            // OPTIMIZATION: Tighter visual culling
+            // Match the chunk render distance (approx 200 units)
+            const RENDER_DIST = 220; 
+            
             const centerBucket = Math.floor(playerPos.z / this.VISUAL_BUCKET_SIZE);
-            const minB = centerBucket - 3;
-            const maxB = centerBucket + 3;
+            // Only look 1 bucket behind and 2 buckets ahead (was 3 and 3)
+            const minB = centerBucket - 1; 
+            const maxB = centerBucket + 2; 
             
             const currentFrame = this._frameCount;
             const visibleNow = [];
@@ -461,10 +461,10 @@ export class RacePath {
                     for (let i = 0; i < bucket.length; i++) {
                         const item = bucket[i];
                         if (item.userData.bbox) {
-                            if (playerPos.z > item.userData.bbox.max.z + 100 || playerPos.z < item.userData.bbox.min.z - 250) {
-                                continue; 
-                            }
-                            
+                            // Fast Z check
+                            const midZ = (item.userData.bbox.min.z + item.userData.bbox.max.z) * 0.5;
+                            if (Math.abs(midZ - playerPos.z) > RENDER_DIST) continue;
+
                             if (!item.visible) item.visible = true;
                             item.userData.lastFrame = currentFrame;
                             visibleNow.push(item);
