@@ -82,9 +82,6 @@ canvas { display: block; }
 }
 
 /* Start Menu */
-.start-menu {
-    /* Uses menu-content */
-}
 
 .game-title {
     font-size: 5rem;
