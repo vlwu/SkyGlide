@@ -185,10 +185,34 @@ export class RacePath {
         let segmentsSinceBranch = 0;
 
         for (let i = 0; i < segments; i++) {
+            // --- Difficulty Scaling Logic ---
+            // Estimate ring count based on distance (approx 70 units per ring)
+            const dist = Math.abs(currentPos.z);
+            const estimatedRings = dist / 70.0;
+            
+            let varianceMult = 1.0;
+            if (estimatedRings >= 20) {
+                // Tier increases every 20 rings starting at 20
+                const tier = Math.floor((estimatedRings - 20) / 20) + 1;
+                varianceMult = 1.0 + (tier * 0.4); // 40% increase in variance per tier
+            }
+            
+            // Soft cap to maintain playability (avoid impossible turns)
+            varianceMult = Math.min(4.0, varianceMult);
+
             const z = currentPos.z - 40; 
-            const x = currentPos.x + (Math.random() - 0.5) * 60; 
-            let y = currentPos.y + (Math.random() - 0.5) * 30; 
-            y = Math.max(20, Math.min(80, y));
+            
+            // Apply variance to X and Y generation
+            const xRange = 60 * varianceMult;
+            const yRange = 30 * varianceMult;
+            
+            const x = currentPos.x + (Math.random() - 0.5) * xRange; 
+            let y = currentPos.y + (Math.random() - 0.5) * yRange; 
+            
+            // Expand altitude constraints as difficulty (variance) increases
+            // Allows the path to use more of the vertical space
+            const maxAlt = Math.min(240, 80 + (varianceMult - 1.0) * 50);
+            y = Math.max(20, Math.min(maxAlt, y));
 
             const nextPos = new THREE.Vector3(x, y, z);
             points.push(nextPos);
