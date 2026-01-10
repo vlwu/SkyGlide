@@ -7,7 +7,6 @@ export class VegetationPass {
         const strideZ = size * height;
 
         // 1. TREES
-        // We check a slightly larger area to allow trees from neighbors to overhang
         const treeCheckRange = 3; 
         for (let lx = -treeCheckRange; lx < size + treeCheckRange; lx++) {
             const wx = startX + lx;
@@ -33,9 +32,12 @@ export class VegetationPass {
 
                         if (groundY > 10) {
                             const b = data[lx + lz * strideZ + groundY * strideY];
-                            // Check valid soil
-                            if (b === BLOCK.GRASS || b === BLOCK.DIRT || b === BLOCK.SNOW) {
+                            
+                            // Check valid soil and choose tree type
+                            if (b === BLOCK.GRASS || b === BLOCK.DIRT) {
                                 this.placeOakTree(data, lx, groundY, lz, size, height, strideY, strideZ, treeNoise);
+                            } else if (b === BLOCK.SNOW) {
+                                this.placeSpruceTree(data, lx, groundY, lz, size, height, strideY, strideZ, treeNoise);
                             }
                         }
                     }
@@ -84,12 +86,62 @@ export class VegetationPass {
                         const dist = Math.abs(bx - lx) + Math.abs(bz - lz) + Math.abs(ly - (leafStart + 1));
                         if (dist <= 3) {
                             const lIdx = bx + bz * strideZ + ly * strideY;
-                            // Only replace AIR
                             if (data[lIdx] === BLOCK.AIR) data[lIdx] = BLOCK.OAK_LEAVES;
                         }
                     }
                 }
             }
+        }
+    }
+
+    static placeSpruceTree(data, lx, groundY, lz, size, height, strideY, strideZ, rng) {
+        const treeHeight = 6 + Math.floor((rng - 0.75) * 30); 
+        
+        // Trunk
+        for(let y = groundY + 1; y < groundY + treeHeight; y++) {
+            if (y >= height) break;
+            const tIdx = lx + lz * strideZ + y * strideY;
+            if (tIdx < data.length) data[tIdx] = BLOCK.SPRUCE_LOG;
+        }
+
+        // Leaves (Conical)
+        const leafStart = groundY + 3;
+        const leafEnd = groundY + treeHeight + 1;
+
+        for (let ly = leafStart; ly <= leafEnd; ly++) {
+            if (ly >= height) break;
+            
+            // Radius gets smaller as we go up
+            // Normalized height from 0 (bottom of leaves) to 1 (top)
+            const h = (ly - leafStart) / (leafEnd - leafStart);
+            let radius = 2 - Math.floor(h * 2.5); 
+            if (radius < 0) radius = 0;
+            
+            // Make layers sparse for spruce look
+            if (radius > 0 && ly % 2 === 0 && ly !== leafEnd) {
+                 // Skip every other layer for the wide parts to look "layered"
+                 // but keep the top continuous
+                 if (radius > 1) radius = 1;
+            }
+
+            for (let bx = lx - radius; bx <= lx + radius; bx++) {
+                for (let bz = lz - radius; bz <= lz + radius; bz++) {
+                    if (bx >= 0 && bx < size && bz >= 0 && bz < size) {
+                        const d = Math.abs(bx - lx) + Math.abs(bz - lz);
+                        if (d <= radius || (radius === 0 && d === 0)) {
+                            const lIdx = bx + bz * strideZ + ly * strideY;
+                            // Don't overwrite trunk
+                            if (data[lIdx] === BLOCK.AIR) data[lIdx] = BLOCK.SPRUCE_LEAVES;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Top tip
+        if (leafEnd < height) {
+            const tipIdx = lx + lz * strideZ + leafEnd * strideY;
+            if (data[tipIdx] === BLOCK.AIR) data[tipIdx] = BLOCK.SPRUCE_LEAVES;
         }
     }
 

@@ -108,7 +108,8 @@ export class UIManager {
         if (this.restartHandler) this.restartHandler('soft');
     }
 
-    onGamePause() {
+    onGamePause(currentScore = 0) {
+        this.pauseMenu.updateScore(currentScore);
         this.showScreen('PAUSE');
         document.exitPointerLock();
     }

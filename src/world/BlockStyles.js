@@ -41,17 +41,21 @@ export function fastColor(type, rand, out, yRatio = 0.5) {
             r = 0.4 + rand * 0.1; g = 0.3 + rand * 0.05; b = 0.2 + rand * 0.05; break;
         case BLOCK.OAK_LEAVES:
             r = 0.1 + rand * 0.1; g = 0.4 + rand * 0.1; b = 0.1 + rand * 0.05; break;
+        case BLOCK.SPRUCE_LOG:
+            r = 0.25 + rand * 0.05; g = 0.18 + rand * 0.05; b = 0.12 + rand * 0.05; break;
+        case BLOCK.SPRUCE_LEAVES:
+            r = 0.05 + rand * 0.05; g = 0.25 + rand * 0.1; b = 0.15 + rand * 0.05; break;
+
         case BLOCK.TALL_GRASS:
-            // Gradient from dark green (bottom) to lighter green (top)
             {
-                const mix = yRatio * 0.5 + 0.5; // 0.5 to 1.0
+                const mix = yRatio * 0.5 + 0.5; 
                 r = 0.1 * mix; g = 0.5 * mix + rand * 0.1; b = 0.1 * mix; 
             }
             break;
         case BLOCK.RED_FLOWER:
-            if (yRatio > 0.6) { // Top is flower
+            if (yRatio > 0.6) { 
                 r = 0.9; g = 0.1; b = 0.1;
-            } else { // Bottom is stem
+            } else { 
                 r = 0.1; g = 0.5; b = 0.1;
             }
             break;

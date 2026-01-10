@@ -3,15 +3,15 @@ import * as THREE from 'three';
 export const CONFIG = {
     WORLD: {
         CHUNK_SIZE: 16,
-        CHUNK_HEIGHT: 256, // Increased for verticality
-        RENDER_DISTANCE: 10,
-        RENDER_DISTANCE_UNITS: 160,
+        CHUNK_HEIGHT: 256, 
+        RENDER_DISTANCE: 16, // Increased from 10
+        RENDER_DISTANCE_UNITS: 256,
         SAFE_RADIUS_SQ: 1600, 
-        MAX_SHADOW_DIST: 30,
-        SHADOW_DIST_SQ: 900, 
+        MAX_SHADOW_DIST: 80, // Increased from 30 for better depth
+        SHADOW_DIST_SQ: 6400, // 80^2 (Increased from 900/1225)
         LOD: {
-            DIST_LOW: 4, 
-            DIST_FAR: 7, 
+            DIST_LOW: 6, // Pushed back slightly
+            DIST_FAR: 10, 
         }
     },
     PHYSICS: {
@@ -19,20 +19,20 @@ export const CONFIG = {
         JUMP_FORCE: 11.0,
         SPEED_WALK: 10.0,
         SPEED_FLY_MIN: 15.0,
-        SPEED_FLY_MAX: 35.0, // Base max speed (without boost)
-        SPEED_BOOST_CAP: 60.0, // Absolute max speed while boosting
+        SPEED_FLY_MAX: 35.0, 
+        SPEED_BOOST_CAP: 60.0, 
         FRICTION_DEFAULT: 10.0,
         
         // Active Ability Specs
         BOOST: {
-            FORCE: 30.0, // Acceleration added
-            COST: 40.0, // Energy per second
-            FOV_ADD: 15  // Extra FOV when boosting
+            FORCE: 30.0, 
+            COST: 40.0, 
+            FOV_ADD: 15  
         },
         BRAKE: {
-            DRAG_MULT: 0.85, // Stronger velocity decay (was 0.96)
-            TURN_MULT: 3.0,  // Tighter turning radius (was 2.5)
-            MIN_SPEED: 10.0  // Don't stall completely
+            DRAG_MULT: 0.85, 
+            TURN_MULT: 3.0,  
+            MIN_SPEED: 10.0  
         },
 
         ELYTRA: {
@@ -51,7 +51,7 @@ export const CONFIG = {
         MAX_ENERGY: 100,
         ENERGY_GAIN: {
             RING: 25.0,
-            PROXIMITY: 20.0 // Per second
+            PROXIMITY: 20.0 
         },
         CAMERA: {
             FOV: 75,
@@ -61,12 +61,12 @@ export const CONFIG = {
         }
     },
     GAME: {
-        CEILING_LIMIT: 320, // Raised ceiling
+        CEILING_LIMIT: 320, 
         FLOOR_LIMIT: -30,
         CYCLE_DURATION: 300, 
         PROXIMITY: {
-            DIST: 3.5, // Blocks distance to trigger
-            SCORE_RATE: 100 // Points per second
+            DIST: 3.5, 
+            SCORE_RATE: 100 
         },
         RINGS: {
             BUCKET_SIZE: 20, 
@@ -92,7 +92,7 @@ export const CONFIG = {
             FAR_OFFSET: 50
         },
         WIND: {
-            COUNT: 50,
+            COUNT: 40,
             COLOR: 0xffffff,
             OPACITY_MIN: 0.0,
             OPACITY_MAX: 0.2

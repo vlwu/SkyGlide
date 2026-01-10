@@ -22,7 +22,9 @@ export const BLOCK = {
     RED_FLOWER: 19,
     YELLOW_FLOWER: 20,
     CACTUS: 21,
-    DEAD_BUSH: 22
+    DEAD_BUSH: 22,
+    SPRUCE_LOG: 23,
+    SPRUCE_LEAVES: 24
 };
 
 // Face order: Right, Left, Top, Bottom, Front, Back

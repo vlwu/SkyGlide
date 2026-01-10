@@ -73,19 +73,24 @@ const applyGraphicsSettings = () => {
     
     let pixelRatio = 1.5;
     let shadows = true;
-    let renderDist = 10;
+    let renderDist = 12; // Default (Medium)
     let shadowMapSize = 512;
     
     if (quality === 'LOW') {
         pixelRatio = 0.8;
         shadows = false;
-        renderDist = 6;
+        renderDist = 8;
         shadowMapSize = 256;
     } else if (quality === 'MEDIUM') {
         pixelRatio = 1.0;
         shadows = true;
-        renderDist = 8;
-        shadowMapSize = 256;
+        renderDist = 12;
+        shadowMapSize = 512;
+    } else if (quality === 'HIGH') {
+        pixelRatio = 1.25;
+        shadows = true;
+        renderDist = 16;
+        shadowMapSize = 1024;
     }
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatio));
@@ -100,6 +105,14 @@ const applyGraphicsSettings = () => {
             dirLight.shadow.mapSize.height = shadowMapSize;
             dirLight.shadow.map = null; 
         }
+        
+        // Update Shadow Camera to match new Config distance
+        const d = CONFIG.WORLD.MAX_SHADOW_DIST;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        dirLight.shadow.camera.updateProjectionMatrix();
     }
 
     worldManager.setRenderDistance(renderDist);
@@ -159,7 +172,7 @@ document.addEventListener('pointerlockchange', () => {
         }
     } else {
         if (uiManager.activeScreen === 'HUD') {
-            uiManager.onGamePause();
+            uiManager.onGamePause(gameScore); // Pass score
         }
     }
 });

@@ -6,6 +6,9 @@ export class PauseMenu {
         
         this.element.innerHTML = `
             <h1>PAUSED</h1>
+            <div style="margin-bottom: 2rem; color: #00d2ff; font-family: monospace; font-size: 1.5rem;">
+                SCORE: <span id="pause-score-val" style="color: white">0</span>
+            </div>
             
             <div class="button-group-vertical">
                 <button id="btn-resume" class="btn-primary">RESUME</button>
@@ -24,6 +27,8 @@ export class PauseMenu {
                 Click RESUME or press ESC
             </div>
         `;
+
+        this.elScore = this.element.querySelector('#pause-score-val');
 
         // Resume
         this.element.querySelector('#btn-resume').addEventListener('click', (e) => {
@@ -80,6 +85,12 @@ export class PauseMenu {
 
         this.handleInput = this.handleInput.bind(this);
         this.openTime = 0;
+    }
+
+    updateScore(score) {
+        if (this.elScore) {
+            this.elScore.textContent = Math.floor(score);
+        }
     }
 
     handleInput(e) {

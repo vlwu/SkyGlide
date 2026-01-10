@@ -83,9 +83,9 @@ export class Chunk {
         if (!this.mesh) return;
 
         // Performance: Strict Shadow Culling with state caching
-        // Only cast shadows if within 35 units (35^2 = 1225)
+        // Only cast shadows if within configured shadow distance
         // Disable shadows entirely for Low LOD chunks
-        const shadowDistSq = 1225;
+        const shadowDistSq = CONFIG.WORLD.SHADOW_DIST_SQ;
         const shouldCastShadow = (this.lod === 1) && (distSq <= shadowDistSq);
 
         // Only update if state changed (avoid redundant GPU updates)
