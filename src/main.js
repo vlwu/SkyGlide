@@ -60,8 +60,7 @@ const player = new Player(scene, camera, worldManager);
 let gameScore = 0;
 let isGameRunning = false; 
 let gameStartTime = 0;
-// Spawn high up to match new race path altitude
-const spawnPos = new THREE.Vector3(0, 162, 0);
+const spawnPos = new THREE.Vector3(0, 16, 0);
 
 racePath.clear();
 worldManager.reset();
@@ -174,6 +173,9 @@ window.addEventListener('resize', () => {
 const clock = new THREE.Clock();
 let lastFrameTime = 0;
 
+const lastShadowPos = new THREE.Vector3(); 
+let framesSinceShadowUpdate = 0;
+
 function animate(time) {
     requestAnimationFrame(animate);
 
@@ -222,32 +224,27 @@ function animate(time) {
             if (collisionResult.scoreIncrease > 0) {
                 gameScore += collisionResult.scoreIncrease;
                 
-                // Ring collection now primarily restores energy
-                player.addEnergy(CONFIG.PLAYER.ENERGY_GAIN.RING);
+                // Use the speed boost from the ring
+                if (collisionResult.boostAmount > 0) {
+                    player.applyBoost(collisionResult.boostAmount);
+                }
             }
             
             uiManager.hud.update(player, gameScore, dt);
             
-            // Consistent Shadow Updates (No Stutter)
             if (dirLight.castShadow) {
-                const d = CONFIG.WORLD.MAX_SHADOW_DIST;
-                // Calculate texel size to lock shadows to grid (prevents shimmering)
-                const mapSize = dirLight.shadow.mapSize.width; 
-                const frustumSize = d * 2;
-                const texelSize = frustumSize / mapSize;
-
-                const px = player.position.x;
-                const py = player.position.y;
-                const pz = player.position.z;
-
-                // Snap X and Z to texel grid
-                const x = Math.floor(px / texelSize) * texelSize;
-                const z = Math.floor(pz / texelSize) * texelSize;
-
-                // Position light relative to snapped position
-                dirLight.position.set(x + 50, py + 100, z + 50);
-                dirLight.target.position.set(x, py, z);
-                dirLight.target.updateMatrixWorld();
+                framesSinceShadowUpdate++;
+                const distMovedSq = player.position.distanceToSquared(lastShadowPos);
+                
+                if (distMovedSq > 40000 && framesSinceShadowUpdate > 60) {
+                    dirLight.position.x = player.position.x + 50;
+                    dirLight.position.z = player.position.z + 50;
+                    dirLight.target.position.copy(player.position);
+                    dirLight.target.updateMatrixWorld();
+                    
+                    lastShadowPos.copy(player.position);
+                    framesSinceShadowUpdate = 0;
+                }
             }
         } else {
             sky.update(dt, player.position);

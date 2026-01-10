@@ -237,6 +237,7 @@ export class PlayerPhysics {
 
         // --- 2. Active Ability: BRAKE ---
         let steerMult = 1.0;
+        let diveEfficiency = 1.0;
         
         if (player.keys.brake) {
             // Apply extra drag
@@ -246,6 +247,9 @@ export class PlayerPhysics {
             
             // Tighter steering
             steerMult = CONFIG.PHYSICS.BRAKE.TURN_MULT;
+            
+            // Flaps deployed: Reduce ability to gain speed from diving
+            diveEfficiency = 0.4;
         }
 
         player.velocity.x *= dragXZ;
@@ -262,7 +266,8 @@ export class PlayerPhysics {
 
         // --- 4. Diving/Climbing Logic ---
         if (player.velocity.y < 0 && hlook > 0) {
-            const diveForce = player.velocity.y * -E.DIVE_ACCEL * sqrpitchcos * dt;
+            // Apply efficiency factor to dive accel
+            const diveForce = player.velocity.y * -E.DIVE_ACCEL * sqrpitchcos * dt * diveEfficiency;
             player.velocity.y += diveForce;
             player.velocity.x += (look.x / hlook) * diveForce;
             player.velocity.z += (look.z / hlook) * diveForce;

@@ -18,7 +18,7 @@ export class Player {
 
         // State
         this.state = 'WALKING';
-        this.position = new THREE.Vector3(0, 162, 0); 
+        this.position = new THREE.Vector3(0, 16, 0); 
         this.velocity = new THREE.Vector3(0, 0, 0);
         
         // Active Abilities State
@@ -150,7 +150,7 @@ export class Player {
     }
 
     reset() {
-        this.position.set(0, 162, 0);
+        this.position.set(0, 16, 0);
         this.velocity.set(0, 0, 0);
         this.pitch = 0;
         this.yaw = Math.PI;
@@ -205,9 +205,6 @@ export class Player {
     }
 
     applyBoost(amount) {
-        // Obsolete "Direct Velocity" logic from Ring Collection?
-        // No, we still keep a small velocity bump for flow, 
-        // but primarily we fill the energy bar now.
         if (this.state !== 'FLYING') {
             this.state = 'FLYING';
             this.position.y += 2.0;
@@ -219,10 +216,13 @@ export class Player {
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
         
-        // Small direct nudge
-        this.velocity.add(lookDir.multiplyScalar(5.0));
+        // Apply immediate velocity from ring (scaled)
+        // amount varies ~20 to 50
+        const speedBoost = amount * 0.5; 
+
+        this.velocity.add(lookDir.multiplyScalar(speedBoost));
         
-        // Major Energy Gain
+        // Restore Energy
         this.addEnergy(CONFIG.PLAYER.ENERGY_GAIN.RING);
     }
 }

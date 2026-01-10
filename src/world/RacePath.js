@@ -191,8 +191,7 @@ export class RacePath {
     }
 
     generate() {
-        // Start higher up to match the increased world height
-        const startPos = new THREE.Vector3(0, 160, 0);
+        const startPos = new THREE.Vector3(0, 15, 0);
         const startDir = new THREE.Vector3(0, 0, -1);
         
         this.createBranch(startPos, startDir, 250, 0);
@@ -216,31 +215,66 @@ export class RacePath {
         let currentDir = startDir.clone();
         let segmentsSinceBranch = 0;
 
+        // Force Altitude Variation Logic
+        // Bias determines if we are trending UP or DOWN
+        let verticalBias = (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.4); 
+        let stepsUntilBiasChange = 25 + Math.floor(Math.random() * 35);
+
         for (let i = 0; i < segments; i++) {
             const dist = Math.abs(currentPos.z);
             const estimatedRings = dist / 70.0;
             
+            // Increase variance multiplier based on distance
             let varianceMult = 1.0;
-            if (estimatedRings >= 20) {
-                const tier = Math.floor((estimatedRings - 20) / 20) + 1;
-                varianceMult = 1.0 + (tier * 0.4); 
+            if (estimatedRings >= 10) { 
+                const tier = Math.floor((estimatedRings - 10) / 20) + 1;
+                varianceMult = 1.5 + (tier * 0.5); 
             }
             
-            varianceMult = Math.min(4.0, varianceMult);
+            varianceMult = Math.min(5.0, varianceMult);
 
             const z = currentPos.z - 40; 
             
             const xRange = 60 * varianceMult;
-            // Increased vertical variance for higher world
-            const yRange = 50 * varianceMult; 
+            // Significantly increased Y Range
+            const yRange = 90 * varianceMult; 
             
+            // X motion: Random walk
             const x = currentPos.x + (Math.random() - 0.5) * xRange; 
-            let y = currentPos.y + (Math.random() - 0.5) * yRange; 
             
-            // Adjusted altitude limits (min 40, max 240) to utilize the vertical space
-            const maxAlt = 240;
-            const minAlt = 40;
-            y = Math.max(minAlt, Math.min(maxAlt, y));
+            // Y motion: Forced Bias + Randomness
+            // Push altitude up or down based on current bias to create large hills/valleys
+            let yChange = verticalBias * (20 + Math.random() * 20) * (varianceMult * 0.7);
+            
+            // Add randomness
+            yChange += (Math.random() - 0.5) * yRange;
+
+            let y = currentPos.y + yChange; 
+            
+            // Update Bias logic
+            stepsUntilBiasChange--;
+            if (stepsUntilBiasChange <= 0) {
+                verticalBias *= -1; // Flip direction
+                stepsUntilBiasChange = 30 + Math.floor(Math.random() * 40);
+                
+                // If we are too high/low, force bias towards center immediately
+                if (y > 220) verticalBias = -Math.abs(verticalBias);
+                if (y < 60) verticalBias = Math.abs(verticalBias);
+            }
+
+            // Hard Limits (Floor/Ceiling)
+            const ceiling = 280;
+            const floor = 40;
+            
+            // Soft clamp
+            if (y > ceiling) {
+                y = ceiling - (y - ceiling) * 0.5;
+                verticalBias = -1; // Force down next
+            }
+            if (y < floor) {
+                y = floor + (floor - y) * 0.5;
+                verticalBias = 1; // Force up next
+            }
 
             const nextPos = new THREE.Vector3(x, y, z);
             points.push(nextPos);

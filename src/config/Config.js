@@ -30,8 +30,8 @@ export const CONFIG = {
             FOV_ADD: 15  // Extra FOV when boosting
         },
         BRAKE: {
-            DRAG_MULT: 0.96, // Stronger velocity decay (air resistance)
-            TURN_MULT: 2.5,  // Tighter turning radius
+            DRAG_MULT: 0.85, // Stronger velocity decay (was 0.96)
+            TURN_MULT: 3.0,  // Tighter turning radius (was 2.5)
             MIN_SPEED: 10.0  // Don't stall completely
         },
 
