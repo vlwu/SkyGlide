@@ -2,15 +2,18 @@ import * as THREE from 'three';
 import { settingsManager } from './settings/SettingsManager.js';
 import { PlayerCamera } from './player/PlayerCamera.js';
 import { PlayerPhysics } from './player/PlayerPhysics.js';
+import { WindManager } from './player/WindManager.js';
 
 export class Player {
     constructor(scene, camera, world) {
         this.scene = scene;
         this.world = world;
+        this.cameraObj = camera; // Store raw camera reference
 
         // Components
         this.playerCamera = new PlayerCamera(camera, world);
         this.physics = new PlayerPhysics(world);
+        this.windManager = new WindManager(scene);
 
         // State
         this.state = 'WALKING';
@@ -150,6 +153,7 @@ export class Player {
         this.resetPressedThisFrame = false;
         
         this.playerCamera.reset();
+        this.windManager.reset();
     }
 
     consumeResetInput() {
@@ -164,6 +168,7 @@ export class Player {
         this.physics.update(dt, this);
         this.jumpPressedThisFrame = false;
         this.playerCamera.update(dt, this);
+        this.windManager.update(dt, this, this.cameraObj);
     }
 
     applyBoost(speedIncrease) {

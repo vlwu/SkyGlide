@@ -40,6 +40,7 @@ export const CONFIG = {
     GAME: {
         CEILING_LIMIT: 250,
         FLOOR_LIMIT: -30,
+        CYCLE_DURATION: 300, // Seconds for full day/night cycle
         RINGS: {
             BUCKET_SIZE: 50,
             VISUAL_BUCKET_SIZE: 100,
@@ -49,13 +50,29 @@ export const CONFIG = {
     },
     GRAPHICS: {
         SKY: {
-            TOP_COLOR: 0x4A6FA5,
-            BOTTOM_COLOR: 0xA0D0E0
+            // Day
+            DAY_TOP: 0x4A6FA5,
+            DAY_BOT: 0xA0D0E0,
+            // Sunset
+            SET_TOP: 0x332255,
+            SET_BOT: 0xFF6644,
+            // Night
+            NIGHT_TOP: 0x020205,
+            NIGHT_BOT: 0x111122,
+            // Sunrise
+            RISE_TOP: 0x224477,
+            RISE_BOT: 0xFFCC33
         },
         FOG: {
             COLOR: 0xA0D0E0,
             NEAR: 100,
             FAR_OFFSET: 50
+        },
+        WIND: {
+            COUNT: 200,
+            COLOR: 0xffffff,
+            OPACITY_MIN: 0.0,
+            OPACITY_MAX: 0.6
         }
     }
 };

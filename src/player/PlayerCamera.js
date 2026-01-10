@@ -65,9 +65,15 @@ export class PlayerCamera {
             // Clamp combined roll to reasonable limits (~70 degrees)
             targetRoll = Math.max(-1.2, Math.min(1.2, targetRoll));
 
-            // Wing Sweep: Collapse when diving (pitch < 0)
+            // Wing Sweep: Collapse when diving
+            // Goal: Fully collapse (approx 1.6 rad) when pitch is < -50 degrees (-0.87 rad)
             if (player.pitch < 0) {
-                targetWingAngle = -player.pitch * 0.8; 
+                // Calculate ratio: 0 at 0 degrees, 1 at -50 degrees
+                const diveThreshold = 0.87; // ~50 degrees
+                const diveRatio = Math.min(1.0, Math.abs(player.pitch) / diveThreshold);
+                
+                // Sweep angle: 0 to 1.6 radians
+                targetWingAngle = diveRatio * 1.6;
             }
         } else {
             // Walking/Falling
@@ -78,7 +84,7 @@ export class PlayerCamera {
 
         // Smooth animations
         const rollSpeed = 5.0; 
-        const wingSpeed = 5.0;
+        const wingSpeed = 8.0; // Faster response for diving
         
         // OPTIMIZATION: Only update transforms if there's a visible change
         if (Math.abs(targetRoll - this._currentRoll) > 0.001) {
