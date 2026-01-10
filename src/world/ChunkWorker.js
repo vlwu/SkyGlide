@@ -58,6 +58,10 @@ self.onmessage = (e) => {
         }
     }
 
+    // --- Cave Detail Pass (Spikes) ---
+    // Called after carving so spikes can appear in tunnels
+    VegetationPass.generateSpikes(data, startX, startZ, size, height);
+
     // --- Spawn Override ---
     const minWx = -2, maxWx = 2, minWz = -2, maxWz = 2;
     const loopMinX = Math.max(0, minWx - startX);

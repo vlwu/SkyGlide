@@ -135,7 +135,9 @@ export class TerrainPass {
                     }
                     
                     // Floating Islands
-                    if (y > 70) {
+                    // IMPROVEMENT: Lowered threshold from 70 to 45 to allow better integration with ground
+                    // The density gradient (0 at y=50 and y=150) handles the fade-out naturally
+                    if (y > 45) {
                         const dist = Math.abs(y - islandCenterY);
                         const densityGradient = Math.max(0, 1.0 - (dist / islandBand));
                         

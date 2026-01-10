@@ -73,6 +73,77 @@ export class VegetationPass {
         }
     }
 
+    // NEW: Generate stalagmites and stalactites in caves/tunnels
+    static generateSpikes(data, startX, startZ, size, height) {
+        const strideY = size;
+        const strideZ = size * height;
+
+        for (let lx = 0; lx < size; lx++) {
+            const wx = startX + lx;
+            for (let lz = 0; lz < size; lz++) {
+                const wz = startZ + lz;
+
+                // Noise-based cluster generation for natural look
+                const spikeChance = noise3D(wx * 0.12, 1234, wz * 0.12);
+                if (spikeChance < 0.3) continue; 
+
+                const colOffset = lx + lz * strideZ;
+                let inAir = (data[colOffset] === BLOCK.AIR);
+
+                // Scan Y for ceiling/floor
+                // Start a bit higher to avoid bedrock issues
+                for (let y = 5; y < height - 5; y++) {
+                    const idx = colOffset + y * strideY;
+                    const block = data[idx];
+                    const isAir = (block === BLOCK.AIR);
+
+                    if (inAir && !isAir) {
+                        // Found Floor (Air -> Block)
+                        if (this.isStony(block)) {
+                            // Stalagmite (UP)
+                            this.placeSpike(data, idx, strideY, 1, block, wx, y, wz);
+                        }
+                    } else if (!inAir && isAir) {
+                        // Found Ceiling (Block -> Air)
+                        const ceilBlock = data[idx - strideY];
+                        if (this.isStony(ceilBlock)) {
+                            // Stalactite (DOWN)
+                            // Start placing at current 'y' (which is air), going down
+                            this.placeSpike(data, idx, -strideY, -1, ceilBlock, wx, y, wz);
+                        }
+                    }
+
+                    inAir = isAir;
+                }
+            }
+        }
+    }
+
+    static isStony(b) {
+        return (b === BLOCK.STONE || b === BLOCK.GRANITE || b === BLOCK.BASALT || b === BLOCK.MARBLE || 
+                b === BLOCK.MOSS_STONE || b === BLOCK.SANDSTONE || b === BLOCK.TERRACOTTA);
+    }
+
+    static placeSpike(data, startIdx, strideStep, dir, mat, wx, y, wz) {
+        // Height 1 to 4 blocks
+        const hNoise = Math.abs(noise3D(wx * 0.5, y * 0.5, wz * 0.5));
+        const h = 1 + Math.floor(hNoise * 4.0); 
+
+        for (let i = 0; i < h; i++) {
+            const idx = startIdx + i * strideStep; 
+            
+            // Bounds check
+            if (idx < 0 || idx >= data.length) break;
+
+            if (data[idx] === BLOCK.AIR) {
+                data[idx] = mat; 
+            } else {
+                // Hit something, stop spike
+                break;
+            }
+        }
+    }
+
     static placeOakTree(data, lx, groundY, lz, size, height, strideY, strideZ, rng) {
         const treeHeight = 4 + Math.floor((rng - 0.75) * 20); 
         const leafStart = groundY + treeHeight - 2;
