@@ -117,7 +117,12 @@ export class WorldManager {
         const now = performance.now();
         const playerPos = player.position;
         
-        if (this.applyQueue.length > 0) {
+        // Process Apply Queue (Batch with time limit)
+        const applyStart = performance.now();
+        while (this.applyQueue.length > 0) {
+             // 4ms budget for applying meshes to maintain frame rate
+             if (performance.now() - applyStart > 4) break;
+
              const data = this.applyQueue.shift();
              const chunk = this.chunks.get(data.key);
              if (chunk) {
@@ -125,7 +130,9 @@ export class WorldManager {
              }
         }
 
-        if (this.disposalQueue.length > 0) {
+        // Process Disposal Queue (Drain completely)
+        // Disposal is necessary to free memory and happens when chunks go out of range
+        while (this.disposalQueue.length > 0) {
             const chunk = this.disposalQueue.shift();
             chunk.dispose();
         }
