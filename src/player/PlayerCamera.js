@@ -18,6 +18,7 @@ export class PlayerCamera {
         // Animation State
         this._currentRoll = 0;
         this._currentWingAngle = 0;
+        this._previousYaw = Math.PI; 
     }
 
     reset() {
@@ -25,6 +26,7 @@ export class PlayerCamera {
         this.camera.updateProjectionMatrix();
         this._currentRoll = 0;
         this._currentWingAngle = 0;
+        this._previousYaw = Math.PI;
     }
 
     update(dt, player) {
@@ -41,19 +43,33 @@ export class PlayerCamera {
         let targetRoll = 0;
         let targetWingAngle = 0;
 
+        // Calculate yaw delta (turn rate)
+        let yawDelta = player.yaw - this._previousYaw;
+        
+        // Handle potential wrapping (standard safety for rotation arithmetic)
+        if (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+        if (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+        
+        this._previousYaw = player.yaw;
+
         if (player.state === 'FLYING') {
             // Pitch: Align directly with look direction
             player.mesh.rotation.x = player.pitch;
 
-            // Roll: Bank based on input
-            const maxBank = 0.6; // ~35 degrees
-            if (player.keys.left) targetRoll = maxBank;
-            if (player.keys.right) targetRoll = -maxBank;
+            // Roll: Bank based on mouse turn
+            // yawDelta negative = turning right -> bank right (negative roll)
+            // yawDelta positive = turning left -> bank left (positive roll)
+            const mouseBankFactor = 15.0;
+            const mouseRoll = Math.max(-1.0, Math.min(1.0, yawDelta * mouseBankFactor));
+            
+            targetRoll += mouseRoll;
+
+            // Clamp combined roll to reasonable limits (~70 degrees)
+            targetRoll = Math.max(-1.2, Math.min(1.2, targetRoll));
 
             // Wing Sweep: Collapse when diving (pitch < 0)
-            // If pitch is -PI/2 (-1.57), max sweep
             if (player.pitch < 0) {
-                targetWingAngle = -player.pitch * 0.8; // e.g. 1.2 rad sweep at nosedive
+                targetWingAngle = -player.pitch * 0.8; 
             }
         } else {
             // Walking/Falling
@@ -63,7 +79,8 @@ export class PlayerCamera {
         }
 
         // Smooth animations
-        const rollSpeed = 3.0;
+        // Increased roll speed for snappy feedback on mouse turns
+        const rollSpeed = 5.0; 
         const wingSpeed = 5.0;
         
         this._currentRoll += (targetRoll - this._currentRoll) * rollSpeed * dt;
@@ -72,15 +89,13 @@ export class PlayerCamera {
         player.mesh.rotation.z = this._currentRoll;
 
         if (player.leftWingPivot) {
-            // Left Wing Pivot: +Y rotates leading edge backwards
             player.leftWingPivot.rotation.y = this._currentWingAngle;
         }
         if (player.rightWingPivot) {
-            // Right Wing Pivot: -Y rotates leading edge backwards
             player.rightWingPivot.rotation.y = -this._currentWingAngle;
         }
 
-        // --- Camera Logic (Unchanged) ---
+        // --- Camera Logic ---
         const speed = player.velocity.length();
         let desiredFOV = this.baseFOV;
         
