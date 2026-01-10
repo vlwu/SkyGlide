@@ -1,23 +1,6 @@
 import * as THREE from 'three';
-
-const BLOCK = {
-    AIR: 0,
-    GRASS: 1,
-    STONE: 2,
-    SPAWN: 3,
-    DIRT: 4,
-    SNOW: 5,
-    SAND: 6,
-    ICE: 7,
-    CLAY: 8,
-    GRAVEL: 9,
-    SANDSTONE: 10,
-    GRANITE: 11,
-    MARBLE: 12,
-    OBSIDIAN: 13,
-    MOSS_STONE: 14,
-    PACKED_ICE: 15
-};
+import { CONFIG } from '../config/Config.js';
+import { BLOCK } from '../world/BlockDefs.js';
 
 export class PlayerPhysics {
     constructor(world) {
@@ -30,13 +13,13 @@ export class PlayerPhysics {
         this._nextPos = new THREE.Vector3();
         this._tempVec = new THREE.Vector3();
         
-        this.radius = 0.3;
+        this.radius = CONFIG.PLAYER.RADIUS;
     }
 
     update(dt, player) {
         // --- SAFETY CHECK ---
-        const chunkX = Math.floor(player.position.x / 16);
-        const chunkZ = Math.floor(player.position.z / 16);
+        const chunkX = Math.floor(player.position.x / CONFIG.WORLD.CHUNK_SIZE);
+        const chunkZ = Math.floor(player.position.z / CONFIG.WORLD.CHUNK_SIZE);
         
         if (!this.world.hasChunk(chunkX, chunkZ)) {
             player.velocity.set(0, 0, 0);
@@ -96,45 +79,27 @@ export class PlayerPhysics {
     }
 
     handleWalking(dt, player) {
-        let friction = 10.0;
-        let moveSpeed = 10.0;
+        let friction = CONFIG.PHYSICS.FRICTION_DEFAULT;
+        let moveSpeed = CONFIG.PHYSICS.SPEED_WALK;
 
-        // Block-specific movement properties
         switch(player.groundBlock) {
             case BLOCK.ICE:
             case BLOCK.PACKED_ICE:
-                friction = 0.5;
-                moveSpeed = 15.0;
-                break;
+                friction = 0.5; moveSpeed = 15.0; break;
             case BLOCK.SAND:
-                friction = 15.0;
-                moveSpeed = 7.0;
-                break;
+                friction = 15.0; moveSpeed = 7.0; break;
             case BLOCK.SNOW:
-                friction = 8.0;
-                moveSpeed = 9.0;
-                break;
+                friction = 8.0; moveSpeed = 9.0; break;
             case BLOCK.GRAVEL:
-                friction = 12.0;
-                moveSpeed = 8.5;
-                break;
+                friction = 12.0; moveSpeed = 8.5; break;
             case BLOCK.CLAY:
-                friction = 14.0;
-                moveSpeed = 7.5;
-                break;
+                friction = 14.0; moveSpeed = 7.5; break;
             case BLOCK.MARBLE:
             case BLOCK.OBSIDIAN:
-                friction = 8.0;
-                moveSpeed = 11.0;
-                break;
+                friction = 8.0; moveSpeed = 11.0; break;
             case BLOCK.MOSS_STONE:
-                friction = 11.0;
-                moveSpeed = 9.5;
-                break;
+                friction = 11.0; moveSpeed = 9.5; break;
         }
-
-        const jumpForce = 11;
-        const gravity = 25;
 
         player.velocity.x -= player.velocity.x * friction * dt;
         player.velocity.z -= player.velocity.z * friction * dt;
@@ -155,20 +120,19 @@ export class PlayerPhysics {
         if (player.onGround) {
             player.velocity.y = 0;
             if (player.jumpPressedThisFrame) {
-                player.velocity.y = jumpForce;
+                player.velocity.y = CONFIG.PHYSICS.JUMP_FORCE;
                 player.onGround = false;
                 player.position.y += 0.1; 
                 player.state = 'FALLING'; 
             }
         } else {
-            player.velocity.y -= gravity * dt;
+            player.velocity.y -= CONFIG.PHYSICS.GRAVITY * dt;
             if (player.velocity.y < -1.0) player.state = 'FALLING';
         }
     }
 
     handleFalling(dt, player) {
-        const gravity = 25;
-        player.velocity.y -= gravity * dt;
+        player.velocity.y -= CONFIG.PHYSICS.GRAVITY * dt;
 
         const airSpeed = 5;
         this._forward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw)).normalize();
@@ -177,13 +141,13 @@ export class PlayerPhysics {
         if (player.jumpPressedThisFrame && !player.onGround) {
             player.state = 'FLYING';
             const speed = player.velocity.length();
-            if (speed < 15) {
+            if (speed < CONFIG.PHYSICS.SPEED_FLY_MIN) {
                 this._lookDir.set(
                     Math.sin(player.yaw) * Math.cos(player.pitch),
                     Math.sin(player.pitch),
                     Math.cos(player.yaw) * Math.cos(player.pitch)
                 );
-                player.velocity.add(this._lookDir.multiplyScalar(15 - speed));
+                player.velocity.add(this._lookDir.multiplyScalar(CONFIG.PHYSICS.SPEED_FLY_MIN - speed));
             }
         }
     }
@@ -216,26 +180,21 @@ export class PlayerPhysics {
         const hlook = Math.sqrt(look.x * look.x + look.z * look.z); 
         const sqrpitchcos = hlook * hlook;
 
-        const GRAVITY = 32.0;
-        const LIFT_COEFF = 24.0; 
-        const DIVE_ACCEL = 2.0; 
-        const CLIMB_BOOST = 0.8;
-        const STEER_SPEED = 12.0; 
-        const VERT_STEER_SPEED = 6.0;
+        const E = CONFIG.PHYSICS.ELYTRA;
 
-        const lift = sqrpitchcos * LIFT_COEFF;
-        player.velocity.y += (-GRAVITY + lift) * dt;
+        const lift = sqrpitchcos * E.LIFT_COEFF;
+        player.velocity.y += (-E.GRAVITY + lift) * dt;
 
         const ticks = dt * 20;
-        const dragXZ = Math.pow(0.996, ticks); 
-        const dragY = Math.pow(0.996, ticks);
+        const dragXZ = Math.pow(E.DRAG, ticks); 
+        const dragY = Math.pow(E.DRAG, ticks);
 
         player.velocity.x *= dragXZ;
         player.velocity.y *= dragY;
         player.velocity.z *= dragXZ;
 
         if (player.velocity.y < 0 && hlook > 0) {
-            const diveForce = player.velocity.y * -DIVE_ACCEL * sqrpitchcos * dt;
+            const diveForce = player.velocity.y * -E.DIVE_ACCEL * sqrpitchcos * dt;
             player.velocity.y += diveForce;
             player.velocity.x += (look.x / hlook) * diveForce;
             player.velocity.z += (look.z / hlook) * diveForce;
@@ -243,7 +202,7 @@ export class PlayerPhysics {
 
         if (player.pitch > 0) {
             const hvel = Math.sqrt(player.velocity.x**2 + player.velocity.z**2);
-            const climbForce = hvel * Math.sin(player.pitch) * CLIMB_BOOST * dt;
+            const climbForce = hvel * Math.sin(player.pitch) * E.CLIMB_BOOST * dt;
             
             player.velocity.y += climbForce * 3.5;
             player.velocity.x -= (look.x / hlook) * climbForce;
@@ -255,18 +214,17 @@ export class PlayerPhysics {
             const targetX = (look.x / hlook) * hvel;
             const targetZ = (look.z / hlook) * hvel;
 
-            player.velocity.x += (targetX - player.velocity.x) * STEER_SPEED * dt;
-            player.velocity.z += (targetZ - player.velocity.z) * STEER_SPEED * dt;
+            player.velocity.x += (targetX - player.velocity.x) * E.STEER_SPEED * dt;
+            player.velocity.z += (targetZ - player.velocity.z) * E.STEER_SPEED * dt;
         }
 
         const speed = player.velocity.length();
         const targetY = speed * look.y;
-        player.velocity.y += (targetY - player.velocity.y) * VERT_STEER_SPEED * dt;
+        player.velocity.y += (targetY - player.velocity.y) * E.VERT_STEER_SPEED * dt;
 
-        const MAX_SPEED = 35.0;
         const speedSq = player.velocity.lengthSq();
-        if (speedSq > MAX_SPEED * MAX_SPEED) {
-            const scale = MAX_SPEED / Math.sqrt(speedSq);
+        if (speedSq > CONFIG.PHYSICS.SPEED_FLY_MAX ** 2) {
+            const scale = CONFIG.PHYSICS.SPEED_FLY_MAX / Math.sqrt(speedSq);
             player.velocity.multiplyScalar(scale);
         }
     }
@@ -320,10 +278,5 @@ export class PlayerPhysics {
 
     checkPoint(x, y, z) {
         return this.getWorldBlockInternal(x, y, z) !== 0;
-    }
-
-    crash(player) {
-        player.state = 'FALLING';
-        player.velocity.multiplyScalar(0.2);
     }
 }

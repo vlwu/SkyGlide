@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CONFIG } from '../config/Config.js';
 
 export class RacePath {
     constructor(scene) {
@@ -9,12 +10,12 @@ export class RacePath {
         // Data for logic
         this.ringData = [];
         this.ringBuckets = new Map();
-        this.BUCKET_SIZE = 50;
+        this.BUCKET_SIZE = CONFIG.GAME.RINGS.BUCKET_SIZE;
         
         // Visuals
         this.visualItems = []; 
         this.visualBuckets = new Map();
-        this.VISUAL_BUCKET_SIZE = 100;
+        this.VISUAL_BUCKET_SIZE = CONFIG.GAME.RINGS.VISUAL_BUCKET_SIZE;
         
         this._visibleItems = [];
         this._frameCount = 0;
@@ -30,7 +31,6 @@ export class RacePath {
             uTime: { value: 0 }
         };
 
-        // OPTIMIZATION: Create shared materials once.
         this.sharedTubeMat = new THREE.ShaderMaterial({
             uniforms: this.uniforms,
             vertexShader: `
@@ -82,8 +82,6 @@ export class RacePath {
         });
         
         this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
-        
-        // Optimization: Cache for last checked bucket to avoid redundant searches
         this._lastCollisionBucket = -999999;
         this._lastCollisionRings = [];
         
@@ -98,7 +96,6 @@ export class RacePath {
         this.visualItems.forEach(item => {
             this.scene.remove(item);
             if (item.geometry) item.geometry.dispose();
-            // Do NOT dispose the shared material
         });
         this.visualItems = [];
         this.visualBuckets.clear();
@@ -202,7 +199,6 @@ export class RacePath {
         this.curves.push({ curve, depth }); 
 
         const length = curve.getLength();
-        // OPTIMIZATION: Reduced sampling resolution
         const divisions = Math.floor(length * 2); 
         const spacedPoints = curve.getSpacedPoints(divisions);
 
@@ -343,7 +339,6 @@ export class RacePath {
         let meshDirty = false;
         let colorDirty = false;
 
-        // Optimization: Cache bucket lookups if player hasn't changed buckets
         let ringsToCheck;
         if (bucketKey === this._lastCollisionBucket) {
             ringsToCheck = this._lastCollisionRings;
@@ -359,10 +354,9 @@ export class RacePath {
             this._lastCollisionRings = ringsToCheck;
         }
 
-        // Optimization: Early exit if no rings in range
         if (ringsToCheck.length === 0) return this._collisionResult;
 
-        const collisionDistSq = 30.25;
+        const collisionDistSq = CONFIG.GAME.RINGS.COLLISION_DIST_SQ;
 
         for (let i = 0; i < ringsToCheck.length; i++) {
             const ring = ringsToCheck[i];
@@ -393,22 +387,17 @@ export class RacePath {
 
     createVisuals() {
         for (const { curve } of this.curves) {
-            // OPTIMIZATION: Reduced Segments
             const curveLength = curve.getLength();
             const segments = Math.floor(curveLength * 0.5); 
 
-            // OPTIMIZATION: Reduced Radial Segments
             const tubeGeo = new THREE.TubeGeometry(curve, segments, 0.2, 4, false);
             tubeGeo.computeBoundingBox();
 
-            // Use shared material
             const tubeMesh = new THREE.Mesh(tubeGeo, this.sharedTubeMat);
             tubeMesh.userData.bbox = tubeGeo.boundingBox;
             this.scene.add(tubeMesh);
             this.addToVisualBucket(tubeMesh);
 
-            // Particles
-            // OPTIMIZATION: Reduced particle density
             const particleCount = Math.floor(curveLength * 0.2); 
             const curvePoints = curve.getSpacedPoints(particleCount);
             const posArray = new Float32Array(particleCount * 3);
@@ -434,7 +423,6 @@ export class RacePath {
             
             partGeo.computeBoundingBox();
 
-            // Use shared material
             const particles = new THREE.Points(partGeo, this.sharedPartMat);
             particles.userData.bbox = partGeo.boundingBox;
             this.scene.add(particles);
@@ -466,12 +454,9 @@ export class RacePath {
         this._frameCount++;
 
         if (playerPos) {
-            // OPTIMIZATION: Tighter visual culling
-            // Match the chunk render distance (approx 200 units)
-            const RENDER_DIST = 220; 
+            const RENDER_DIST = CONFIG.GAME.RINGS.RENDER_DIST; 
             
             const centerBucket = Math.floor(playerPos.z / this.VISUAL_BUCKET_SIZE);
-            // Only look 1 bucket behind and 2 buckets ahead (was 3 and 3)
             const minB = centerBucket - 1; 
             const maxB = centerBucket + 2; 
             
@@ -484,7 +469,6 @@ export class RacePath {
                     for (let i = 0; i < bucket.length; i++) {
                         const item = bucket[i];
                         if (item.userData.bbox) {
-                            // Fast Z check
                             const midZ = (item.userData.bbox.min.z + item.userData.bbox.max.z) * 0.5;
                             if (Math.abs(midZ - playerPos.z) > RENDER_DIST) continue;
 

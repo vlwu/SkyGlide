@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { Chunk } from './Chunk.js';
+import { CONFIG } from '../config/Config.js';
 
 export class WorldManager {
-    constructor(scene, racePath, chunkSize = 16, renderDistance = 6) {
+    constructor(scene, racePath) {
         this.scene = scene;
         this.racePath = racePath;
-        this.chunkSize = chunkSize;
-        this.renderDistance = renderDistance; 
+        this.chunkSize = CONFIG.WORLD.CHUNK_SIZE;
+        this.renderDistance = CONFIG.WORLD.RENDER_DISTANCE;
 
         this.chunks = new Map(); 
         
@@ -22,7 +23,6 @@ export class WorldManager {
 
         this._cameraForward = new THREE.Vector3();
         this.generationQueue = [];
-        // Feature: Apply Queue to prevent GPU upload spikes
         this.applyQueue = [];
         
         this.lastUpdate = 0;
@@ -30,21 +30,19 @@ export class WorldManager {
 
         this.frustum = new THREE.Frustum();
         this.projScreenMatrix = new THREE.Matrix4();
-        this.maxVisibleDistSq = (chunkSize * renderDistance + 32) ** 2;
+        // Calc max visible dist
+        this.maxVisibleDistSq = (this.chunkSize * this.renderDistance + 32) ** 2;
 
-        // Optimization: Batch disposal queue
         this.disposalQueue = [];
 
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
         
         this.worker.onmessage = (e) => {
-            // Don't apply immediately. Queue it to prevent frame drops.
             this.applyQueue.push(e.data);
         };
     }
 
     reset() {
-        // Optimization: Batch all disposals
         const chunksToDispose = Array.from(this.chunks.values());
         for (const chunk of chunksToDispose) {
             chunk.dispose();
@@ -69,17 +67,14 @@ export class WorldManager {
         this.frameCounter++;
         const now = performance.now();
         
-        // 1. Process Apply Queue (Max 1 per frame to eliminate stutter)
         if (this.applyQueue.length > 0) {
             const data = this.applyQueue.shift();
             const chunk = this.chunks.get(data.key);
-            // Verify chunk still exists (might have been reset)
             if (chunk) {
                 chunk.applyMesh(data);
             }
         }
 
-        // Optimization: Process disposal queue (max 2 per frame to avoid lag spikes)
         let disposalCount = 0;
         while (this.disposalQueue.length > 0 && disposalCount < 2) {
             const chunk = this.disposalQueue.shift();
@@ -87,7 +82,6 @@ export class WorldManager {
             disposalCount++;
         }
 
-        // 2. Culling & Visibility Update
         this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
 
@@ -95,7 +89,7 @@ export class WorldManager {
             camera.getWorldDirection(this._cameraForward);
         }
 
-        const safeRadiusSq = 1600; // 40^2
+        const safeRadiusSq = CONFIG.WORLD.SAFE_RADIUS_SQ;
 
         for (const chunk of this.chunks.values()) {
             if (!chunk.mesh) continue;
@@ -126,22 +120,18 @@ export class WorldManager {
             }
 
             if (isVisible) {
-                // Shadow LOD: Update more frequently for smoothness (every 3 frames instead of 15)
-                // but relying on the tighter distance check in Chunk.js
                 if (this.frameCounter % 3 === 0) {
                     chunk.update(distSq);
                 }
             }
         }
 
-        // 3. Chunk Queue Update (Throttled)
         if (now - this.lastUpdate > 200) {
             this.lastUpdate = now;
             this.updateQueue(playerPos, camera);
         }
 
-        // Optimization: Reduced worker dispatch rate
-        const JOBS_PER_FRAME = 1; // Reduced from 2 to 1
+        const JOBS_PER_FRAME = 1;
         let dispatched = 0;
 
         while (this.generationQueue.length > 0 && dispatched < JOBS_PER_FRAME) {
@@ -167,7 +157,7 @@ export class WorldManager {
                 x: req.x,
                 z: req.z,
                 size: this.chunkSize,
-                height: 96,
+                height: CONFIG.WORLD.CHUNK_HEIGHT,
                 pathSegments: pathSegments
             });
 
@@ -216,7 +206,6 @@ export class WorldManager {
             }
         }
 
-        // Optimization: Queue chunks for disposal instead of immediate disposal
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 this.chunks.delete(key);
