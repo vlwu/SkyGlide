@@ -36,12 +36,14 @@ export class HUD {
         this.lastAlt = -1;
         this.lastSpeed = -1;
         this.lastState = '';
+        
+        this.lastUpdateTime = 0;
     }
 
     update(player, score) {
-        // Optimization: Dirty Checking
-        // Only touch the DOM if values actually changed.
-        // DOM updates trigger reflows which are very expensive.
+        const now = performance.now();
+        if (now - this.lastUpdateTime < 66) return;
+        this.lastUpdateTime = now;
 
         if (this.lastScore !== score) {
             this.elScore.textContent = score;

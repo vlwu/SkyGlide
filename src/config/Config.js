@@ -4,11 +4,11 @@ export const CONFIG = {
     WORLD: {
         CHUNK_SIZE: 16,
         CHUNK_HEIGHT: 96,
-        RENDER_DISTANCE: 12,
-        RENDER_DISTANCE_UNITS: 200,
+        RENDER_DISTANCE: 10,
+        RENDER_DISTANCE_UNITS: 160,
         SAFE_RADIUS_SQ: 1600, // 40^2
-        MAX_SHADOW_DIST: 35,
-        SHADOW_DIST_SQ: 1225, // 35^2
+        MAX_SHADOW_DIST: 30,
+        SHADOW_DIST_SQ: 900, // 30^2
     },
     PHYSICS: {
         GRAVITY: 25.0,
@@ -44,7 +44,7 @@ export const CONFIG = {
             BUCKET_SIZE: 50,
             VISUAL_BUCKET_SIZE: 100,
             COLLISION_DIST_SQ: 30.25,
-            RENDER_DIST: 220
+            RENDER_DIST: 200
         }
     },
     GRAPHICS: {

@@ -21,13 +21,13 @@ scene.fog = new THREE.Fog(
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
 const renderer = new THREE.WebGLRenderer({ 
-    antialias: true,
+    antialias: false,
     powerPreference: "high-performance",
     precision: "mediump",
     stencil: false 
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(1);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true; 
 renderer.shadowMap.type = THREE.PCFShadowMap; 
 
@@ -165,7 +165,7 @@ function animate(time) {
 
             uiManager.hud.update(player, gameScore);
             
-            if (time - lastShadowUpdate > 100) {
+            if (time - lastShadowUpdate > 200) {
                 dirLight.position.x = player.position.x + 50;
                 dirLight.position.z = player.position.z + 50;
                 dirLight.target.position.copy(player.position);

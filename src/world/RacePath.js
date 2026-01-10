@@ -89,6 +89,10 @@ export class RacePath {
         this.branchCount = 0;
         this.MAX_BRANCHES = 8; // Hard limit on total number of branches
         
+        this.lastMatrixUpdate = 0;
+        this.matrixDirty = false;
+        this.colorDirty = false;
+
         this.generate();
     }
 
@@ -121,6 +125,8 @@ export class RacePath {
         this._lastCollisionRings = [];
         
         this.branchCount = 0;
+        this.matrixDirty = false;
+        this.colorDirty = false;
     }
 
     reset() {
@@ -357,9 +363,6 @@ export class RacePath {
         const pPos = player.position;
         const bucketKey = Math.floor(pPos.z / this.BUCKET_SIZE);
         
-        let meshDirty = false;
-        let colorDirty = false;
-
         let ringsToCheck;
         if (bucketKey === this._lastCollisionBucket) {
             ringsToCheck = this._lastCollisionRings;
@@ -393,15 +396,14 @@ export class RacePath {
                 this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
                 this.colorHelper.setHex(0x333333);
                 this.instancedMesh.setColorAt(idx, this.colorHelper);
-                meshDirty = true;
-                colorDirty = true;
+                
+                this.matrixDirty = true;
+                this.colorDirty = true;
+                
                 this._collisionResult.scoreIncrease++;
                 this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
             }
         }
-
-        if (meshDirty) this.instancedMesh.instanceMatrix.needsUpdate = true;
-        if (colorDirty && this.instancedMesh.instanceColor) this.instancedMesh.instanceColor.needsUpdate = true;
 
         return this._collisionResult;
     }
@@ -508,6 +510,22 @@ export class RacePath {
                 }
             }
             this._visibleItems = visibleNow;
+        }
+
+        // Handle deferred updates (30Hz = ~33ms)
+        const now = performance.now();
+        if (now - this.lastMatrixUpdate > 33) {
+            if (this.instancedMesh) {
+                if (this.matrixDirty) {
+                    this.instancedMesh.instanceMatrix.needsUpdate = true;
+                    this.matrixDirty = false;
+                }
+                if (this.colorDirty && this.instancedMesh.instanceColor) {
+                    this.instancedMesh.instanceColor.needsUpdate = true;
+                    this.colorDirty = false;
+                }
+            }
+            this.lastMatrixUpdate = now;
         }
     }
 }

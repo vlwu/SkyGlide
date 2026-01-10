@@ -26,6 +26,7 @@ export class WorldManager {
         this.applyQueue = [];
         
         this.lastUpdate = 0;
+        this.lastVisibilityUpdate = 0;
         this.frameCounter = 0; 
 
         this.frustum = new THREE.Frustum();
@@ -67,12 +68,15 @@ export class WorldManager {
         this.frameCounter++;
         const now = performance.now();
         
-        if (this.applyQueue.length > 0) {
-            const data = this.applyQueue.shift();
-            const chunk = this.chunks.get(data.key);
-            if (chunk) {
-                chunk.applyMesh(data);
-            }
+        // Batched mesh application (2/frame)
+        let applyCount = 0;
+        while (this.applyQueue.length > 0 && applyCount < 2) {
+             const data = this.applyQueue.shift();
+             const chunk = this.chunks.get(data.key);
+             if (chunk) {
+                 chunk.applyMesh(data);
+             }
+             applyCount++;
         }
 
         let disposalCount = 0;
@@ -82,45 +86,48 @@ export class WorldManager {
             disposalCount++;
         }
 
-        this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-        this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
+        // Throttle visibility checks to ~60Hz
+        if (now - this.lastVisibilityUpdate > 16) {
+            this.lastVisibilityUpdate = now;
 
-        if (camera) {
-            camera.getWorldDirection(this._cameraForward);
-        }
+            this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
 
-        const safeRadiusSq = CONFIG.WORLD.SAFE_RADIUS_SQ;
+            if (camera) {
+                camera.getWorldDirection(this._cameraForward);
+            }
 
-        for (const chunk of this.chunks.values()) {
-            if (!chunk.mesh) continue;
+            const safeRadiusSq = CONFIG.WORLD.SAFE_RADIUS_SQ;
 
-            const dx = chunk.worldX - playerPos.x;
-            const dz = chunk.worldZ - playerPos.z;
-            const distSq = dx*dx + dz*dz;
+            for (const chunk of this.chunks.values()) {
+                if (!chunk.mesh) continue;
 
-            let isVisible = false;
+                const dx = chunk.worldX - playerPos.x;
+                const dz = chunk.worldZ - playerPos.z;
+                const distSq = dx*dx + dz*dz;
 
-            if (distSq <= this.maxVisibleDistSq) {
-                if (distSq > safeRadiusSq) {
-                    const invLen = 1.0 / Math.sqrt(distSq);
-                    const dot = (dx * invLen * this._cameraForward.x) + (dz * invLen * this._cameraForward.z);
-                    
-                    if (dot > -0.5) {
-                         if (this.frustum.intersectsBox(chunk.bbox)) {
-                            isVisible = true;
+                let isVisible = false;
+
+                if (distSq <= this.maxVisibleDistSq) {
+                    if (distSq > safeRadiusSq) {
+                        const invLen = 1.0 / Math.sqrt(distSq);
+                        const dot = (dx * invLen * this._cameraForward.x) + (dz * invLen * this._cameraForward.z);
+                        
+                        if (dot > -0.5) {
+                             if (this.frustum.intersectsBox(chunk.bbox)) {
+                                isVisible = true;
+                            }
                         }
+                    } else {
+                        isVisible = true;
                     }
-                } else {
-                    isVisible = true;
                 }
-            }
 
-            if (chunk.mesh.visible !== isVisible) {
-                chunk.setVisible(isVisible);
-            }
+                if (chunk.mesh.visible !== isVisible) {
+                    chunk.setVisible(isVisible);
+                }
 
-            if (isVisible) {
-                if (this.frameCounter % 3 === 0) {
+                if (isVisible) {
                     chunk.update(distSq);
                 }
             }
@@ -131,7 +138,7 @@ export class WorldManager {
             this.updateQueue(playerPos, camera);
         }
 
-        const JOBS_PER_FRAME = 1;
+        const JOBS_PER_FRAME = 2;
         let dispatched = 0;
 
         while (this.generationQueue.length > 0 && dispatched < JOBS_PER_FRAME) {

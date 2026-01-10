@@ -153,11 +153,11 @@ export class PlayerPhysics {
     }
 
     handleFlying(dt, player) {
-        const stepSize = 0.05;
+        const stepSize = 0.1; // Larger timestep
         let remaining = dt;
         let iterations = 0;
         
-        while (remaining > 0 && iterations < 4) {
+        while (remaining > 0 && iterations < 2) {
             const currentDt = Math.min(remaining, stepSize);
             this.simulateElytraPhysics(currentDt, player);
             remaining -= currentDt;
