@@ -32,6 +32,9 @@ export class WorldManager {
         this.projScreenMatrix = new THREE.Matrix4();
         this.maxVisibleDistSq = (chunkSize * renderDistance + 32) ** 2;
 
+        // Optimization: Batch disposal queue
+        this.disposalQueue = [];
+
         this.worker = new Worker(new URL('./ChunkWorker.js', import.meta.url), { type: 'module' });
         
         this.worker.onmessage = (e) => {
@@ -41,7 +44,9 @@ export class WorldManager {
     }
 
     reset() {
-        for (const [key, chunk] of this.chunks) {
+        // Optimization: Batch all disposals
+        const chunksToDispose = Array.from(this.chunks.values());
+        for (const chunk of chunksToDispose) {
             chunk.dispose();
         }
         this.chunks.clear();
@@ -51,6 +56,7 @@ export class WorldManager {
         this.lastCZ = null;
         this.generationQueue = [];
         this.applyQueue = [];
+        this.disposalQueue = [];
     }
 
     hasChunk(cx, cz) {
@@ -71,6 +77,14 @@ export class WorldManager {
             if (chunk) {
                 chunk.applyMesh(data);
             }
+        }
+
+        // Optimization: Process disposal queue (max 2 per frame to avoid lag spikes)
+        let disposalCount = 0;
+        while (this.disposalQueue.length > 0 && disposalCount < 2) {
+            const chunk = this.disposalQueue.shift();
+            chunk.dispose();
+            disposalCount++;
         }
 
         // 2. Culling & Visibility Update
@@ -126,7 +140,8 @@ export class WorldManager {
             this.updateQueue(playerPos, camera);
         }
 
-        const JOBS_PER_FRAME = 2;
+        // Optimization: Reduced worker dispatch rate
+        const JOBS_PER_FRAME = 1; // Reduced from 2 to 1
         let dispatched = 0;
 
         while (this.generationQueue.length > 0 && dispatched < JOBS_PER_FRAME) {
@@ -201,10 +216,11 @@ export class WorldManager {
             }
         }
 
+        // Optimization: Queue chunks for disposal instead of immediate disposal
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
-                chunk.dispose();
                 this.chunks.delete(key);
+                this.disposalQueue.push(chunk);
             }
         }
 

@@ -134,6 +134,8 @@ window.addEventListener('resize', () => {
 // Game loop
 const clock = new THREE.Clock();
 let lastFrameTime = 0;
+// Optimization: Track last shadow update to reduce frequency
+let lastShadowUpdate = 0;
 
 function animate(time) {
     requestAnimationFrame(animate);
@@ -183,10 +185,14 @@ function animate(time) {
 
             uiManager.hud.update(player, gameScore);
             
-            dirLight.position.x = player.position.x + 50;
-            dirLight.position.z = player.position.z + 50;
-            dirLight.target.position.copy(player.position);
-            dirLight.target.updateMatrixWorld();
+            // Optimization: Update shadow light position less frequently (every 100ms)
+            if (time - lastShadowUpdate > 100) {
+                dirLight.position.x = player.position.x + 50;
+                dirLight.position.z = player.position.z + 50;
+                dirLight.target.position.copy(player.position);
+                dirLight.target.updateMatrixWorld();
+                lastShadowUpdate = time;
+            }
         } else {
             // PAUSE MENU (Game running but paused)
             sky.update(dt, player.position);

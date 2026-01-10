@@ -83,6 +83,10 @@ export class RacePath {
         
         this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
         
+        // Optimization: Cache for last checked bucket to avoid redundant searches
+        this._lastCollisionBucket = -999999;
+        this._lastCollisionRings = [];
+        
         this.generate();
     }
 
@@ -111,6 +115,9 @@ export class RacePath {
         this.ringBuckets.clear();
         this.curves = [];
         this.pathLookup.clear();
+        
+        this._lastCollisionBucket = -999999;
+        this._lastCollisionRings = [];
     }
 
     reset() {
@@ -336,29 +343,45 @@ export class RacePath {
         let meshDirty = false;
         let colorDirty = false;
 
-        for (let k = bucketKey - 1; k <= bucketKey + 1; k++) {
-            const bucket = this.ringBuckets.get(k);
-            if (!bucket) continue;
-
-            for (let i = 0; i < bucket.length; i++) {
-                const ring = bucket[i];
-                if (!ring.active) continue;
-
-                const distSq = pPos.distanceToSquared(ring.position);
-                if (distSq < 30.25) {
-                    ring.active = false;
-                    const idx = ring.index;
-                    this.instancedMesh.getMatrixAt(idx, this.dummy.matrix);
-                    this.dummy.scale.multiplyScalar(0.1); 
-                    this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
-                    this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
-                    this.colorHelper.setHex(0x333333);
-                    this.instancedMesh.setColorAt(idx, this.colorHelper);
-                    meshDirty = true;
-                    colorDirty = true;
-                    this._collisionResult.scoreIncrease++;
-                    this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
+        // Optimization: Cache bucket lookups if player hasn't changed buckets
+        let ringsToCheck;
+        if (bucketKey === this._lastCollisionBucket) {
+            ringsToCheck = this._lastCollisionRings;
+        } else {
+            ringsToCheck = [];
+            for (let k = bucketKey - 1; k <= bucketKey + 1; k++) {
+                const bucket = this.ringBuckets.get(k);
+                if (bucket) {
+                    ringsToCheck.push(...bucket);
                 }
+            }
+            this._lastCollisionBucket = bucketKey;
+            this._lastCollisionRings = ringsToCheck;
+        }
+
+        // Optimization: Early exit if no rings in range
+        if (ringsToCheck.length === 0) return this._collisionResult;
+
+        const collisionDistSq = 30.25;
+
+        for (let i = 0; i < ringsToCheck.length; i++) {
+            const ring = ringsToCheck[i];
+            if (!ring.active) continue;
+
+            const distSq = pPos.distanceToSquared(ring.position);
+            if (distSq < collisionDistSq) {
+                ring.active = false;
+                const idx = ring.index;
+                this.instancedMesh.getMatrixAt(idx, this.dummy.matrix);
+                this.dummy.scale.multiplyScalar(0.1); 
+                this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
+                this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
+                this.colorHelper.setHex(0x333333);
+                this.instancedMesh.setColorAt(idx, this.colorHelper);
+                meshDirty = true;
+                colorDirty = true;
+                this._collisionResult.scoreIncrease++;
+                this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
             }
         }
 

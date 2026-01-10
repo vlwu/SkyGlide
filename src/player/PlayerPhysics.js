@@ -233,7 +233,7 @@ export class PlayerPhysics {
             player.velocity.z += (targetZ - player.velocity.z) * STEER_SPEED * dt;
         }
 
-        const MAX_SPEED = 40.0;
+        const MAX_SPEED = 35.0;
         const speedSq = player.velocity.lengthSq();
         if (speedSq > MAX_SPEED * MAX_SPEED) {
             const scale = MAX_SPEED / Math.sqrt(speedSq);

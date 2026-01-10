@@ -190,13 +190,16 @@ self.onmessage = (e) => {
         }
     }
 
-    // 4. MESH GENERATION
+    // 4. MESH GENERATION - OPTIMIZED
     let vertCount = 0;
     let indexCount = 0;
     const rgb = [0,0,0];
 
     const OFFSETS = [1, -1, strideY, -strideY, strideZ, -strideZ];
-
+    
+    // Pre-compute neighbor checks for entire chunk to enable early culling
+    const neighborCache = new Uint8Array(size * height * size * 6);
+    
     for (let lz = 0; lz < size; lz++) {
         const lzStride = lz * strideZ;
         for (let y = 0; y < height; y++) {
@@ -208,6 +211,31 @@ self.onmessage = (e) => {
                 const type = data[idx];
                 if (type === BLOCK.AIR) continue;
 
+                const cacheBase = idx * 6;
+                let hasExposedFace = false;
+
+                // Check all 6 neighbors
+                for (let f = 0; f < 6; f++) {
+                    const nx = lx + FACE_DIRS[f*3];
+                    const ny = y + FACE_DIRS[f*3+1];
+                    const nz = lz + FACE_DIRS[f*3+2];
+
+                    let exposed = false;
+                    if (nx >= 0 && nx < size && ny >= 0 && ny < height && nz >= 0 && nz < size) {
+                        if (data[idx + OFFSETS[f]] === BLOCK.AIR) {
+                            exposed = true;
+                        }
+                    } else {
+                        exposed = true; // Edge faces are exposed
+                    }
+
+                    neighborCache[cacheBase + f] = exposed ? 1 : 0;
+                    if (exposed) hasExposedFace = true;
+                }
+
+                // Skip blocks with no exposed faces entirely
+                if (!hasExposedFace) continue;
+
                 const wx = startX + lx;
                 const wz = startZ + lz;
                 
@@ -218,19 +246,7 @@ self.onmessage = (e) => {
                 fastColor(type, rand, rgb);
 
                 for (let f = 0; f < 6; f++) {
-                    let exposed = true;
-                    
-                    const nx = lx + FACE_DIRS[f*3];
-                    const ny = y + FACE_DIRS[f*3+1];
-                    const nz = lz + FACE_DIRS[f*3+2];
-
-                    if (nx >= 0 && nx < size && ny >= 0 && ny < height && nz >= 0 && nz < size) {
-                        if (data[idx + OFFSETS[f]] !== BLOCK.AIR) {
-                            exposed = false;
-                        }
-                    }
-
-                    if (!exposed) continue;
+                    if (neighborCache[cacheBase + f] === 0) continue;
 
                     let shade = 0.9;
                     const dy = FACE_DIRS[f * 3 + 1];
@@ -271,7 +287,9 @@ self.onmessage = (e) => {
                 }
                 if (vertCount >= MAX_VERTICES - 4) break;
             }
+            if (vertCount >= MAX_VERTICES - 4) break;
         }
+        if (vertCount >= MAX_VERTICES - 4) break;
     }
 
     const posOut = BUFFER_POS.slice(0, vertCount * 3);
