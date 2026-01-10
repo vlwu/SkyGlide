@@ -10,6 +10,8 @@ export class WorldManager {
         this.renderDistance = CONFIG.WORLD.RENDER_DISTANCE;
 
         this.chunks = new Map(); 
+        // Optimization: Cache array for faster iteration in render loop
+        this._chunkArray = [];
         
         // Optimization: Integer cache for fast lookups
         this.lastChunk = null;
@@ -62,6 +64,8 @@ export class WorldManager {
             chunk.dispose();
         }
         this.chunks.clear();
+        this._chunkArray = [];
+        
         this.lastChunk = null;
         this.lastChunkKey = '';
         this.lastCX = null;
@@ -111,8 +115,13 @@ export class WorldManager {
             }
 
             const safeRadiusSq = CONFIG.WORLD.SAFE_RADIUS_SQ;
+            
+            // Optimization: Iterate array instead of Map iterator
+            const chunks = this._chunkArray;
+            const len = chunks.length;
 
-            for (const chunk of this.chunks.values()) {
+            for (let i = 0; i < len; i++) {
+                const chunk = chunks[i];
                 if (!chunk.mesh) continue;
 
                 const dx = chunk.worldX - playerPos.x;
@@ -161,6 +170,7 @@ export class WorldManager {
 
             const chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial);
             this.chunks.set(req.key, chunk);
+            this._chunkArray.push(chunk);
 
             const pathSegments = {};
             const startZ = req.z * this.chunkSize;
@@ -226,11 +236,17 @@ export class WorldManager {
             }
         }
 
+        let reindex = false;
         for (const [key, chunk] of this.chunks) {
             if (!activeKeys.has(key)) {
                 this.chunks.delete(key);
                 this.disposalQueue.push(chunk);
+                reindex = true;
             }
+        }
+
+        if (reindex) {
+            this._chunkArray = Array.from(this.chunks.values());
         }
 
         newQueue.sort((a, b) => a.score - b.score);

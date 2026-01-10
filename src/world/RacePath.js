@@ -14,10 +14,7 @@ export class RacePath {
         
         // Visuals
         this.visualItems = []; 
-        this.visualBuckets = new Map();
-        this.VISUAL_BUCKET_SIZE = CONFIG.GAME.RINGS.VISUAL_BUCKET_SIZE;
         
-        this._visibleItems = [];
         this._frameCount = 0;
 
         this.instancedMesh = null;
@@ -106,8 +103,6 @@ export class RacePath {
             if (item.geometry) item.geometry.dispose();
         });
         this.visualItems = [];
-        this.visualBuckets.clear();
-        this._visibleItems = [];
 
         if (this.instancedMesh) {
             this.scene.remove(this.instancedMesh);
@@ -168,7 +163,6 @@ export class RacePath {
     }
 
     createBranch(startPos, startDir, segments, depth) {
-        // Hard limit on total branches to prevent exponential growth
         if (this.branchCount >= this.MAX_BRANCHES) {
             return;
         }
@@ -185,32 +179,25 @@ export class RacePath {
         let segmentsSinceBranch = 0;
 
         for (let i = 0; i < segments; i++) {
-            // --- Difficulty Scaling Logic ---
-            // Estimate ring count based on distance (approx 70 units per ring)
             const dist = Math.abs(currentPos.z);
             const estimatedRings = dist / 70.0;
             
             let varianceMult = 1.0;
             if (estimatedRings >= 20) {
-                // Tier increases every 20 rings starting at 20
                 const tier = Math.floor((estimatedRings - 20) / 20) + 1;
-                varianceMult = 1.0 + (tier * 0.4); // 40% increase in variance per tier
+                varianceMult = 1.0 + (tier * 0.4); 
             }
             
-            // Soft cap to maintain playability (avoid impossible turns)
             varianceMult = Math.min(4.0, varianceMult);
 
             const z = currentPos.z - 40; 
             
-            // Apply variance to X and Y generation
             const xRange = 60 * varianceMult;
             const yRange = 30 * varianceMult;
             
             const x = currentPos.x + (Math.random() - 0.5) * xRange; 
             let y = currentPos.y + (Math.random() - 0.5) * yRange; 
             
-            // Expand altitude constraints as difficulty (variance) increases
-            // Allows the path to use more of the vertical space
             const maxAlt = Math.min(240, 80 + (varianceMult - 1.0) * 50);
             y = Math.max(20, Math.min(maxAlt, y));
 
@@ -220,14 +207,12 @@ export class RacePath {
             currentPos = nextPos;
             segmentsSinceBranch++;
 
-            // Only branch if we haven't hit the global limit
             if (this.branchCount >= this.MAX_BRANCHES) {
-                continue; // Skip branching logic
+                continue; 
             }
 
             const forcedSplit = (depth === 0 && i === 40);
 
-            // Reduced branching: max depth of 2 instead of 3, and lower probability
             if (depth < 2 && (segments - i) > 50) {
                 if (forcedSplit || (segmentsSinceBranch > 30 && Math.random() < 0.12)) {
                     const angle = (Math.PI / 5) * (Math.random() > 0.5 ? 1 : -1);
@@ -235,7 +220,6 @@ export class RacePath {
                     this.createBranch(nextPos, branchDir, segments - i, depth + 1);
                     segmentsSinceBranch = 0;
                     
-                    // Only create a second branch if forced split and we have room
                     if (forcedSplit && this.branchCount < this.MAX_BRANCHES && Math.random() < 0.15) {
                         const angle2 = -angle * 0.8; 
                         const branchDir2 = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle2).normalize();
@@ -433,62 +417,69 @@ export class RacePath {
     }
 
     createVisuals() {
+        // Optimization: Segment the visuals so GPU Frustum Culling works effectively.
+        // Instead of 1 giant mesh per curve, create multiple smaller segments.
+        
+        const POINTS_PER_SEGMENT = 60; // Approx 100-120 world units
+
         for (const { curve } of this.curves) {
             const curveLength = curve.getLength();
-            const segments = Math.floor(curveLength * 0.5); 
+            const totalDivisions = Math.floor(curveLength * 0.5); 
+            const allPoints = curve.getSpacedPoints(totalDivisions);
 
-            const tubeGeo = new THREE.TubeGeometry(curve, segments, 0.2, 4, false);
-            tubeGeo.computeBoundingBox();
+            for (let i = 0; i < allPoints.length - 1; i += POINTS_PER_SEGMENT - 1) {
+                // Overlap by 1 point to ensure mesh continuity
+                const end = Math.min(i + POINTS_PER_SEGMENT, allPoints.length);
+                const subset = allPoints.slice(i, end);
 
-            const tubeMesh = new THREE.Mesh(tubeGeo, this.sharedTubeMat);
-            tubeMesh.userData.bbox = tubeGeo.boundingBox;
-            this.scene.add(tubeMesh);
-            this.addToVisualBucket(tubeMesh);
+                if (subset.length < 2) continue;
 
-            const particleCount = Math.floor(curveLength * 0.2); 
-            const curvePoints = curve.getSpacedPoints(particleCount);
-            const posArray = new Float32Array(particleCount * 3);
-            const randomArray = new Float32Array(particleCount * 3);
-            const phaseArray = new Float32Array(particleCount);
-            
-            for(let i=0; i<particleCount; i++) {
-                const pt = curvePoints[i];
-                const theta = Math.random() * Math.PI * 2;
-                posArray[i*3] = pt.x + Math.cos(theta) * 0.2;
-                posArray[i*3+1] = pt.y + Math.sin(theta) * 0.2;
-                posArray[i*3+2] = pt.z;
-                randomArray[i*3] = (Math.random() - 0.5) * 4.0;
-                randomArray[i*3+1] = (Math.random() - 0.5) * 4.0;
-                randomArray[i*3+2] = (Math.random() - 0.5) * 4.0;
-                phaseArray[i] = Math.random();
+                // 1. Tube Visuals
+                const subCurve = new THREE.CatmullRomCurve3(subset);
+                const tubeGeo = new THREE.TubeGeometry(subCurve, subset.length * 2, 0.2, 4, false);
+                
+                // Compute bbox immediately for Three.js frustum culling
+                tubeGeo.computeBoundingBox();
+
+                const tubeMesh = new THREE.Mesh(tubeGeo, this.sharedTubeMat);
+                this.scene.add(tubeMesh);
+                this.visualItems.push(tubeMesh);
+
+                // 2. Particle Visuals (Segmented)
+                const particleCount = Math.floor(subset.length * 0.4); 
+                if (particleCount > 0) {
+                    // Sample positions from the subCurve for smooth distribution
+                    const subPoints = subCurve.getSpacedPoints(particleCount);
+                    const posArray = new Float32Array(particleCount * 3);
+                    const randomArray = new Float32Array(particleCount * 3);
+                    const phaseArray = new Float32Array(particleCount);
+                    
+                    for(let k=0; k<particleCount; k++) {
+                        const pt = subPoints[k];
+                        const theta = Math.random() * Math.PI * 2;
+                        posArray[k*3] = pt.x + Math.cos(theta) * 0.2;
+                        posArray[k*3+1] = pt.y + Math.sin(theta) * 0.2;
+                        posArray[k*3+2] = pt.z;
+                        
+                        randomArray[k*3] = (Math.random() - 0.5) * 4.0;
+                        randomArray[k*3+1] = (Math.random() - 0.5) * 4.0;
+                        randomArray[k*3+2] = (Math.random() - 0.5) * 4.0;
+                        
+                        phaseArray[k] = Math.random();
+                    }
+                    
+                    const partGeo = new THREE.BufferGeometry();
+                    partGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+                    partGeo.setAttribute('aRandom', new THREE.BufferAttribute(randomArray, 3));
+                    partGeo.setAttribute('aPhase', new THREE.BufferAttribute(phaseArray, 1));
+                    
+                    partGeo.computeBoundingBox(); // Important for culling
+
+                    const particles = new THREE.Points(partGeo, this.sharedPartMat);
+                    this.scene.add(particles);
+                    this.visualItems.push(particles);
+                }
             }
-            
-            const partGeo = new THREE.BufferGeometry();
-            partGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-            partGeo.setAttribute('aRandom', new THREE.BufferAttribute(randomArray, 3));
-            partGeo.setAttribute('aPhase', new THREE.BufferAttribute(phaseArray, 1));
-            
-            partGeo.computeBoundingBox();
-
-            const particles = new THREE.Points(partGeo, this.sharedPartMat);
-            particles.userData.bbox = partGeo.boundingBox;
-            this.scene.add(particles);
-            this.addToVisualBucket(particles);
-        }
-    }
-
-    addToVisualBucket(item) {
-        if (!item.userData.bbox) {
-            this.visualItems.push(item);
-            return;
-        }
-        
-        const minBucket = Math.floor(item.userData.bbox.min.z / this.VISUAL_BUCKET_SIZE);
-        const maxBucket = Math.floor(item.userData.bbox.max.z / this.VISUAL_BUCKET_SIZE);
-
-        for (let b = minBucket; b <= maxBucket; b++) {
-            if (!this.visualBuckets.has(b)) this.visualBuckets.set(b, []);
-            this.visualBuckets.get(b).push(item);
         }
     }
 
@@ -500,41 +491,9 @@ export class RacePath {
         this.uniforms.uTime.value += dt;
         this._frameCount++;
 
-        if (playerPos) {
-            const RENDER_DIST = CONFIG.GAME.RINGS.RENDER_DIST; 
-            
-            const centerBucket = Math.floor(playerPos.z / this.VISUAL_BUCKET_SIZE);
-            const minB = centerBucket - 1; 
-            const maxB = centerBucket + 2; 
-            
-            const currentFrame = this._frameCount;
-            const visibleNow = [];
-
-            for (let b = minB; b <= maxB; b++) {
-                const bucket = this.visualBuckets.get(b);
-                if (bucket) {
-                    for (let i = 0; i < bucket.length; i++) {
-                        const item = bucket[i];
-                        if (item.userData.bbox) {
-                            const midZ = (item.userData.bbox.min.z + item.userData.bbox.max.z) * 0.5;
-                            if (Math.abs(midZ - playerPos.z) > RENDER_DIST) continue;
-
-                            if (!item.visible) item.visible = true;
-                            item.userData.lastFrame = currentFrame;
-                            visibleNow.push(item);
-                        }
-                    }
-                }
-            }
-
-            for (let i = 0; i < this._visibleItems.length; i++) {
-                const item = this._visibleItems[i];
-                if (item.userData.lastFrame !== currentFrame) {
-                    item.visible = false;
-                }
-            }
-            this._visibleItems = visibleNow;
-        }
+        // Optimization: Removed manual JS bucket-based culling. 
+        // We now rely on Three.js native Frustum Culling on the segmented visual meshes.
+        // This significantly reduces main-thread CPU usage.
 
         // Handle deferred updates (30Hz = ~33ms)
         const now = performance.now();
