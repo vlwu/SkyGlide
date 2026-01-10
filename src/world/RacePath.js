@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config/Config.js';
 import { settingsManager } from '../settings/SettingsManager.js';
+import { vec3Pool } from '../utils/ObjectPool.js';
 
 export class RacePath {
     constructor(scene) {
@@ -22,21 +23,20 @@ export class RacePath {
         this.dummy = new THREE.Object3D(); 
         this.colorHelper = new THREE.Color();
 
-        // OPTIMIZATION: Reduced segments from 8/12 to 6/8
+        // Cached Arrays for Collision to avoid GC
+        this._activeRings = []; 
+        this._lastCollisionBucket = -999999;
+        
         this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 6, 8); 
         
-        // --- Shader-Based Rotation ---
         this.ringUniforms = {
             uTime: { value: 0 }
         };
 
         this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
         
-        // Inject shader logic for performant GPU rotation
         this.ringMaterial.onBeforeCompile = (shader) => {
             shader.uniforms.uTime = this.ringUniforms.uTime;
-            
-            // Add rotation matrix function
             shader.vertexShader = `
                 uniform float uTime;
                 mat3 rotateZ(float angle) {
@@ -50,7 +50,6 @@ export class RacePath {
                 }
             ` + shader.vertexShader;
 
-            // Apply rotation to 'transformed' (local space position) before instance matrix
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <begin_vertex>',
                 `
@@ -118,8 +117,6 @@ export class RacePath {
         });
         
         this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
-        this._lastCollisionBucket = -999999;
-        this._lastCollisionRings = [];
         
         // Branch limiting
         this.branchCount = 0;
@@ -156,7 +153,7 @@ export class RacePath {
         this.pathLookup.clear();
         
         this._lastCollisionBucket = -999999;
-        this._lastCollisionRings = [];
+        this._activeRings.length = 0; // Clear without deallocating
         
         this.branchCount = 0;
         this.matrixDirty = false;
@@ -404,47 +401,55 @@ export class RacePath {
     }
 
     checkCollisions(player) {
+        // RESET POOL and result
+        vec3Pool.reset();
         this._collisionResult.scoreIncrease = 0;
         this._collisionResult.boostAmount = 0;
         
         const pPos = player.position;
+        // BUCKET LOOKUP - Use finer buckets
         const bucketKey = Math.floor(pPos.z / this.BUCKET_SIZE);
         
-        let ringsToCheck;
-        if (bucketKey === this._lastCollisionBucket) {
-            ringsToCheck = this._lastCollisionRings;
-        } else {
-            ringsToCheck = [];
+        // Populate active rings list only when changing buckets
+        if (bucketKey !== this._lastCollisionBucket) {
+            this._activeRings.length = 0; // Clear without GC
+            
+            // Check current and immediate neighbors (z-1, z, z+1)
             for (let k = bucketKey - 1; k <= bucketKey + 1; k++) {
                 const bucket = this.ringBuckets.get(k);
                 if (bucket) {
-                    ringsToCheck.push(...bucket);
+                    for(let i = 0; i < bucket.length; i++) {
+                        this._activeRings.push(bucket[i]);
+                    }
                 }
             }
             this._lastCollisionBucket = bucketKey;
-            this._lastCollisionRings = ringsToCheck;
         }
 
-        if (ringsToCheck.length === 0) return this._collisionResult;
+        const ringCount = this._activeRings.length;
+        if (ringCount === 0) return this._collisionResult;
 
         const collisionDistSq = CONFIG.GAME.RINGS.COLLISION_DIST_SQ;
 
-        for (let i = 0; i < ringsToCheck.length; i++) {
-            const ring = ringsToCheck[i];
+        for (let i = 0; i < ringCount; i++) {
+            const ring = this._activeRings[i];
             if (!ring.active) continue;
 
-            // OPTIMIZATION: Early exit based on Z-axis distance
-            const dz = Math.abs(pPos.z - ring.position.z);
-            if (dz > 6.0) continue; // Sqrt of collisionDistSq (~5.5) + margin
+            // Simple Axis check first
+            const dz = pPos.z - ring.position.z;
+            if (dz > 6.0 || dz < -6.0) continue; 
 
             const distSq = pPos.distanceToSquared(ring.position);
             if (distSq < collisionDistSq) {
                 ring.active = false;
                 const idx = ring.index;
+                
+                // MATRIX UPDATE - direct write to dummy, avoiding extra allocations
                 this.instancedMesh.getMatrixAt(idx, this.dummy.matrix);
                 this.dummy.scale.multiplyScalar(0.1); 
                 this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
                 this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
+                
                 this.colorHelper.setHex(0x333333);
                 this.instancedMesh.setColorAt(idx, this.colorHelper);
                 
@@ -481,7 +486,6 @@ export class RacePath {
                 // 1. Tube Visuals
                 const subCurve = new THREE.CatmullRomCurve3(subset);
                 
-                // OPTIMIZATION: Reduced radial segments from 4 to 3
                 const tubeGeo = new THREE.TubeGeometry(subCurve, subset.length * 2, 0.2, 3, false);
                 tubeGeo.computeBoundingBox();
 
@@ -490,7 +494,6 @@ export class RacePath {
                 this.visualItems.push(tubeMesh);
 
                 // 2. Aggregate Particle Data
-                // OPTIMIZATION: Reduced particle density from 0.4 to 0.2
                 const particleCount = Math.floor(subset.length * 0.2); 
                 if (particleCount > 0) {
                     const subPoints = subCurve.getSpacedPoints(particleCount);
@@ -517,7 +520,6 @@ export class RacePath {
             }
         }
 
-        // OPTIMIZATION: Create single mesh for all particles
         if (particlePositions.length > 0) {
             const partGeo = new THREE.BufferGeometry();
             partGeo.setAttribute('position', new THREE.Float32BufferAttribute(particlePositions, 3));
@@ -527,9 +529,6 @@ export class RacePath {
             partGeo.computeBoundingBox();
 
             const particles = new THREE.Points(partGeo, this.sharedPartMat);
-            // Disable frustum culling for the master particle system as it spans the whole world
-            // or let Three.js cull based on large bbox. 
-            // Since it's large, culling overhead is low (one check), but it will likely always be visible.
             particles.frustumCulled = false; 
             
             this.scene.add(particles);
@@ -552,6 +551,7 @@ export class RacePath {
         }
 
         // OPTIMIZATION: Batch matrix updates to 100ms interval instead of 33ms
+        // This effectively batches the GPU upload of the matrix attribute
         const now = performance.now();
         if (now - this.lastMatrixUpdate > 100) {
             if (this.instancedMesh) {

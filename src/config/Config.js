@@ -6,13 +6,12 @@ export const CONFIG = {
         CHUNK_HEIGHT: 96,
         RENDER_DISTANCE: 10,
         RENDER_DISTANCE_UNITS: 160,
-        SAFE_RADIUS_SQ: 1600, // 40^2
+        SAFE_RADIUS_SQ: 1600, 
         MAX_SHADOW_DIST: 30,
-        SHADOW_DIST_SQ: 900, // 30^2
-        // LOD Settings
+        SHADOW_DIST_SQ: 900, 
         LOD: {
-            DIST_LOW: 4,  // Chunks > 4 units away get LOD 2 (Step 2)
-            DIST_FAR: 7,  // Chunks > 7 units away get LOD 4 (Step 4)
+            DIST_LOW: 4, 
+            DIST_FAR: 7, 
         }
     },
     PHYSICS: {
@@ -45,9 +44,9 @@ export const CONFIG = {
     GAME: {
         CEILING_LIMIT: 250,
         FLOOR_LIMIT: -30,
-        CYCLE_DURATION: 300, // Seconds for full day/night cycle
+        CYCLE_DURATION: 300, 
         RINGS: {
-            BUCKET_SIZE: 50,
+            BUCKET_SIZE: 20, // Reduced from 50 to 20 for finer spatial hashing
             VISUAL_BUCKET_SIZE: 100,
             COLLISION_DIST_SQ: 30.25,
             RENDER_DIST: 200
@@ -55,16 +54,12 @@ export const CONFIG = {
     },
     GRAPHICS: {
         SKY: {
-            // Day
             DAY_TOP: 0x4A6FA5,
             DAY_BOT: 0xA0D0E0,
-            // Sunset
             SET_TOP: 0x332255,
             SET_BOT: 0xFF6644,
-            // Night
             NIGHT_TOP: 0x020205,
             NIGHT_BOT: 0x111122,
-            // Sunrise
             RISE_TOP: 0x224477,
             RISE_BOT: 0xFFCC33
         },
@@ -74,7 +69,7 @@ export const CONFIG = {
             FAR_OFFSET: 50
         },
         WIND: {
-            COUNT: 100,
+            COUNT: 50,
             COLOR: 0xffffff,
             OPACITY_MIN: 0.0,
             OPACITY_MAX: 0.2
