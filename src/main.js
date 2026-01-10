@@ -65,6 +65,49 @@ worldManager.reset();
 const uiManager = new UIManager(player);
 const fpsCounter = new FPSCounter();
 
+// --- GRAPHICS SETTINGS ---
+const applyGraphicsSettings = () => {
+    const quality = settingsManager.get('quality');
+    
+    // Presets
+    let pixelRatio = 1.5;
+    let shadows = true;
+    let renderDist = 10;
+    
+    if (quality === 'LOW') {
+        pixelRatio = 0.8;
+        shadows = false;
+        renderDist = 6;
+    } else if (quality === 'MEDIUM') {
+        pixelRatio = 1.0;
+        shadows = true;
+        renderDist = 8;
+    }
+    // HIGH (default) falls through
+
+    // 1. Pixel Ratio (Resolution)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatio));
+    
+    // 2. Shadows
+    if (dirLight.castShadow !== shadows) {
+        dirLight.castShadow = shadows;
+    }
+
+    // 3. Render Distance
+    worldManager.setRenderDistance(renderDist);
+    
+    // 4. Fog
+    const renderDistUnits = renderDist * CONFIG.WORLD.CHUNK_SIZE;
+    scene.fog.far = renderDistUnits - CONFIG.GRAPHICS.FOG.FAR_OFFSET;
+};
+
+// Apply immediately on load
+applyGraphicsSettings();
+
+// Listen for changes
+uiManager.setSettingsChangeHandler(applyGraphicsSettings);
+// -------------------------
+
 uiManager.setRestartHandler((mode) => {
     isGameRunning = true;
     gameScore = 0;
@@ -165,7 +208,8 @@ function animate(time) {
 
             uiManager.hud.update(player, gameScore);
             
-            if (time - lastShadowUpdate > 200) {
+            // Only update shadow target if shadows are actually enabled
+            if (dirLight.castShadow && time - lastShadowUpdate > 200) {
                 dirLight.position.x = player.position.x + 50;
                 dirLight.position.z = player.position.z + 50;
                 dirLight.target.position.copy(player.position);

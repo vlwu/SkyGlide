@@ -8,6 +8,8 @@ const FPS_STEPS = [
     { value: 999, label: 'Unlimited' }
 ];
 
+const QUALITY_STEPS = ['LOW', 'MEDIUM', 'HIGH'];
+
 export class SettingsMenu {
     constructor(uiManager) {
         this.uiManager = uiManager;
@@ -25,14 +27,40 @@ export class SettingsMenu {
         const keys = settingsManager.settings.keys;
         const currentFps = settingsManager.get('fpsLimit');
         const currentSens = settingsManager.get('sensitivity');
+        const currentQuality = settingsManager.get('quality');
         
-        let sliderIndex = FPS_STEPS.findIndex(step => step.value === currentFps);
-        if (sliderIndex === -1) sliderIndex = 0; 
+        let fpsIndex = FPS_STEPS.findIndex(step => step.value === currentFps);
+        if (fpsIndex === -1) fpsIndex = 0; 
+
+        let qualIndex = QUALITY_STEPS.indexOf(currentQuality);
+        if (qualIndex === -1) qualIndex = 2; // Default HIGH
 
         this.element.innerHTML = `
             <div class="menu-content settings-content">
                 <h2>SETTINGS</h2>
                 
+                <div class="settings-section">
+                    <h3>GRAPHICS & DISPLAY</h3>
+                    <div class="setting-row">
+                        <span>Quality</span>
+                        <div class="slider-container">
+                            <input type="range" id="quality-slider" 
+                                min="0" max="${QUALITY_STEPS.length - 1}" step="1" 
+                                value="${qualIndex}">
+                            <span id="quality-value" class="slider-value">${QUALITY_STEPS[qualIndex]}</span>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <span>Max FPS</span>
+                        <div class="slider-container">
+                            <input type="range" id="fps-slider" 
+                                min="0" max="${FPS_STEPS.length - 1}" step="1" 
+                                value="${fpsIndex}">
+                            <span id="fps-value" class="slider-value">${FPS_STEPS[fpsIndex].label}</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="settings-section">
                     <h3>INPUT</h3>
                     <div class="setting-row">
@@ -74,19 +102,6 @@ export class SettingsMenu {
                     </div>
                 </div>
 
-                <div class="settings-section">
-                    <h3>PERFORMANCE</h3>
-                    <div class="setting-row">
-                        <span>Max FPS</span>
-                        <div class="slider-container">
-                            <input type="range" id="fps-slider" 
-                                min="0" max="${FPS_STEPS.length - 1}" step="1" 
-                                value="${sliderIndex}">
-                            <span id="fps-value" class="slider-value">${FPS_STEPS[sliderIndex].label}</span>
-                        </div>
-                    </div>
-                </div>
-
                 <button id="btn-settings-back" class="btn-secondary">BACK</button>
             </div>
         `;
@@ -107,16 +122,29 @@ export class SettingsMenu {
             }
         });
 
+        // Quality Slider
+        const qSlider = this.element.querySelector('#quality-slider');
+        const qLabel = this.element.querySelector('#quality-value');
+
+        qSlider.addEventListener('input', (e) => {
+            const index = parseInt(e.target.value);
+            qLabel.textContent = QUALITY_STEPS[index];
+        });
+
+        qSlider.addEventListener('change', (e) => {
+            const index = parseInt(e.target.value);
+            settingsManager.set('quality', QUALITY_STEPS[index]);
+            this.uiManager.notifySettingsChanged();
+        });
+
         // Sensitivity Slider
         const sensSlider = this.element.querySelector('#sens-slider');
         const sensLabel = this.element.querySelector('#sens-value');
 
-        // Update visual label immediately (responsive UI)
         sensSlider.addEventListener('input', (e) => {
             sensLabel.textContent = parseFloat(e.target.value).toFixed(1);
         });
 
-        // Optimization: Write to disk ONLY when user releases the slider handle
         sensSlider.addEventListener('change', (e) => {
             settingsManager.set('sensitivity', parseFloat(e.target.value));
         });
@@ -130,7 +158,6 @@ export class SettingsMenu {
             fpsLabel.textContent = FPS_STEPS[index].label;
         });
 
-        // Optimization: Write to disk ONLY when user releases the slider handle
         fpsSlider.addEventListener('change', (e) => {
             const index = parseInt(e.target.value);
             settingsManager.set('fpsLimit', FPS_STEPS[index].value);

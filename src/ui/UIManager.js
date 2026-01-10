@@ -10,6 +10,7 @@ export class UIManager {
         this.container = document.getElementById('ui-layer');
         this.restartHandler = null;
         this.exitHandler = null;
+        this.settingsHandler = null;
 
         // Initialize Components
         this.startMenu = new StartMenu(this);
@@ -38,6 +39,16 @@ export class UIManager {
 
     setExitHandler(fn) {
         this.exitHandler = fn;
+    }
+
+    setSettingsChangeHandler(fn) {
+        this.settingsHandler = fn;
+    }
+
+    notifySettingsChanged() {
+        if (this.settingsHandler) {
+            this.settingsHandler();
+        }
     }
 
     showScreen(screenName) {

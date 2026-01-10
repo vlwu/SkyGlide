@@ -10,7 +10,8 @@ export class SettingsManager {
                 reset: 'KeyR'
             },
             fpsLimit: 0, // 0 = VSync (Browser Default)
-            sensitivity: 1.0 // Multiplier for mouse sensitivity
+            sensitivity: 1.0, // Multiplier for mouse sensitivity
+            quality: 'HIGH' // Graphics Quality: LOW, MEDIUM, HIGH
         };
         
         this.settings = this.load();

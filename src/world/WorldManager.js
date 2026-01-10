@@ -31,8 +31,8 @@ export class WorldManager {
 
         this.frustum = new THREE.Frustum();
         this.projScreenMatrix = new THREE.Matrix4();
-        // Calc max visible dist
-        this.maxVisibleDistSq = (this.chunkSize * this.renderDistance + 32) ** 2;
+        
+        this.updateMaxVisibleDist();
 
         this.disposalQueue = [];
 
@@ -41,6 +41,19 @@ export class WorldManager {
         this.worker.onmessage = (e) => {
             this.applyQueue.push(e.data);
         };
+    }
+
+    setRenderDistance(dist) {
+        if (this.renderDistance !== dist) {
+            this.renderDistance = dist;
+            this.updateMaxVisibleDist();
+            // Trigger an immediate queue update to cull far chunks
+            this.lastUpdate = 0;
+        }
+    }
+
+    updateMaxVisibleDist() {
+        this.maxVisibleDistSq = (this.chunkSize * this.renderDistance + 32) ** 2;
     }
 
     reset() {
