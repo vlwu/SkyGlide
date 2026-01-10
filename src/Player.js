@@ -60,12 +60,11 @@ export class Player {
 
         // 2. Left Wing Pivot
         this.leftWingPivot = new THREE.Group();
-        this.leftWingPivot.position.set(-0.2, 0, 0); // Attach to left side
+        this.leftWingPivot.position.set(-0.2, 0, 0);
         this.mesh.add(this.leftWingPivot);
 
-        // Left Wing Geometry (Origin at x=0 for pivoting, extends -x)
         const lWingGeo = new THREE.BoxGeometry(1.4, 0.05, 0.6);
-        lWingGeo.translate(-0.7, 0, 0.1); // Shift so pivot is at edge, slightly back
+        lWingGeo.translate(-0.7, 0, 0.1);
         
         this.leftWing = new THREE.Mesh(lWingGeo, matWing);
         this.leftWing.castShadow = true;
@@ -74,10 +73,9 @@ export class Player {
 
         // 3. Right Wing Pivot
         this.rightWingPivot = new THREE.Group();
-        this.rightWingPivot.position.set(0.2, 0, 0); // Attach to right side
+        this.rightWingPivot.position.set(0.2, 0, 0);
         this.mesh.add(this.rightWingPivot);
 
-        // Right Wing Geometry (Origin at x=0 for pivoting, extends +x)
         const rWingGeo = new THREE.BoxGeometry(1.4, 0.05, 0.6);
         rWingGeo.translate(0.7, 0, 0.1); 
 
@@ -88,12 +86,21 @@ export class Player {
 
         this.scene.add(this.mesh);
 
+        // Optimization: Mouse movement debouncing
+        this._lastMouseTime = 0;
+        this._mouseThrottle = 8; // Process mouse input every 8ms (~120Hz max)
+
         this.initInput();
     }
 
     initInput() {
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement !== document.body) return;
+
+            // Optimization: Throttle mouse input processing
+            const now = performance.now();
+            if (now - this._lastMouseTime < this._mouseThrottle) return;
+            this._lastMouseTime = now;
 
             // Filter out large jumps caused by browser lag
             if (Math.abs(e.movementX) > 200 || Math.abs(e.movementY) > 200) return;

@@ -20,6 +20,9 @@ export class Chunk {
 
         // Bounding box for manual culling
         this.bbox = new THREE.Box3();
+        
+        // Shadow state cache
+        this._lastShadowState = false;
     }
 
     getBlock(x, y, z) {
@@ -65,20 +68,22 @@ export class Chunk {
     update(distSq) {
         if (!this.mesh) return;
 
-        // Performance: Strict Shadow Culling
+        // Performance: Strict Shadow Culling with state caching
         // Only cast shadows if within 35 units (35^2 = 1225)
-        // This keeps the shadow caster count very low.
         const shadowDistSq = 1225;
+        const shouldCastShadow = distSq <= shadowDistSq;
 
-        if (distSq > shadowDistSq) {
-            if (this.mesh.castShadow) this.mesh.castShadow = false;
-        } else {
-            if (!this.mesh.castShadow) this.mesh.castShadow = true;
+        // Only update if state changed (avoid redundant GPU updates)
+        if (shouldCastShadow !== this._lastShadowState) {
+            this.mesh.castShadow = shouldCastShadow;
+            this._lastShadowState = shouldCastShadow;
         }
     }
 
     setVisible(visible) {
-        if (this.mesh) this.mesh.visible = visible;
+        if (this.mesh && this.mesh.visible !== visible) {
+            this.mesh.visible = visible;
+        }
     }
 
     dispose() {
@@ -89,5 +94,6 @@ export class Chunk {
         }
         this.data = null;
         this.isLoaded = false;
+        this._lastShadowState = false;
     }
 }
