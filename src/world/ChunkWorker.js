@@ -38,39 +38,31 @@ const BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
 const BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
 const BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
 
-// Optimization: Fast RGB setting without expensive HSL math
 function fastColor(type, rand, out) {
     let r, g, b;
-    // Pre-calculated base RGBs + random variations
     switch (type) {
         case BLOCK.GRASS: 
-            // Greenish: H=0.25-0.3
             r = 0.1 + rand * 0.1; 
             g = 0.5 + rand * 0.15; 
             b = 0.1 + rand * 0.1;
             break;
         case BLOCK.DIRT: 
-            // Brown
             r = 0.35 + rand * 0.1; 
             g = 0.25 + rand * 0.05; 
             b = 0.15 + rand * 0.05;
             break;
         case BLOCK.STONE: 
-            // Grey
             r = g = b = 0.4 + rand * 0.15;
             break;
         case BLOCK.SNOW: 
-            // White
             r = g = b = 0.9 + rand * 0.1;
             break;
         case BLOCK.SAND: 
-            // Yellow/Tan
             r = 0.75 + rand * 0.1; 
             g = 0.7 + rand * 0.1; 
             b = 0.4 + rand * 0.1;
             break;
         case BLOCK.ICE: 
-            // Light Blue
             r = 0.5; g = 0.7; b = 0.9;
             break;
         case BLOCK.SPAWN: 
@@ -85,12 +77,10 @@ function fastColor(type, rand, out) {
 self.onmessage = (e) => {
     const { x, z, size, height, pathSegments } = e.data;
     
-    // Use Flat Float32Array for better memory locality if needed, but Uint8 is fine for blocks
     const data = new Uint8Array(size * height * size);
     const startX = x * size;
     const startZ = z * size;
     
-    // Optimization: Cache constants
     const strideY = size;          
     const strideZ = size * height; 
     
@@ -104,8 +94,6 @@ self.onmessage = (e) => {
         for (let lz = 0; lz < size; lz++) {
             const wz = startZ + lz;
 
-            // Reduce noise calls by checking bounds or simplifying? 
-            // For now, keep visual fidelity but ensure calculations are clean.
             let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
             const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
             if (mountain > 0) h += mountain * 35;
@@ -113,11 +101,15 @@ self.onmessage = (e) => {
 
             const colBase = lx + lz * strideZ;
 
-            for (let y = 0; y < height; y++) {
+            // OPTIMIZATION: Early exit loop
+            // Don't loop all the way to 'height' (96) if ground is only at 30.
+            // Add padding for floating islands (approx max height 90)
+            const loopMax = Math.min(height, Math.max(groundHeight + 2, 90));
+
+            for (let y = 0; y < loopMax; y++) {
                 let blockType = BLOCK.AIR;
                 
                 if (y <= groundHeight) {
-                    // Logic remains same, just ensuring quick path
                     const depth = groundHeight - y;
                     if (groundHeight > 58) {
                         blockType = (depth === 0) ? BLOCK.SNOW : (depth < 3 ? BLOCK.STONE : BLOCK.STONE);
@@ -126,7 +118,7 @@ self.onmessage = (e) => {
                     } else {
                         blockType = (depth === 0) ? BLOCK.GRASS : (depth < 3 ? BLOCK.DIRT : BLOCK.STONE);
                     }
-                } else if (y > 45 && y < 90) {
+                } else if (y > 45) {
                     const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
                     if (islandNoise > 0.45) {
                         if (y > 80) blockType = BLOCK.ICE;
@@ -145,7 +137,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // 2. CARVE TUNNEL (Unchanged logic, it's fast enough)
+    // 2. CARVE TUNNEL
     for (let lz = 0; lz < size; lz++) {
         const wz = startZ + lz;
         const points = pathSegments[wz];
@@ -160,7 +152,7 @@ self.onmessage = (e) => {
                 const p = points[i];
                 const dx = wx - p.x;
                 const dxSq = dx * dx;
-                if (dxSq < 81) { // 9^2
+                if (dxSq < 81) { 
                     const dySpan = Math.sqrt(81 - dxSq);
                     if (p.y - dySpan < tunnelMinY) tunnelMinY = p.y - dySpan;
                     if (p.y + dySpan > tunnelMaxY) tunnelMaxY = p.y + dySpan;
@@ -178,7 +170,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // 3. FORCE SPAWN (Unchanged)
+    // 3. FORCE SPAWN
     const minWx = -2, maxWx = 2;
     const minWz = -2, maxWz = 2;
     const loopMinX = Math.max(0, minWx - startX);
@@ -198,13 +190,11 @@ self.onmessage = (e) => {
         }
     }
 
-    // 4. MESH GENERATION (OPTIMIZED)
+    // 4. MESH GENERATION
     let vertCount = 0;
     let indexCount = 0;
     const rgb = [0,0,0];
 
-    // Optimization: Precompute check offsets
-    // Neighbors: +X, -X, +Y, -Y, +Z, -Z
     const OFFSETS = [1, -1, strideY, -strideY, strideZ, -strideZ];
 
     for (let lz = 0; lz < size; lz++) {
@@ -218,19 +208,16 @@ self.onmessage = (e) => {
                 const type = data[idx];
                 if (type === BLOCK.AIR) continue;
 
-                // Fast color calc
                 const wx = startX + lx;
                 const wz = startZ + lz;
-                // Fast integer hash for "random"
+                
                 let h = (wx * 374761393) ^ (y * 668265263) ^ (wz * 963469177);
                 h = (h ^ (h >> 13)) * 1274124933;
                 const rand = ((h >>> 0) / 4294967296); 
                 
                 fastColor(type, rand, rgb);
 
-                // Check 6 faces
                 for (let f = 0; f < 6; f++) {
-                    // Optimization: Check boundaries before array access
                     let exposed = true;
                     
                     const nx = lx + FACE_DIRS[f*3];
@@ -238,7 +225,6 @@ self.onmessage = (e) => {
                     const nz = lz + FACE_DIRS[f*3+2];
 
                     if (nx >= 0 && nx < size && ny >= 0 && ny < height && nz >= 0 && nz < size) {
-                        // Safe to access array directly with precomputed offset
                         if (data[idx + OFFSETS[f]] !== BLOCK.AIR) {
                             exposed = false;
                         }
@@ -255,7 +241,6 @@ self.onmessage = (e) => {
                     const vBase = vertCount;
                     const cOffset = f * 4;
                     
-                    // Unrolling loop slightly for performance
                     for (let c = 0; c < 4; c++) {
                         const corner = FACE_CORNERS[cOffset + c];
                         const dst = vertCount * 3;

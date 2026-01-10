@@ -66,6 +66,10 @@ export class WorldManager {
         this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
 
+        if (camera) {
+            camera.getWorldDirection(this._cameraForward);
+        }
+
         // Optimization: Pre-calculate square distance for "always visible" radius (approx 2 chunks)
         const safeRadiusSq = 1600; // 40^2
 
@@ -79,10 +83,20 @@ export class WorldManager {
             let isVisible = false;
 
             if (distSq <= this.maxVisibleDistSq) {
-                // Optimization: Skip frustum check for very close chunks
-                if (distSq < safeRadiusSq) {
-                    isVisible = true;
-                } else if (this.frustum.intersectsBox(chunk.bbox)) {
+                // OPTIMIZATION: Simple dot product check before frustum check
+                // If chunk is far away and behind the camera, skip it immediately.
+                if (distSq > safeRadiusSq) {
+                    // Normalize direction to chunk roughly
+                    const invLen = 1.0 / Math.sqrt(distSq);
+                    const dot = (dx * invLen * this._cameraForward.x) + (dz * invLen * this._cameraForward.z);
+                    
+                    // If dot > -0.5, it's roughly in front or side. If < -0.5, it's behind.
+                    if (dot > -0.5) {
+                         if (this.frustum.intersectsBox(chunk.bbox)) {
+                            isVisible = true;
+                        }
+                    }
+                } else {
                     isVisible = true;
                 }
             }
@@ -143,12 +157,6 @@ export class WorldManager {
         const centerChunkX = Math.floor(playerPos.x / this.chunkSize);
         const centerChunkZ = Math.floor(playerPos.z / this.chunkSize);
 
-        if (camera) {
-            camera.getWorldDirection(this._cameraForward);
-            this._cameraForward.y = 0;
-            this._cameraForward.normalize();
-        }
-
         const activeKeys = new Set();
         const newQueue = [];
         const range = this.renderDistance;
@@ -203,7 +211,6 @@ export class WorldManager {
         
         let chunk;
 
-        // Optimization: Fast integer comparison avoids string allocation for hot-path lookups
         if (this.lastChunk && this.lastCX === cx && this.lastCZ === cz) {
             chunk = this.lastChunk;
         } else {

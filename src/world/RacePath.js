@@ -16,7 +16,6 @@ export class RacePath {
         this.visualBuckets = new Map();
         this.VISUAL_BUCKET_SIZE = 100;
         
-        // Optimization: Zero-allocation visibility tracking
         this._visibleItems = [];
         this._frameCount = 0;
 
@@ -30,6 +29,58 @@ export class RacePath {
         this.uniforms = {
             uTime: { value: 0 }
         };
+
+        // OPTIMIZATION: Create shared materials once.
+        // Compiling shaders is expensive; doing it for every tube segment caused the freeze.
+        this.sharedTubeMat = new THREE.ShaderMaterial({
+            uniforms: this.uniforms,
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float uTime;
+                varying vec2 vUv;
+                void main() {
+                    float t = vUv.x * 3.0 - uTime * 0.5;
+                    vec3 purple = vec3(0.3, 0.0, 0.6);
+                    vec3 gold   = vec3(1.0, 0.9, 0.3);
+                    float n = sin(t) * 0.5 + 0.5;
+                    vec3 col = mix(purple, gold, n);
+                    float alpha = 0.6 + 0.2 * sin(vUv.x * 20.0 - uTime * 2.0);
+                    gl_FragColor = vec4(col, alpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+
+        this.sharedPartMat = new THREE.ShaderMaterial({
+            uniforms: this.uniforms,
+            vertexShader: `
+                uniform float uTime;
+                attribute vec3 aRandom;
+                attribute float aPhase;
+                varying float vAlpha;
+                void main() {
+                    float life = mod(uTime * 0.3 + aPhase, 1.0);
+                    vec3 newPos = position + aRandom * (life * 3.0);
+                    vec4 mvPosition = modelViewMatrix * vec4(newPos, 1.0);
+                    gl_Position = projectionMatrix * mvPosition;
+                    vAlpha = 1.0 - smoothstep(0.0, 1.0, life);
+                    gl_PointSize = (6.0 * vAlpha) * (100.0 / -mvPosition.z);
+                }
+            `,
+            fragmentShader: `varying float vAlpha; void main() { if (vAlpha < 0.05) discard; gl_FragColor = vec4(1.0, 0.7, 0.2, vAlpha); }`,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
         
         this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
         
@@ -44,7 +95,7 @@ export class RacePath {
         this.visualItems.forEach(item => {
             this.scene.remove(item);
             if (item.geometry) item.geometry.dispose();
-            if (item.material) item.material.dispose();
+            // Do NOT dispose the shared material
         });
         this.visualItems = [];
         this.visualBuckets.clear();
@@ -145,8 +196,9 @@ export class RacePath {
         this.curves.push({ curve, depth }); 
 
         const length = curve.getLength();
-        // Improvement: Increase divisions significantly for smoother tunnel carving
-        const divisions = Math.floor(length * 10); 
+        // OPTIMIZATION: Reduced sampling resolution (from *10 to *2). 
+        // We don't need mm-precision for the path lookup.
+        const divisions = Math.floor(length * 2); 
         const spacedPoints = curve.getSpacedPoints(divisions);
 
         if (spacedPoints.length > 0) {
@@ -182,7 +234,6 @@ export class RacePath {
     addToLookup(z, point) {
         if (!this.pathLookup.has(z)) this.pathLookup.set(z, []);
         const list = this.pathLookup.get(z);
-        // Reduce threshold slightly to keep points dense enough
         if (list.length > 0) {
             const last = list[list.length - 1];
             if (last.distanceToSquared(point) < 0.25) return; 
@@ -321,53 +372,26 @@ export class RacePath {
 
     createVisuals() {
         for (const { curve } of this.curves) {
-            // Improvement: Dynamic tube resolution based on length to prevent jagged edges
+            // OPTIMIZATION: Reduced Segments
+            // Before: length * 2 | After: length * 0.5
+            // This cuts vertex count by 75% without noticeable degradation at speed.
             const curveLength = curve.getLength();
-            const segments = Math.floor(curveLength * 2); // Higher resolution
+            const segments = Math.floor(curveLength * 0.5); 
 
-            const tubeGeo = new THREE.TubeGeometry(curve, segments, 0.2, 6, false);
+            // OPTIMIZATION: Reduced Radial Segments
+            // Before: 6 | After: 4 (Square tubes). Fits voxel style, 33% less geometry.
+            const tubeGeo = new THREE.TubeGeometry(curve, segments, 0.2, 4, false);
             tubeGeo.computeBoundingBox();
-            
-            const tubeVert = `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `;
 
-            const tubeFrag = `
-                uniform float uTime;
-                varying vec2 vUv;
-                void main() {
-                    float t = vUv.x * 3.0 - uTime * 0.5;
-                    vec3 purple = vec3(0.3, 0.0, 0.6);
-                    vec3 gold   = vec3(1.0, 0.9, 0.3);
-                    float n = sin(t) * 0.5 + 0.5;
-                    vec3 col = mix(purple, gold, n);
-                    float alpha = 0.6 + 0.2 * sin(vUv.x * 20.0 - uTime * 2.0);
-                    gl_FragColor = vec4(col, alpha);
-                }
-            `;
-
-            const tubeMat = new THREE.ShaderMaterial({
-                uniforms: this.uniforms,
-                vertexShader: tubeVert,
-                fragmentShader: tubeFrag,
-                transparent: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
-                side: THREE.DoubleSide
-            });
-
-            const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+            // Use shared material
+            const tubeMesh = new THREE.Mesh(tubeGeo, this.sharedTubeMat);
             tubeMesh.userData.bbox = tubeGeo.boundingBox;
             this.scene.add(tubeMesh);
             this.addToVisualBucket(tubeMesh);
 
             // Particles
-            // Scaled particle count based on length to avoid gaps
-            const particleCount = Math.floor(curveLength * 0.4); 
+            // OPTIMIZATION: Reduced particle density (0.4 -> 0.2)
+            const particleCount = Math.floor(curveLength * 0.2); 
             const curvePoints = curve.getSpacedPoints(particleCount);
             const posArray = new Float32Array(particleCount * 3);
             const randomArray = new Float32Array(particleCount * 3);
@@ -392,28 +416,8 @@ export class RacePath {
             
             partGeo.computeBoundingBox();
 
-            const partMat = new THREE.ShaderMaterial({
-                uniforms: this.uniforms,
-                vertexShader: `
-                    uniform float uTime;
-                    attribute vec3 aRandom;
-                    attribute float aPhase;
-                    varying float vAlpha;
-                    void main() {
-                        float life = mod(uTime * 0.3 + aPhase, 1.0);
-                        vec3 newPos = position + aRandom * (life * 3.0);
-                        vec4 mvPosition = modelViewMatrix * vec4(newPos, 1.0);
-                        gl_Position = projectionMatrix * mvPosition;
-                        vAlpha = 1.0 - smoothstep(0.0, 1.0, life);
-                        gl_PointSize = (6.0 * vAlpha) * (100.0 / -mvPosition.z);
-                    }
-                `,
-                fragmentShader: `varying float vAlpha; void main() { if (vAlpha < 0.05) discard; gl_FragColor = vec4(1.0, 0.7, 0.2, vAlpha); }`,
-                transparent: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
-            });
-            const particles = new THREE.Points(partGeo, partMat);
+            // Use shared material
+            const particles = new THREE.Points(partGeo, this.sharedPartMat);
             particles.userData.bbox = partGeo.boundingBox;
             this.scene.add(particles);
             this.addToVisualBucket(particles);
@@ -451,15 +455,12 @@ export class RacePath {
             const currentFrame = this._frameCount;
             const visibleNow = [];
 
-            // Optimization: Avoid creating new Sets every frame. 
-            // Use frame-based tagging and simple arrays.
             for (let b = minB; b <= maxB; b++) {
                 const bucket = this.visualBuckets.get(b);
                 if (bucket) {
                     for (let i = 0; i < bucket.length; i++) {
                         const item = bucket[i];
                         if (item.userData.bbox) {
-                            // Culling Check
                             if (playerPos.z > item.userData.bbox.max.z + 100 || playerPos.z < item.userData.bbox.min.z - 250) {
                                 continue; 
                             }
@@ -472,15 +473,12 @@ export class RacePath {
                 }
             }
 
-            // Hide items that were visible previously but not this frame
             for (let i = 0; i < this._visibleItems.length; i++) {
                 const item = this._visibleItems[i];
                 if (item.userData.lastFrame !== currentFrame) {
                     item.visible = false;
                 }
             }
-
-            // Swap list (fast, no allocation if just replacing reference)
             this._visibleItems = visibleNow;
         }
     }
