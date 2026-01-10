@@ -33,20 +33,59 @@ export class Player {
         this.onGround = false;
         this.groundBlock = 0; 
         
-        // --- Visual Representation ---
-        const geometry = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8);
-        const material = new THREE.MeshPhongMaterial({
-            color: 0x00d2ff,        
-            emissive: 0x0044aa,
-            specular: 0xffffff,
-            shininess: 30,
-            opacity: 0.9,
-            transparent: true      
-        });
+        // --- Visual Representation (Falcon/Elytra Style) ---
+        this.mesh = new THREE.Group();
         
-        this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.castShadow = true;
-        this.mesh.receiveShadow = true;
+        // Materials
+        const matBody = new THREE.MeshPhongMaterial({ 
+            color: 0x00d2ff, 
+            emissive: 0x002244,
+            shininess: 30,
+            flatShading: true 
+        });
+        const matWing = new THREE.MeshPhongMaterial({ 
+            color: 0x0088bb, 
+            emissive: 0x001133,
+            shininess: 10,
+            side: THREE.DoubleSide,
+            flatShading: true 
+        });
+
+        // 1. Body (Fuselage)
+        const bodyGeo = new THREE.BoxGeometry(0.4, 0.2, 1.0);
+        this.bodyPart = new THREE.Mesh(bodyGeo, matBody);
+        this.bodyPart.castShadow = true;
+        this.bodyPart.receiveShadow = true;
+        this.mesh.add(this.bodyPart);
+
+        // 2. Left Wing Pivot
+        this.leftWingPivot = new THREE.Group();
+        this.leftWingPivot.position.set(-0.2, 0, 0); // Attach to left side
+        this.mesh.add(this.leftWingPivot);
+
+        // Left Wing Geometry (Origin at x=0 for pivoting, extends -x)
+        const lWingGeo = new THREE.BoxGeometry(1.4, 0.05, 0.6);
+        lWingGeo.translate(-0.7, 0, 0.1); // Shift so pivot is at edge, slightly back
+        
+        this.leftWing = new THREE.Mesh(lWingGeo, matWing);
+        this.leftWing.castShadow = true;
+        this.leftWing.receiveShadow = true;
+        this.leftWingPivot.add(this.leftWing);
+
+        // 3. Right Wing Pivot
+        this.rightWingPivot = new THREE.Group();
+        this.rightWingPivot.position.set(0.2, 0, 0); // Attach to right side
+        this.mesh.add(this.rightWingPivot);
+
+        // Right Wing Geometry (Origin at x=0 for pivoting, extends +x)
+        const rWingGeo = new THREE.BoxGeometry(1.4, 0.05, 0.6);
+        rWingGeo.translate(0.7, 0, 0.1); 
+
+        this.rightWing = new THREE.Mesh(rWingGeo, matWing);
+        this.rightWing.castShadow = true;
+        this.rightWing.receiveShadow = true;
+        this.rightWingPivot.add(this.rightWing);
+
         this.scene.add(this.mesh);
 
         this.initInput();
@@ -56,10 +95,7 @@ export class Player {
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement !== document.body) return;
 
-            // --- BUG FIX: MOUSE JUMP ---
-            // Reduced clamp threshold from 500 to 200.
-            // When lag spikes occur, browsers can accumulate mouse deltas.
-            // 200 is fast enough for gameplay but filters out frame-skip glitches.
+            // Filter out large jumps caused by browser lag
             if (Math.abs(e.movementX) > 200 || Math.abs(e.movementY) > 200) return;
 
             const baseSensitivity = 0.002;

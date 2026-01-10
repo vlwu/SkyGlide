@@ -14,11 +14,17 @@ export class PlayerCamera {
         this._idealPos = new THREE.Vector3();
         this._camDir = new THREE.Vector3();
         this._viewOffset = CONFIG.PLAYER.CAMERA.OFFSET.clone();
+
+        // Animation State
+        this._currentRoll = 0;
+        this._currentWingAngle = 0;
     }
 
     reset() {
         this.camera.fov = this.baseFOV;
         this.camera.updateProjectionMatrix();
+        this._currentRoll = 0;
+        this._currentWingAngle = 0;
     }
 
     update(dt, player) {
@@ -26,15 +32,55 @@ export class PlayerCamera {
         this._centerPos.y += player.dims.height / 2;
 
         player.mesh.position.copy(this._centerPos);
-        player.mesh.rotation.order = 'YXZ';
-        player.mesh.rotation.y = player.yaw;
+        player.mesh.rotation.order = 'YXZ'; // Yaw, Pitch, Roll
+        
+        // 1. Base Heading (Visual Correction: +PI so nose points forward)
+        player.mesh.rotation.y = player.yaw + Math.PI;
+
+        // 2. Pitch & Roll (Banking)
+        let targetRoll = 0;
+        let targetWingAngle = 0;
 
         if (player.state === 'FLYING') {
-            player.mesh.rotation.x = player.pitch - (Math.PI / 2);
+            // Pitch: Align directly with look direction
+            player.mesh.rotation.x = player.pitch;
+
+            // Roll: Bank based on input
+            const maxBank = 0.6; // ~35 degrees
+            if (player.keys.left) targetRoll = maxBank;
+            if (player.keys.right) targetRoll = -maxBank;
+
+            // Wing Sweep: Collapse when diving (pitch < 0)
+            // If pitch is -PI/2 (-1.57), max sweep
+            if (player.pitch < 0) {
+                targetWingAngle = -player.pitch * 0.8; // e.g. 1.2 rad sweep at nosedive
+            }
         } else {
+            // Walking/Falling
             player.mesh.rotation.x = 0;
+            targetRoll = 0;
+            targetWingAngle = 0; 
         }
 
+        // Smooth animations
+        const rollSpeed = 3.0;
+        const wingSpeed = 5.0;
+        
+        this._currentRoll += (targetRoll - this._currentRoll) * rollSpeed * dt;
+        this._currentWingAngle += (targetWingAngle - this._currentWingAngle) * wingSpeed * dt;
+
+        player.mesh.rotation.z = this._currentRoll;
+
+        if (player.leftWingPivot) {
+            // Left Wing Pivot: +Y rotates leading edge backwards
+            player.leftWingPivot.rotation.y = this._currentWingAngle;
+        }
+        if (player.rightWingPivot) {
+            // Right Wing Pivot: -Y rotates leading edge backwards
+            player.rightWingPivot.rotation.y = -this._currentWingAngle;
+        }
+
+        // --- Camera Logic (Unchanged) ---
         const speed = player.velocity.length();
         let desiredFOV = this.baseFOV;
         
