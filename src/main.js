@@ -12,10 +12,11 @@ import { BLOCK } from './world/BlockDefs.js';
 
 // Scene setup
 const scene = new THREE.Scene();
+// Initialize fog with placeholder values; they will be overwritten by applyGraphicsSettings immediately
 scene.fog = new THREE.Fog(
     CONFIG.GRAPHICS.FOG.COLOR, 
-    CONFIG.GRAPHICS.FOG.NEAR, 
-    CONFIG.WORLD.RENDER_DISTANCE_UNITS - CONFIG.GRAPHICS.FOG.FAR_OFFSET
+    10, 
+    100
 ); 
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -98,7 +99,11 @@ const applyGraphicsSettings = () => {
     
     // 4. Fog
     const renderDistUnits = renderDist * CONFIG.WORLD.CHUNK_SIZE;
-    scene.fog.far = renderDistUnits - CONFIG.GRAPHICS.FOG.FAR_OFFSET;
+    const fogFar = renderDistUnits - CONFIG.GRAPHICS.FOG.FAR_OFFSET;
+    
+    // Update Fog: Ensure near is proportionally smaller than far so the game isn't blank
+    scene.fog.far = fogFar;
+    scene.fog.near = Math.max(10, fogFar * 0.6); 
 };
 
 // Apply immediately on load
