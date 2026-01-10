@@ -23,63 +23,80 @@ self.onmessage = (e) => {
     const scaleIsland = 0.04;
     const scaleDetail = 0.1;
 
-    for (let lx = 0; lx < size; lx++) {
-        const wx = startX + lx;
-        for (let lz = 0; lz < size; lz++) {
-            const wz = startZ + lz;
-
-            const biome = getBiome(wx, wz);
-
-            let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
+    // OPTIMIZATION: Process in 4x4 blocks to cache biome lookups
+    for (let lx = 0; lx < size; lx += 4) {
+        for (let lz = 0; lz < size; lz += 4) {
             
-            const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
-            if (mountain > 0) h += mountain * 35;
+            // Sample biome at the corner of the 4x4 block
+            const sampleWx = startX + lx;
+            const sampleWz = startZ + lz;
+            const biome = getBiome(sampleWx, sampleWz);
             
-            if (biome === 'mountain') {
-                h += noise3D(wx * scaleMount * 0.5, 200, wz * scaleMount * 0.5) * 20;
-            } else if (biome === 'desert') {
-                const dunes = noise3D(wx * 0.05, 300, wz * 0.05);
-                h = h * 0.7 + dunes * 8;
-            } else if (biome === 'tundra') {
-                h = h * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
-            }
-            
-            const groundHeight = Math.floor(h);
-            const colBase = lx + lz * strideZ;
-            const loopMax = Math.min(height, Math.max(groundHeight + 2, 90));
-
-            for (let y = 0; y < loopMax; y++) {
-                let blockType = BLOCK.AIR;
+            // Process the 4x4 block (handle boundaries for non-power-of-4 sizes if needed, though size is 16)
+            for (let bx = 0; bx < 4; bx++) {
+                const currLx = lx + bx;
+                if (currLx >= size) break;
                 
-                if (y <= groundHeight) {
-                    const depth = groundHeight - y;
-                    blockType = getBiomeBlock(biome, depth, y, groundHeight);
+                const wx = startX + currLx;
+
+                for (let bz = 0; bz < 4; bz++) {
+                    const currLz = lz + bz;
+                    if (currLz >= size) break;
+
+                    const wz = startZ + currLz;
+
+                    let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
                     
-                    if (depth === 0) {
-                        const detail = noise3D(wx * scaleDetail, y * scaleDetail, wz * scaleDetail);
-                        if (biome === 'plains' && detail > 0.6) blockType = BLOCK.MOSS_STONE;
-                        if (biome === 'mountain' && groundHeight > 60 && detail < -0.6) blockType = BLOCK.MARBLE;
+                    const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
+                    if (mountain > 0) h += mountain * 35;
+                    
+                    if (biome === 'mountain') {
+                        h += noise3D(wx * scaleMount * 0.5, 200, wz * scaleMount * 0.5) * 20;
+                    } else if (biome === 'desert') {
+                        const dunes = noise3D(wx * 0.05, 300, wz * 0.05);
+                        h = h * 0.7 + dunes * 8;
+                    } else if (biome === 'tundra') {
+                        h = h * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
                     }
-                } else if (y > 45) {
-                    // Floating islands
-                    const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
-                    if (islandNoise > 0.45) {
-                        if (y > 80) blockType = BLOCK.PACKED_ICE;
-                        else if (y > 78) blockType = BLOCK.ICE;
-                        else {
-                            const islandDetail = noise3D(wx * 0.15, y * 0.15, wz * 0.15);
-                            if (islandDetail > 0.3) blockType = BLOCK.MARBLE;
-                            else if (islandDetail < -0.3) blockType = BLOCK.GRANITE;
-                            else blockType = BLOCK.STONE;
+                    
+                    const groundHeight = Math.floor(h);
+                    const colBase = currLx + currLz * strideZ;
+                    const loopMax = Math.min(height, Math.max(groundHeight + 2, 90));
+
+                    for (let y = 0; y < loopMax; y++) {
+                        let blockType = BLOCK.AIR;
+                        
+                        if (y <= groundHeight) {
+                            const depth = groundHeight - y;
+                            blockType = getBiomeBlock(biome, depth, y, groundHeight);
+                            
+                            if (depth === 0) {
+                                const detail = noise3D(wx * scaleDetail, y * scaleDetail, wz * scaleDetail);
+                                if (biome === 'plains' && detail > 0.6) blockType = BLOCK.MOSS_STONE;
+                                if (biome === 'mountain' && groundHeight > 60 && detail < -0.6) blockType = BLOCK.MARBLE;
+                            }
+                        } else if (y > 45) {
+                            // Floating islands
+                            const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
+                            if (islandNoise > 0.45) {
+                                if (y > 80) blockType = BLOCK.PACKED_ICE;
+                                else if (y > 78) blockType = BLOCK.ICE;
+                                else {
+                                    const islandDetail = noise3D(wx * 0.15, y * 0.15, wz * 0.15);
+                                    if (islandDetail > 0.3) blockType = BLOCK.MARBLE;
+                                    else if (islandDetail < -0.3) blockType = BLOCK.GRANITE;
+                                    else blockType = BLOCK.STONE;
+                                }
+                                if (y < 70 && islandNoise < 0.5 && noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0) {
+                                    blockType = BLOCK.MOSS_STONE;
+                                }
+                            }
                         }
-                        if (y < 70 && islandNoise < 0.5 && noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0) {
-                            blockType = BLOCK.MOSS_STONE;
+                        
+                        if (blockType !== BLOCK.AIR) {
+                            data[colBase + y * strideY] = blockType; 
                         }
                     }
-                }
-                
-                if (blockType !== BLOCK.AIR) {
-                    data[colBase + y * strideY] = blockType; 
                 }
             }
         }
@@ -203,8 +220,6 @@ self.onmessage = (e) => {
                         const corner = FACE_CORNERS[cOffset + c];
                         const dst = vertCount * 3;
                         
-                        // OPTIMIZATION: Bake world position into the geometry
-                        // This avoids costly matrix updates on the main thread
                         BUFFER_POS[dst] = startX + lx + corner[0];
                         BUFFER_POS[dst+1] = y + corner[1];
                         BUFFER_POS[dst+2] = startZ + lz + corner[2];

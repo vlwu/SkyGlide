@@ -442,7 +442,9 @@ export class RacePath {
 
                 // 1. Tube Visuals
                 const subCurve = new THREE.CatmullRomCurve3(subset);
-                const tubeGeo = new THREE.TubeGeometry(subCurve, subset.length * 2, 0.2, 4, false);
+                
+                // OPTIMIZATION: Reduced radial segments from 4 to 3
+                const tubeGeo = new THREE.TubeGeometry(subCurve, subset.length * 2, 0.2, 3, false);
                 tubeGeo.computeBoundingBox();
 
                 const tubeMesh = new THREE.Mesh(tubeGeo, this.sharedTubeMat);

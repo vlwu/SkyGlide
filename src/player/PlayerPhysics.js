@@ -115,7 +115,8 @@ export class PlayerPhysics {
 
         if (this._inputDir.lengthSq() > 0) this._inputDir.normalize();
 
-        player.velocity.add(this._inputDir.multiplyScalar(moveSpeed * friction * dt));
+        // Use addScaledVector to avoid creating new Vector3s via multiplyScalar
+        player.velocity.addScaledVector(this._inputDir, moveSpeed * friction * dt);
 
         if (player.onGround) {
             player.velocity.y = 0;
@@ -136,7 +137,10 @@ export class PlayerPhysics {
 
         const airSpeed = 5;
         this._forward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw)).normalize();
-        if (player.keys.forward) player.velocity.add(this._forward.multiplyScalar(airSpeed * dt));
+        
+        if (player.keys.forward) {
+            player.velocity.addScaledVector(this._forward, airSpeed * dt);
+        }
 
         if (player.jumpPressedThisFrame && !player.onGround) {
             player.state = 'FLYING';
@@ -147,7 +151,7 @@ export class PlayerPhysics {
                     Math.sin(player.pitch),
                     Math.cos(player.yaw) * Math.cos(player.pitch)
                 );
-                player.velocity.add(this._lookDir.multiplyScalar(CONFIG.PHYSICS.SPEED_FLY_MIN - speed));
+                player.velocity.addScaledVector(this._lookDir, CONFIG.PHYSICS.SPEED_FLY_MIN - speed);
             }
         }
     }

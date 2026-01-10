@@ -57,8 +57,6 @@ export class PlayerCamera {
             player.mesh.rotation.x = player.pitch;
 
             // Roll: Bank based on mouse turn
-            // yawDelta negative = turning right -> bank right (negative roll)
-            // yawDelta positive = turning left -> bank left (positive roll)
             const mouseBankFactor = 15.0;
             const mouseRoll = Math.max(-1.0, Math.min(1.0, yawDelta * mouseBankFactor));
             
@@ -79,7 +77,6 @@ export class PlayerCamera {
         }
 
         // Smooth animations
-        // Increased roll speed for snappy feedback on mouse turns
         const rollSpeed = 5.0; 
         const wingSpeed = 5.0;
         
@@ -133,15 +130,37 @@ export class PlayerCamera {
         const maxDist = this._camDir.length();
         this._camDir.normalize();
 
+        // Binary Search for Collision (Optimization over linear stepping)
+        let low = 0;
+        let high = maxDist;
         let actualDist = maxDist;
-        const step = CONFIG.PLAYER.CAMERA.COLLISION_STEP; 
-
-        for (let d = 0; d <= maxDist; d += step) {
-            this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, d);
-            if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
-                actualDist = Math.max(0.5, d - 0.2); 
-                break;
+        let hitFound = false;
+        
+        // 4 iterations gives decent precision for camera purposes
+        const iterations = 4;
+        
+        // Check max distance first to avoid search if clear
+        this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, maxDist);
+        if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
+            hitFound = true;
+            
+            for (let i = 0; i < iterations; i++) {
+                const mid = (low + high) * 0.5;
+                this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, mid);
+                
+                if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
+                    // Blocked at mid, obstruction is closer
+                    high = mid;
+                    hitFound = true;
+                } else {
+                    // Clear at mid, obstruction is further
+                    low = mid;
+                }
             }
+        }
+
+        if (hitFound) {
+            actualDist = Math.max(0.5, low - 0.2);
         }
 
         this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, actualDist);

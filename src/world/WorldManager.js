@@ -79,9 +79,10 @@ export class WorldManager {
         return chunk && chunk.isLoaded;
     }
 
-    update(playerPos, camera) {
+    update(player, camera) {
         this.frameCounter++;
         const now = performance.now();
+        const playerPos = player.position;
         
         // Batched mesh application (2/frame)
         let applyCount = 0;
@@ -160,10 +161,21 @@ export class WorldManager {
             this.updateQueue(playerPos, camera);
         }
 
-        const JOBS_PER_FRAME = 2;
+        // OPTIMIZATION: Adjust jobs based on player state
+        const speed = player.velocity.length();
+        let jobsPerFrame = 2;
+        
+        if (speed < 5) {
+            // Idle/Walking: Load more terrain
+            jobsPerFrame = 4;
+        } else if (speed > 20) {
+            // Fast Flying: Reduce load to keep frame rate high
+            jobsPerFrame = 1;
+        }
+
         let dispatched = 0;
 
-        while (this.generationQueue.length > 0 && dispatched < JOBS_PER_FRAME) {
+        while (this.generationQueue.length > 0 && dispatched < jobsPerFrame) {
             const req = this.generationQueue.shift();
             
             if (this.chunks.has(req.key)) continue;

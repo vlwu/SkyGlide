@@ -144,7 +144,7 @@ uiManager.setRestartHandler((mode) => {
         racePath.resetRings();
     }
     
-    worldManager.update(player.position, camera); 
+    worldManager.update(player, camera); 
 });
 
 uiManager.setExitHandler(() => {
@@ -216,7 +216,7 @@ function animate(time) {
 
             player.update(dt);
             
-            worldManager.update(player.position, camera);
+            worldManager.update(player, camera);
 
             if (player.position.y < CONFIG.GAME.FLOOR_LIMIT || player.position.y > CONFIG.GAME.CEILING_LIMIT) {
                 triggerGameOver();
