@@ -57,7 +57,8 @@ export class PlayerCamera {
             player.mesh.rotation.x = player.pitch;
 
             // Roll: Bank based on mouse turn
-            const mouseBankFactor = 15.0;
+            // If braking, banking is more aggressive
+            const mouseBankFactor = player.keys.brake ? 25.0 : 15.0;
             const mouseRoll = Math.max(-1.0, Math.min(1.0, yawDelta * mouseBankFactor));
             
             targetRoll += mouseRoll;
@@ -65,15 +66,15 @@ export class PlayerCamera {
             // Clamp combined roll to reasonable limits (~70 degrees)
             targetRoll = Math.max(-1.2, Math.min(1.2, targetRoll));
 
-            // Wing Sweep: Collapse when diving
-            // Goal: Fully collapse (approx 1.6 rad) when pitch is < -50 degrees (-0.87 rad)
+            // Wing Sweep
             if (player.pitch < 0) {
-                // Calculate ratio: 0 at 0 degrees, 1 at -50 degrees
-                const diveThreshold = 0.87; // ~50 degrees
+                const diveThreshold = 0.87; 
                 const diveRatio = Math.min(1.0, Math.abs(player.pitch) / diveThreshold);
-                
-                // Sweep angle: 0 to 1.6 radians
                 targetWingAngle = diveRatio * 1.6;
+            } else if (player.keys.brake) {
+                // Flaps/Air Brake visual? Flare wings out or up?
+                // Let's sweep them forward slightly (-0.5) to act as brakes
+                targetWingAngle = -0.5; 
             }
         } else {
             // Walking/Falling
@@ -84,9 +85,8 @@ export class PlayerCamera {
 
         // Smooth animations
         const rollSpeed = 5.0; 
-        const wingSpeed = 8.0; // Faster response for diving
+        const wingSpeed = 8.0; 
         
-        // OPTIMIZATION: Only update transforms if there's a visible change
         if (Math.abs(targetRoll - this._currentRoll) > 0.001) {
             this._currentRoll += (targetRoll - this._currentRoll) * rollSpeed * dt;
             player.mesh.rotation.z = this._currentRoll;
@@ -109,9 +109,14 @@ export class PlayerCamera {
         
         if (player.state === 'FLYING') {
             const minS = CONFIG.PHYSICS.SPEED_FLY_MIN;
-            const range = CONFIG.PHYSICS.SPEED_FLY_MAX - minS;
+            // Use cap to determine FOV stretch
+            const range = CONFIG.PHYSICS.SPEED_BOOST_CAP - minS;
             const t = Math.max(0, Math.min(1, (speed - minS) / range));
             desiredFOV = this.baseFOV + (t * 35); 
+            
+            if (player.isBoosting) {
+                desiredFOV += CONFIG.PHYSICS.BOOST.FOV_ADD;
+            }
         }
 
         this.camera.fov += (desiredFOV - this.camera.fov) * 5.0 * dt;
@@ -136,30 +141,24 @@ export class PlayerCamera {
         const maxDist = this._camDir.length();
         this._camDir.normalize();
 
-        // Binary Search for Collision (Optimization over linear stepping)
+        // Binary Search for Collision
         let low = 0;
         let high = maxDist;
         let actualDist = maxDist;
         let hitFound = false;
         
-        // 4 iterations gives decent precision for camera purposes
         const iterations = 4;
         
-        // Check max distance first to avoid search if clear
         this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, maxDist);
         if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
             hitFound = true;
-            
             for (let i = 0; i < iterations; i++) {
                 const mid = (low + high) * 0.5;
                 this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, mid);
-                
                 if (this.world.getBlock(this._tempVec.x, this._tempVec.y, this._tempVec.z)) {
-                    // Blocked at mid, obstruction is closer
                     high = mid;
                     hitFound = true;
                 } else {
-                    // Clear at mid, obstruction is further
                     low = mid;
                 }
             }

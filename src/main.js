@@ -47,7 +47,6 @@ dirLight.shadow.camera.top = d;
 dirLight.shadow.camera.bottom = -d;
 dirLight.shadow.bias = -0.0005;
 
-// Initial placeholder mapSize, updated by settings
 dirLight.shadow.mapSize.width = 512;
 dirLight.shadow.mapSize.height = 512;
 
@@ -69,11 +68,9 @@ worldManager.reset();
 const uiManager = new UIManager(player);
 const fpsCounter = new FPSCounter();
 
-// --- GRAPHICS SETTINGS ---
 const applyGraphicsSettings = () => {
     const quality = settingsManager.get('quality');
     
-    // Presets
     let pixelRatio = 1.5;
     let shadows = true;
     let renderDist = 10;
@@ -90,29 +87,23 @@ const applyGraphicsSettings = () => {
         renderDist = 8;
         shadowMapSize = 256;
     }
-    // HIGH (default) falls through
 
-    // 1. Pixel Ratio (Resolution)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatio));
     
-    // 2. Shadows & Map Size
     if (dirLight.castShadow !== shadows) {
         dirLight.castShadow = shadows;
     }
     
     if (shadows) {
-        // Only update map size if it changed to avoid unnecessary re-init overhead
         if (dirLight.shadow.mapSize.width !== shadowMapSize) {
             dirLight.shadow.mapSize.width = shadowMapSize;
             dirLight.shadow.mapSize.height = shadowMapSize;
-            dirLight.shadow.map = null; // Force regeneration
+            dirLight.shadow.map = null; 
         }
     }
 
-    // 3. Render Distance
     worldManager.setRenderDistance(renderDist);
     
-    // 4. Fog
     const renderDistUnits = renderDist * CONFIG.WORLD.CHUNK_SIZE;
     const fogFar = renderDistUnits - CONFIG.GRAPHICS.FOG.FAR_OFFSET;
     
@@ -120,12 +111,8 @@ const applyGraphicsSettings = () => {
     scene.fog.near = Math.max(10, fogFar * 0.6); 
 };
 
-// Apply immediately on load
 applyGraphicsSettings();
-
-// Listen for changes
 uiManager.setSettingsChangeHandler(applyGraphicsSettings);
-// -------------------------
 
 uiManager.setRestartHandler((mode) => {
     isGameRunning = true;
@@ -186,7 +173,6 @@ window.addEventListener('resize', () => {
 const clock = new THREE.Clock();
 let lastFrameTime = 0;
 
-// Optimization: Track shadow position for distance checks
 const lastShadowPos = new THREE.Vector3(); 
 let framesSinceShadowUpdate = 0;
 
@@ -219,6 +205,11 @@ function animate(time) {
 
             player.update(dt);
             
+            // Add Score from Proximity
+            if (player.isNearTerrain) {
+                gameScore += CONFIG.GAME.PROXIMITY.SCORE_RATE * dt;
+            }
+
             worldManager.update(player, camera);
 
             if (player.position.y < CONFIG.GAME.FLOOR_LIMIT || player.position.y > CONFIG.GAME.CEILING_LIMIT) {
@@ -232,21 +223,21 @@ function animate(time) {
             const collisionResult = racePath.checkCollisions(player);
             if (collisionResult.scoreIncrease > 0) {
                 gameScore += collisionResult.scoreIncrease;
+                
+                // Ring collection now primarily restores energy
+                player.addEnergy(CONFIG.PLAYER.ENERGY_GAIN.RING);
             }
             
-            if (collisionResult.boostAmount > 0) {
-                player.applyBoost(collisionResult.boostAmount);
-            }
+            // Note: collisionResult.boostAmount was the old mechanics, we ignore it now 
+            // in favor of the manual boost system, or we could add it as small static velocity
+            // but the Player class handles the logic inside addEnergy.
 
-            uiManager.hud.update(player, gameScore);
+            uiManager.hud.update(player, gameScore, dt);
             
-            // OPTIMIZATION: Throttled Shadow Update
-            // Combine strict distance check (200^2 units) AND frame counter (1 sec)
             if (dirLight.castShadow) {
                 framesSinceShadowUpdate++;
                 const distMovedSq = player.position.distanceToSquared(lastShadowPos);
                 
-                // Only update if moved > 200 units AND at least 60 frames passed
                 if (distMovedSq > 40000 && framesSinceShadowUpdate > 60) {
                     dirLight.position.x = player.position.x + 50;
                     dirLight.position.z = player.position.z + 50;

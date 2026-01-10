@@ -33,7 +33,7 @@ export class SettingsMenu {
         if (fpsIndex === -1) fpsIndex = 0; 
 
         let qualIndex = QUALITY_STEPS.indexOf(currentQuality);
-        if (qualIndex === -1) qualIndex = 2; // Default HIGH
+        if (qualIndex === -1) qualIndex = 2; 
 
         this.element.innerHTML = `
             <div class="menu-content settings-content">
@@ -75,7 +75,7 @@ export class SettingsMenu {
                 </div>
 
                 <div class="settings-section">
-                    <h3>MOVEMENT</h3>
+                    <h3>CONTROLS</h3>
                     <div class="setting-row">
                         <span>Forward</span>
                         <button class="btn-bind" data-action="forward">${this.formatKey(keys.forward)}</button>
@@ -91,6 +91,14 @@ export class SettingsMenu {
                     <div class="setting-row">
                         <span>Right</span>
                         <button class="btn-bind" data-action="right">${this.formatKey(keys.right)}</button>
+                    </div>
+                    <div class="setting-row">
+                        <span>Boost</span>
+                        <button class="btn-bind" data-action="boost">${this.formatKey(keys.boost)}</button>
+                    </div>
+                    <div class="setting-row">
+                        <span>Brake / Turn</span>
+                        <button class="btn-bind" data-action="brake">${this.formatKey(keys.brake)}</button>
                     </div>
                     <div class="setting-row">
                         <span>Jump / Fly</span>
@@ -110,7 +118,10 @@ export class SettingsMenu {
     formatKey(code) {
         if (!code) return '???';
         if (code.startsWith('Key')) return code.slice(3);
+        if (code.startsWith('Digit')) return code.slice(5);
         if (code === 'Space') return 'SPACE';
+        if (code === 'ShiftLeft') return 'L-SHIFT';
+        if (code === 'ControlLeft') return 'L-CTRL';
         return code;
     }
 
@@ -122,7 +133,6 @@ export class SettingsMenu {
             }
         });
 
-        // Quality Slider
         const qSlider = this.element.querySelector('#quality-slider');
         const qLabel = this.element.querySelector('#quality-value');
 
@@ -137,7 +147,6 @@ export class SettingsMenu {
             this.uiManager.notifySettingsChanged();
         });
 
-        // Sensitivity Slider
         const sensSlider = this.element.querySelector('#sens-slider');
         const sensLabel = this.element.querySelector('#sens-value');
 
@@ -149,7 +158,6 @@ export class SettingsMenu {
             settingsManager.set('sensitivity', parseFloat(e.target.value));
         });
 
-        // FPS Slider
         const fpsSlider = this.element.querySelector('#fps-slider');
         const fpsLabel = this.element.querySelector('#fps-value');
 

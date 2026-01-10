@@ -3,12 +3,13 @@ import { settingsManager } from './settings/SettingsManager.js';
 import { PlayerCamera } from './player/PlayerCamera.js';
 import { PlayerPhysics } from './player/PlayerPhysics.js';
 import { WindManager } from './player/WindManager.js';
+import { CONFIG } from './config/Config.js';
 
 export class Player {
     constructor(scene, camera, world) {
         this.scene = scene;
         this.world = world;
-        this.cameraObj = camera; // Store raw camera reference
+        this.cameraObj = camera; 
 
         // Components
         this.playerCamera = new PlayerCamera(camera, world);
@@ -20,6 +21,11 @@ export class Player {
         this.position = new THREE.Vector3(0, 16, 0); 
         this.velocity = new THREE.Vector3(0, 0, 0);
         
+        // Active Abilities State
+        this.energy = CONFIG.PLAYER.MAX_ENERGY;
+        this.isBoosting = false;
+        this.isNearTerrain = false;
+        
         this.pitch = 0; 
         this.yaw = Math.PI; 
         
@@ -27,7 +33,9 @@ export class Player {
             forward: false, backward: false,
             left: false, right: false,
             jump: false,
-            reset: false
+            reset: false,
+            boost: false,
+            brake: false
         };
         this.jumpPressedThisFrame = false; 
         this.resetPressedThisFrame = false;
@@ -36,7 +44,7 @@ export class Player {
         this.onGround = false;
         this.groundBlock = 0; 
         
-        // --- Visual Representation (Falcon/Elytra Style) ---
+        // --- Visual Representation ---
         this.mesh = new THREE.Group();
         
         // Materials
@@ -54,7 +62,7 @@ export class Player {
             flatShading: true 
         });
 
-        // 1. Body (Fuselage)
+        // 1. Body
         const bodyGeo = new THREE.BoxGeometry(0.4, 0.2, 1.0);
         this.bodyPart = new THREE.Mesh(bodyGeo, matBody);
         this.bodyPart.castShadow = true;
@@ -89,9 +97,8 @@ export class Player {
 
         this.scene.add(this.mesh);
 
-        // Optimization: Mouse movement debouncing
         this._lastMouseTime = 0;
-        this._mouseThrottle = 8; // Process mouse input every 8ms (~120Hz max)
+        this._mouseThrottle = 8; 
 
         this.initInput();
     }
@@ -100,12 +107,10 @@ export class Player {
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement !== document.body) return;
 
-            // Optimization: Throttle mouse input processing
             const now = performance.now();
             if (now - this._lastMouseTime < this._mouseThrottle) return;
             this._lastMouseTime = now;
 
-            // Filter out large jumps caused by browser lag
             if (Math.abs(e.movementX) > 200 || Math.abs(e.movementY) > 200) return;
 
             const baseSensitivity = 0.002;
@@ -123,6 +128,9 @@ export class Player {
             if (code === keys.backward) this.keys.backward = pressed;
             if (code === keys.left) this.keys.left = pressed;
             if (code === keys.right) this.keys.right = pressed;
+            if (code === keys.boost) this.keys.boost = pressed;
+            if (code === keys.brake) this.keys.brake = pressed;
+            
             if (code === keys.jump) {
                 if (pressed && !this.keys.jump) {
                     this.jumpPressedThisFrame = true;
@@ -152,6 +160,11 @@ export class Player {
         this.keys.reset = false;
         this.resetPressedThisFrame = false;
         
+        // Reset Energy
+        this.energy = CONFIG.PLAYER.MAX_ENERGY;
+        this.isBoosting = false;
+        this.isNearTerrain = false;
+        
         this.playerCamera.reset();
         this.windManager.reset();
     }
@@ -167,14 +180,37 @@ export class Player {
     update(dt) {
         this.physics.update(dt, this);
         this.jumpPressedThisFrame = false;
+        
+        // Active Abilities Energy Logic
+        if (this.state === 'FLYING') {
+            // Drain energy if boosting
+            if (this.isBoosting) {
+                this.energy -= CONFIG.PHYSICS.BOOST.COST * dt;
+                if (this.energy < 0) this.energy = 0;
+            } 
+            // Gain energy if near terrain (Proximity Risk/Reward)
+            else if (this.isNearTerrain) {
+                this.energy += CONFIG.PLAYER.ENERGY_GAIN.PROXIMITY * dt;
+                if (this.energy > CONFIG.PLAYER.MAX_ENERGY) this.energy = CONFIG.PLAYER.MAX_ENERGY;
+            }
+        }
+        
         this.playerCamera.update(dt, this);
         this.windManager.update(dt, this, this.cameraObj);
     }
+    
+    addEnergy(amount) {
+        this.energy += amount;
+        if (this.energy > CONFIG.PLAYER.MAX_ENERGY) this.energy = CONFIG.PLAYER.MAX_ENERGY;
+    }
 
-    applyBoost(speedIncrease) {
+    applyBoost(amount) {
+        // Obsolete "Direct Velocity" logic from Ring Collection?
+        // No, we still keep a small velocity bump for flow, 
+        // but primarily we fill the energy bar now.
         if (this.state !== 'FLYING') {
             this.state = 'FLYING';
-            this.position.y += speedIncrease > 30 ? 3.0 : 2.0;
+            this.position.y += 2.0;
         }
 
         const lookDir = new THREE.Vector3(
@@ -182,7 +218,11 @@ export class Player {
             Math.sin(this.pitch),
             Math.cos(this.yaw) * Math.cos(this.pitch)
         ).normalize();
-
-        this.velocity.add(lookDir.multiplyScalar(speedIncrease));
+        
+        // Small direct nudge
+        this.velocity.add(lookDir.multiplyScalar(5.0));
+        
+        // Major Energy Gain
+        this.addEnergy(CONFIG.PLAYER.ENERGY_GAIN.RING);
     }
 }

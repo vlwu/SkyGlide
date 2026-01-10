@@ -1,3 +1,5 @@
+import { CONFIG } from '../../config/Config.js';
+
 export class HUD {
     constructor(uiManager) {
         this.uiManager = uiManager;
@@ -5,21 +7,27 @@ export class HUD {
         this.element.id = 'hud';
         
         this.element.innerHTML = `
-            <div class="hud-item hud-score">
-                <span class="label">RINGS</span>
-                <span class="value" id="hud-score">0</span>
+            <div class="hud-top-right">
+                <div class="hud-item hud-score">
+                    <span class="label">RINGS</span>
+                    <span class="value" id="hud-score">0</span>
+                </div>
+                <div class="hud-item">
+                    <span class="label">ALTITUDE</span>
+                    <span class="value" id="hud-alt">0</span>
+                </div>
+                <div class="hud-item">
+                    <span class="label">SPEED</span>
+                    <span class="value" id="hud-speed">0</span>
+                </div>
             </div>
-            <div class="hud-item">
-                <span class="label">ALTITUDE</span>
-                <span class="value" id="hud-alt">0</span>
-            </div>
-            <div class="hud-item">
-                <span class="label">SPEED</span>
-                <span class="value" id="hud-speed">0</span>
-            </div>
-            <div class="hud-item">
-                <span class="label">STATE</span>
-                <span class="value" id="hud-state">WALKING</span>
+
+            <div class="hud-center-bottom">
+                <div id="prox-alert" class="prox-alert">PROXIMITY +<span id="prox-val">0</span></div>
+                <div class="energy-bar-container">
+                    <div class="energy-bar" id="hud-energy"></div>
+                    <span class="energy-label">BOOST</span>
+                </div>
             </div>
         `;
 
@@ -29,24 +37,26 @@ export class HUD {
         this.elScore = this.element.querySelector('#hud-score');
         this.elAlt = this.element.querySelector('#hud-alt');
         this.elSpeed = this.element.querySelector('#hud-speed');
-        this.elState = this.element.querySelector('#hud-state');
+        this.elEnergy = this.element.querySelector('#hud-energy');
+        this.elProx = this.element.querySelector('#prox-alert');
+        this.elProxVal = this.element.querySelector('#prox-val');
 
-        // State Cache for Dirty Checking
         this.lastScore = -1;
         this.lastAlt = -1;
         this.lastSpeed = -1;
-        this.lastState = '';
+        this.lastProx = false;
+        this.proxAccumulator = 0; // Visual accumulator
         
         this.lastUpdateTime = 0;
     }
 
-    update(player, score) {
+    update(player, score, dt) {
         const now = performance.now();
-        if (now - this.lastUpdateTime < 66) return;
+        if (now - this.lastUpdateTime < 33) return; // 30 FPS update cap for UI
         this.lastUpdateTime = now;
 
         if (this.lastScore !== score) {
-            this.elScore.textContent = score;
+            this.elScore.textContent = Math.floor(score);
             this.lastScore = score;
         }
 
@@ -56,16 +66,32 @@ export class HUD {
             this.lastAlt = alt;
         }
 
-        // Throttle speed precision to avoid jittery updates
         const speed = Math.round(player.velocity.length() * 10) / 10;
         if (this.lastSpeed !== speed) {
             this.elSpeed.textContent = speed.toFixed(1);
             this.lastSpeed = speed;
         }
 
-        if (this.lastState !== player.state) {
-            this.elState.textContent = player.state;
-            this.lastState = player.state;
+        // Update Energy Bar
+        const energyPct = (player.energy / CONFIG.PLAYER.MAX_ENERGY) * 100;
+        this.elEnergy.style.width = `${energyPct}%`;
+        
+        if (player.energy < CONFIG.PHYSICS.BOOST.COST * 0.1) {
+             this.elEnergy.style.background = '#552222'; // Empty/Depleted
+        } else if (player.isBoosting) {
+             this.elEnergy.style.background = '#fff'; // Flash white when boosting
+        } else {
+             this.elEnergy.style.background = '#00d2ff'; // Normal
+        }
+
+        // Proximity Indicator
+        if (player.isNearTerrain) {
+            this.elProx.style.opacity = '1';
+            this.proxAccumulator += CONFIG.GAME.PROXIMITY.SCORE_RATE * dt;
+            this.elProxVal.textContent = Math.floor(this.proxAccumulator);
+        } else {
+            this.elProx.style.opacity = '0';
+            this.proxAccumulator = 0;
         }
     }
 

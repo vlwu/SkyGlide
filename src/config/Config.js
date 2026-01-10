@@ -19,8 +19,22 @@ export const CONFIG = {
         JUMP_FORCE: 11.0,
         SPEED_WALK: 10.0,
         SPEED_FLY_MIN: 15.0,
-        SPEED_FLY_MAX: 35.0,
+        SPEED_FLY_MAX: 35.0, // Base max speed (without boost)
+        SPEED_BOOST_CAP: 60.0, // Absolute max speed while boosting
         FRICTION_DEFAULT: 10.0,
+        
+        // Active Ability Specs
+        BOOST: {
+            FORCE: 30.0, // Acceleration added
+            COST: 40.0, // Energy per second
+            FOV_ADD: 15  // Extra FOV when boosting
+        },
+        BRAKE: {
+            DRAG_MULT: 0.96, // Stronger velocity decay (air resistance)
+            TURN_MULT: 2.5,  // Tighter turning radius
+            MIN_SPEED: 10.0  // Don't stall completely
+        },
+
         ELYTRA: {
             GRAVITY: 32.0,
             LIFT_COEFF: 24.0,
@@ -34,6 +48,11 @@ export const CONFIG = {
     PLAYER: {
         HEIGHT: 1.8,
         RADIUS: 0.3, 
+        MAX_ENERGY: 100,
+        ENERGY_GAIN: {
+            RING: 25.0,
+            PROXIMITY: 20.0 // Per second
+        },
         CAMERA: {
             FOV: 75,
             BASE_DIST: 6.0,
@@ -45,6 +64,10 @@ export const CONFIG = {
         CEILING_LIMIT: 320, // Raised ceiling
         FLOOR_LIMIT: -30,
         CYCLE_DURATION: 300, 
+        PROXIMITY: {
+            DIST: 3.5, // Blocks distance to trigger
+            SCORE_RATE: 100 // Points per second
+        },
         RINGS: {
             BUCKET_SIZE: 20, 
             VISUAL_BUCKET_SIZE: 100,
