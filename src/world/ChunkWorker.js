@@ -1,3 +1,4 @@
+// src/world/ChunkWorker.js
 import { BLOCK, FACE_DIRS, FACE_CORNERS, isTransparent, isPlant } from './BlockDefs.js';
 import { fastColor, getBiome, getBiomeBlock, noise3D } from './BiomeUtils.js';
 
@@ -61,6 +62,7 @@ self.onmessage = (e) => {
                         if (biome === 'mountain' && groundHeight > 60 && detail < -0.6) blockType = BLOCK.MARBLE;
                     }
                 } else if (y > 45) {
+                    // Floating islands
                     const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
                     if (islandNoise > 0.45) {
                         if (y > 80) blockType = BLOCK.PACKED_ICE;
@@ -70,6 +72,9 @@ self.onmessage = (e) => {
                             if (islandDetail > 0.3) blockType = BLOCK.MARBLE;
                             else if (islandDetail < -0.3) blockType = BLOCK.GRANITE;
                             else blockType = BLOCK.STONE;
+                        }
+                        if (y < 70 && islandNoise < 0.5 && noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0) {
+                            blockType = BLOCK.MOSS_STONE;
                         }
                     }
                 }
@@ -81,15 +86,132 @@ self.onmessage = (e) => {
         }
     }
 
-    // VEGETATION & TUNNELS (omitted for brevity in prompt, but logically here in same structure)
-    // Simplified vegetation check: strictly avoid for High LODs to save perf
-    if (lod === 1) {
-        // [Re-insert Tree/Plant Logic Here - kept minimal for response size constraints]
-        // Assuming standard tree generation from original file is implicitly kept
-        // For strict optimization response, we just ensure data is populated.
+    // 2. VEGETATION PASS (Trees & Plants)
+    const treeCheckRange = 3; 
+    for (let lx = -treeCheckRange; lx < size + treeCheckRange; lx++) {
+        const wx = startX + lx;
+        for (let lz = -treeCheckRange; lz < size + treeCheckRange; lz++) {
+            const wz = startZ + lz;
+
+            // Simple deterministic noise for tree placement
+            const treeNoise = noise3D(wx * 0.8, 999, wz * 0.8);
+            if (treeNoise > 0.75) {
+                const biome = getBiome(wx, wz);
+                if (biome === 'plains' || biome === 'tundra' || biome === 'mountain') {
+                    // Calculate ground height
+                    let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
+                    const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
+                    if (mountain > 0) h += mountain * 35;
+                    if (biome === 'mountain') h += noise3D(wx * scaleMount * 0.5, 200, wz * scaleMount * 0.5) * 20;
+                    else if (biome === 'tundra') h = h * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
+                    
+                    const groundY = Math.floor(h);
+                    const surfaceBlock = getBiomeBlock(biome, 0, groundY, groundY);
+
+                    if (groundY > 10 && groundY < height - 10 && surfaceBlock === BLOCK.GRASS) {
+                        const treeHeight = 4 + Math.floor((treeNoise - 0.75) * 20); 
+                        const leafStart = groundY + treeHeight - 2;
+                        const leafEnd = groundY + treeHeight + 1;
+
+                        // Trunk
+                        for(let y = groundY + 1; y < groundY + treeHeight; y++) {
+                            if (lx >= 0 && lx < size && lz >= 0 && lz < size) {
+                                const idx = lx + lz * strideZ + y * strideY;
+                                if (data[idx] === BLOCK.AIR || isPlant(data[idx])) {
+                                    data[idx] = BLOCK.OAK_LOG;
+                                }
+                            }
+                        }
+
+                        // Leaves
+                        for(let ly = leafStart; ly <= leafEnd; ly++) {
+                            for(let bx = lx - 2; bx <= lx + 2; bx++) {
+                                for(let bz = lz - 2; bz <= lz + 2; bz++) {
+                                    if (bx >= 0 && bx < size && bz >= 0 && bz < size && ly >= 0 && ly < height) {
+                                        const dist = Math.abs(bx - lx) + Math.abs(bz - lz) + Math.abs(ly - (leafStart + 1));
+                                        if (dist <= 3) {
+                                            const idx = bx + bz * strideZ + ly * strideY;
+                                            if (data[idx] === BLOCK.AIR) {
+                                                data[idx] = BLOCK.OAK_LEAVES;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Grass/Flowers/Desert Vegetation
+    for (let lx = 0; lx < size; lx++) {
+        const wx = startX + lx;
+        for (let lz = 0; lz < size; lz++) {
+            const wz = startZ + lz;
+            
+            for (let y = height - 2; y > 0; y--) {
+                const idx = lx + lz * strideZ + y * strideY;
+                const block = data[idx];
+                
+                if (block !== BLOCK.AIR && !isTransparent(block)) {
+                    const aboveIdx = idx + strideY;
+                    if (aboveIdx < data.length && data[aboveIdx] === BLOCK.AIR) {
+                        const plantNoise = noise3D(wx * 0.9, y * 0.9, wz * 0.9);
+
+                        if (block === BLOCK.GRASS) {
+                            if (plantNoise > 0.2) {
+                                if (plantNoise > 0.75) data[aboveIdx] = BLOCK.RED_FLOWER;
+                                else if (plantNoise > 0.60) data[aboveIdx] = BLOCK.YELLOW_FLOWER;
+                                else data[aboveIdx] = BLOCK.TALL_GRASS;
+                            }
+                        }
+                        else if (block === BLOCK.SAND) {
+                            if (plantNoise > 0.3) {
+                                if (plantNoise > 0.65) {
+                                    // Cactus
+                                    let neighborCactus = false;
+                                    const offsets = [[0,-1], [-1,0], [-1,-1], [-1,1]];
+                                    for(let o of offsets) {
+                                        const nx = lx + o[0];
+                                        const nz = lz + o[1];
+                                        if (nx >= 0 && nx < size && nz >= 0 && nz < size) {
+                                            const nBase = nx + nz * strideZ;
+                                            const minNy = Math.max(0, y - 2);
+                                            const maxNy = Math.min(height - 1, y + 2);
+                                            for(let ny = minNy; ny <= maxNy; ny++) {
+                                                if(data[nBase + ny * strideY] === BLOCK.CACTUS) {
+                                                    neighborCactus = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if(neighborCactus) break;
+                                    }
+
+                                    if (!neighborCactus) {
+                                        const h = (plantNoise > 0.8) ? 3 : 2;
+                                        for(let k = 0; k < h; k++) {
+                                            const cIdx = idx + strideY * (k + 1);
+                                            if (cIdx < data.length && data[cIdx] === BLOCK.AIR) {
+                                                data[cIdx] = BLOCK.CACTUS;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    data[aboveIdx] = BLOCK.DEAD_BUSH;
+                                }
+                            }
+                        }
+                    }
+                    break; 
+                }
+            }
+        }
     }
     
-    // CARVE TUNNEL
+    // 3. CARVE TUNNEL
     for (let lz = 0; lz < size; lz++) {
         const wz = startZ + lz;
         const points = pathSegments[wz];
@@ -119,7 +241,27 @@ self.onmessage = (e) => {
         }
     }
 
-    // 2. GREEDY MESHING
+    // 4. FORCE SPAWN (Keep spawn clear)
+    const minWx = -2, maxWx = 2;
+    const minWz = -2, maxWz = 2;
+    const loopMinX = Math.max(0, minWx - startX);
+    const loopMaxX = Math.min(size - 1, maxWx - startX);
+    const loopMinZ = Math.max(0, minWz - startZ);
+    const loopMaxZ = Math.min(size - 1, maxWz - startZ);
+
+    if (loopMinX <= loopMaxX && loopMinZ <= loopMaxZ) {
+        for(let lz = loopMinZ; lz <= loopMaxZ; lz++) {
+            const zOffset = lz * strideZ;
+            for(let lx = loopMinX; lx <= loopMaxX; lx++) {
+                data[lx + strideY * 14 + zOffset] = BLOCK.SPAWN;
+                for(let y = 15; y <= 25; y++) { 
+                    data[lx + strideY * y + zOffset] = BLOCK.AIR;
+                }
+            }
+        }
+    }
+
+    // 5. GREEDY MESHING
     let vertCount = 0;
     let indexCount = 0;
     const rgb = [0,0,0];
@@ -140,7 +282,7 @@ self.onmessage = (e) => {
         return data[x + z * strideZ + y * strideY];
     };
 
-    // Mask for greedy meshing: Stores block type
+    // Mask for greedy meshing
     const mask = new Int32Array(Math.max(lSize, lHeight) * Math.max(lSize, lHeight));
 
     // Axis: 0=X, 1=Y, 2=Z
@@ -149,48 +291,38 @@ self.onmessage = (e) => {
         const x = [0, 0, 0];
         const q = [0, 0, 0];
         
-        // Dimensions for current sweep
         const dims = [lSize, lHeight, lSize];
         q[d] = 1;
 
-        // Iterate through slices
         for (x[d] = -1; x[d] < dims[d]; ) {
-            // Compute Mask
             let n = 0;
             for (x[v] = 0; x[v] < dims[v]; x[v]++) {
                 for (x[u] = 0; x[u] < dims[u]; x[u]++) {
-                    // Compare block at current and next position along normal
-                    // Note: Checking transparency logic
                     const b1 = (x[d] >= 0) ? getLODBlock(x[0], x[1], x[2]) : BLOCK.AIR;
                     const b2 = (x[d] < dims[d] - 1) ? getLODBlock(x[0] + q[0], x[1] + q[1], x[2] + q[2]) : BLOCK.AIR;
                     
                     let faceType = 0;
                     
-                    // Logic: If b1 is solid and b2 is transparent, we draw face of b1 (Front)
-                    // If b1 is transparent and b2 is solid, we draw face of b2 (Back)
                     const t1 = isTransparent(b1);
                     const t2 = isTransparent(b2);
 
-                    if (!t1 && t2) faceType = b1;      // Front face
-                    else if (t1 && !t2) faceType = -b2; // Back face
+                    // Note: isPlant() blocks are isTransparent=true, so they won't form faces here
+                    if (!t1 && t2) faceType = b1;      
+                    else if (t1 && !t2) faceType = -b2; 
 
                     mask[n++] = faceType;
                 }
             }
 
-            // Increment to current plane
             x[d]++;
             
-            // Generate Mesh from Mask
             n = 0;
             for (j = 0; j < dims[v]; j++) {
                 for (i = 0; i < dims[u]; ) {
                     const c = mask[n];
                     if (c !== 0) {
-                        // Compute width
                         for (w = 1; c === mask[n + w] && i + w < dims[u]; w++) {}
 
-                        // Compute height
                         let done = false;
                         for (h = 1; j + h < dims[v]; h++) {
                             for (k = 0; k < w; k++) {
@@ -202,21 +334,17 @@ self.onmessage = (e) => {
                             if (done) break;
                         }
 
-                        // Add Quad
                         x[u] = i; 
                         x[v] = j;
                         
                         const du = [0, 0, 0]; du[u] = w;
                         const dv = [0, 0, 0]; dv[v] = h;
 
-                        // Calculate vertices in world space (scaled by step)
-                        // Note: x[] is currently in LOD space. multiply by step.
                         const vBase = vertCount;
                         const start = [x[0] * step, x[1] * step, x[2] * step];
                         const spanU = [du[0] * step, du[1] * step, du[2] * step];
                         const spanV = [dv[0] * step, dv[1] * step, dv[2] * step];
                         
-                        // Positions
                         const corners = [
                             [0, 0, 0],
                             spanU,
@@ -224,12 +352,9 @@ self.onmessage = (e) => {
                             spanV
                         ];
 
-                        // Back face reversal
                         const type = Math.abs(c);
                         const isBack = c < 0;
 
-                        // Color
-                        // Use coords of the first block for color
                         const wx = startX + start[0];
                         const wz = startZ + start[2];
                         let seedH = (wx * 374761393) ^ (start[1] * 668265263) ^ (wz * 963469177);
@@ -238,13 +363,11 @@ self.onmessage = (e) => {
                         
                         fastColor(type, rand, rgb);
                         
-                        // Shade based on axis
                         let shade = 1.0;
-                        if (d === 1) shade = isBack ? 0.6 : 1.1; // Y axis (Top/Bot)
-                        else if (d === 0) shade = 0.85; // X Axis
-                        else shade = 0.9; // Z Axis
+                        if (d === 1) shade = isBack ? 0.6 : 1.1; 
+                        else if (d === 0) shade = 0.85; 
+                        else shade = 0.9; 
 
-                        // Push Vertices
                         for (let k = 0; k < 4; k++) {
                             const p = isBack ? corners[3-k] : corners[k];
                             const dst = vertCount * 3;
@@ -253,12 +376,10 @@ self.onmessage = (e) => {
                             BUFFER_POS[dst+1] = start[1] + p[1];
                             BUFFER_POS[dst+2] = startZ + start[2] + p[2];
 
-                            // Normals
                             BUFFER_NORM[dst] = q[0] * (isBack ? -1 : 1);
                             BUFFER_NORM[dst+1] = q[1] * (isBack ? -1 : 1);
                             BUFFER_NORM[dst+2] = q[2] * (isBack ? -1 : 1);
 
-                            // Colors
                             BUFFER_COL[dst] = rgb[0] * shade;
                             BUFFER_COL[dst+1] = rgb[1] * shade;
                             BUFFER_COL[dst+2] = rgb[2] * shade;
@@ -266,7 +387,6 @@ self.onmessage = (e) => {
                             vertCount++;
                         }
 
-                        // Push Indices
                         BUFFER_IND[indexCount++] = vBase;
                         BUFFER_IND[indexCount++] = vBase + 1;
                         BUFFER_IND[indexCount++] = vBase + 2;
@@ -274,7 +394,6 @@ self.onmessage = (e) => {
                         BUFFER_IND[indexCount++] = vBase + 3;
                         BUFFER_IND[indexCount++] = vBase;
 
-                        // Clear Mask
                         for (l = 0; l < h; ++l) {
                             for (k = 0; k < w; ++k) {
                                 mask[n + k + l * dims[u]] = 0;
@@ -284,6 +403,83 @@ self.onmessage = (e) => {
                         i += w; n += w;
                     } else {
                         i++; n++;
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. PLANT MESHING (Standard Cross Geometry, separate pass)
+    // Only perform for detailed LOD to reduce noise/geometry at distance
+    if (lod === 1) {
+        for (let lx = 0; lx < size; lx++) {
+            for (let ly = 0; ly < height; ly++) {
+                for (let lz = 0; lz < size; lz++) {
+                    const idx = lx + lz * strideZ + ly * strideY;
+                    const type = data[idx];
+                    
+                    if (isPlant(type)) {
+                        const wx = startX + lx;
+                        const wz = startZ + lz;
+                        
+                        let seedH = (wx * 374761393) ^ (ly * 668265263) ^ (wz * 963469177);
+                        seedH = (seedH ^ (seedH >> 13)) * 1274124933;
+                        const rand = ((seedH >>> 0) / 4294967296); 
+
+                        const vBase = vertCount;
+                        
+                        const pushVert = (vx, vy, vz, nx, ny, nz) => {
+                            const dst = vertCount * 3;
+                            BUFFER_POS[dst] = startX + lx + vx;
+                            BUFFER_POS[dst+1] = ly + vy;
+                            BUFFER_POS[dst+2] = startZ + lz + vz;
+                            
+                            BUFFER_NORM[dst] = nx;
+                            BUFFER_NORM[dst+1] = ny;
+                            BUFFER_NORM[dst+2] = nz;
+                            
+                            fastColor(type, rand, rgb, vy); 
+                            BUFFER_COL[dst] = rgb[0];
+                            BUFFER_COL[dst+1] = rgb[1];
+                            BUFFER_COL[dst+2] = rgb[2];
+                            
+                            vertCount++;
+                        };
+
+                        // Diagonal 1
+                        pushVert(0.15, 0, 0.15, 0.7, 0, 0.7);
+                        pushVert(0.85, 0, 0.85, 0.7, 0, 0.7);
+                        pushVert(0.85, 0.8, 0.85, 0.7, 0, 0.7);
+                        pushVert(0.15, 0.8, 0.15, 0.7, 0, 0.7);
+                        
+                        // Diagonal 2
+                        pushVert(0.15, 0, 0.85, 0.7, 0, -0.7);
+                        pushVert(0.85, 0, 0.15, 0.7, 0, -0.7);
+                        pushVert(0.85, 0.8, 0.15, 0.7, 0, -0.7);
+                        pushVert(0.15, 0.8, 0.85, 0.7, 0, -0.7);
+
+                        // Double sided indices (2 faces * 2 sides = 4 draws, but simplified here to 2 faces double-drawn or just cull disabled in shader/material)
+                        // In main.js material uses default (CullFaceBack). 
+                        // To make plants visible from both sides without changing material, we can add reverse faces.
+                        
+                        for(let i=0; i<2; i++) {
+                            const base = vBase + i * 4;
+                            // Front
+                            BUFFER_IND[indexCount++] = base;
+                            BUFFER_IND[indexCount++] = base + 1;
+                            BUFFER_IND[indexCount++] = base + 2;
+                            BUFFER_IND[indexCount++] = base + 2;
+                            BUFFER_IND[indexCount++] = base + 3;
+                            BUFFER_IND[indexCount++] = base;
+                            
+                            // Back (Reverse Winding)
+                            BUFFER_IND[indexCount++] = base;
+                            BUFFER_IND[indexCount++] = base + 3;
+                            BUFFER_IND[indexCount++] = base + 2;
+                            BUFFER_IND[indexCount++] = base + 2;
+                            BUFFER_IND[indexCount++] = base + 1;
+                            BUFFER_IND[indexCount++] = base;
+                        }
                     }
                 }
             }
