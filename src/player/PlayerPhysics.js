@@ -8,7 +8,15 @@ const BLOCK = {
     DIRT: 4,
     SNOW: 5,
     SAND: 6,
-    ICE: 7
+    ICE: 7,
+    CLAY: 8,
+    GRAVEL: 9,
+    SANDSTONE: 10,
+    GRANITE: 11,
+    MARBLE: 12,
+    OBSIDIAN: 13,
+    MOSS_STONE: 14,
+    PACKED_ICE: 15
 };
 
 export class PlayerPhysics {
@@ -63,8 +71,6 @@ export class PlayerPhysics {
     }
 
     getWorldBlockInternal(x, y, z) {
-        // Optimization: Fast integer lookup for center point
-        // If center is solid, return it immediately.
         let val = this.world.getBlock(x, y, z);
         if (val) return val;
 
@@ -72,20 +78,16 @@ export class PlayerPhysics {
         const rz = z % 1;
         const buffer = this.radius;
 
-        // Check X+
         if (rx > 1 - buffer) {
              if (val = this.world.getBlock(x + buffer, y, z)) return val;
         }
-        // Check X-
         else if (rx < buffer) {
              if (val = this.world.getBlock(x - buffer, y, z)) return val;
         }
         
-        // Check Z+
         if (rz > 1 - buffer) {
              if (val = this.world.getBlock(x, y, z + buffer)) return val;
         }
-        // Check Z-
         else if (rz < buffer) {
              if (val = this.world.getBlock(x, y, z - buffer)) return val;
         }
@@ -97,15 +99,38 @@ export class PlayerPhysics {
         let friction = 10.0;
         let moveSpeed = 10.0;
 
-        if (player.groundBlock === BLOCK.ICE) {
-            friction = 0.5;
-            moveSpeed = 15.0;
-        } else if (player.groundBlock === BLOCK.SAND) {
-            friction = 15.0;
-            moveSpeed = 7.0;
-        } else if (player.groundBlock === BLOCK.SNOW) {
-            friction = 8.0;
-            moveSpeed = 9.0;
+        // Block-specific movement properties
+        switch(player.groundBlock) {
+            case BLOCK.ICE:
+            case BLOCK.PACKED_ICE:
+                friction = 0.5;
+                moveSpeed = 15.0;
+                break;
+            case BLOCK.SAND:
+                friction = 15.0;
+                moveSpeed = 7.0;
+                break;
+            case BLOCK.SNOW:
+                friction = 8.0;
+                moveSpeed = 9.0;
+                break;
+            case BLOCK.GRAVEL:
+                friction = 12.0;
+                moveSpeed = 8.5;
+                break;
+            case BLOCK.CLAY:
+                friction = 14.0;
+                moveSpeed = 7.5;
+                break;
+            case BLOCK.MARBLE:
+            case BLOCK.OBSIDIAN:
+                friction = 8.0;
+                moveSpeed = 11.0;
+                break;
+            case BLOCK.MOSS_STONE:
+                friction = 11.0;
+                moveSpeed = 9.5;
+                break;
         }
 
         const jumpForce = 11;
@@ -196,7 +221,7 @@ export class PlayerPhysics {
         const DIVE_ACCEL = 2.0; 
         const CLIMB_BOOST = 0.8;
         const STEER_SPEED = 12.0; 
-        const VERT_STEER_SPEED = 6.0; // vertical responsiveness
+        const VERT_STEER_SPEED = 6.0;
 
         const lift = sqrpitchcos * LIFT_COEFF;
         player.velocity.y += (-GRAVITY + lift) * dt;
@@ -225,7 +250,6 @@ export class PlayerPhysics {
             player.velocity.z -= (look.z / hlook) * climbForce;
         }
 
-        // Horizontal Steering
         if (hlook > 0) {
             const hvel = Math.sqrt(player.velocity.x**2 + player.velocity.z**2);
             const targetX = (look.x / hlook) * hvel;
@@ -235,7 +259,6 @@ export class PlayerPhysics {
             player.velocity.z += (targetZ - player.velocity.z) * STEER_SPEED * dt;
         }
 
-        // Vertical Steering (Feature: Enhanced Responsiveness)
         const speed = player.velocity.length();
         const targetY = speed * look.y;
         player.velocity.y += (targetY - player.velocity.y) * VERT_STEER_SPEED * dt;
@@ -254,7 +277,6 @@ export class PlayerPhysics {
         this._nextPos.x += player.velocity.x * dt;
         if (this.checkCollisionBody(this._nextPos, player)) {
             player.velocity.x = 0;
-            // Feature: Removed crash() call to allow wall sliding in FLYING state
         } else {
             player.position.x = this._nextPos.x;
         }
@@ -264,7 +286,6 @@ export class PlayerPhysics {
         this._nextPos.z += player.velocity.z * dt;
         if (this.checkCollisionBody(this._nextPos, player)) {
             player.velocity.z = 0;
-            // Feature: Removed crash() call to allow wall sliding in FLYING state
         } else {
             player.position.z = this._nextPos.z;
         }
@@ -276,13 +297,11 @@ export class PlayerPhysics {
         if (Math.abs(player.velocity.y) > 0.001) {
             if (this.checkCollisionBody(this._nextPos, player)) {
                 if (player.velocity.y < 0) {
-                    // Landing on ground
                     player.position.y = Math.floor(this._nextPos.y + 0.1) + 1; 
                     player.velocity.y = 0;
                     player.onGround = true; 
                     if(player.state === 'FLYING' || player.state === 'FALLING') player.state = 'WALKING';
                 } else {
-                    // Hitting ceiling
                     player.position.y = Math.floor(this._nextPos.y) - 0.2; 
                     player.velocity.y = 0;
                 }

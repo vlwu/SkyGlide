@@ -10,7 +10,15 @@ const BLOCK = {
     DIRT: 4,
     SNOW: 5,
     SAND: 6,
-    ICE: 7
+    ICE: 7,
+    CLAY: 8,
+    GRAVEL: 9,
+    SANDSTONE: 10,
+    GRANITE: 11,
+    MARBLE: 12,
+    OBSIDIAN: 13,
+    MOSS_STONE: 14,
+    PACKED_ICE: 15
 };
 
 // Face order: Right, Left, Top, Bottom, Front, Back
@@ -63,7 +71,45 @@ function fastColor(type, rand, out) {
             b = 0.4 + rand * 0.1;
             break;
         case BLOCK.ICE: 
-            r = 0.5; g = 0.7; b = 0.9;
+            r = 0.5 + rand * 0.05; 
+            g = 0.7 + rand * 0.05; 
+            b = 0.9 + rand * 0.05;
+            break;
+        case BLOCK.CLAY:
+            r = 0.55 + rand * 0.1;
+            g = 0.45 + rand * 0.1;
+            b = 0.40 + rand * 0.1;
+            break;
+        case BLOCK.GRAVEL:
+            r = g = b = 0.35 + rand * 0.2;
+            break;
+        case BLOCK.SANDSTONE:
+            r = 0.70 + rand * 0.1;
+            g = 0.60 + rand * 0.1;
+            b = 0.35 + rand * 0.1;
+            break;
+        case BLOCK.GRANITE:
+            r = 0.50 + rand * 0.1;
+            g = 0.35 + rand * 0.1;
+            b = 0.30 + rand * 0.1;
+            break;
+        case BLOCK.MARBLE:
+            r = g = b = 0.85 + rand * 0.15;
+            break;
+        case BLOCK.OBSIDIAN:
+            r = 0.05 + rand * 0.05;
+            g = 0.0 + rand * 0.05;
+            b = 0.1 + rand * 0.05;
+            break;
+        case BLOCK.MOSS_STONE:
+            r = 0.25 + rand * 0.1;
+            g = 0.40 + rand * 0.1;
+            b = 0.25 + rand * 0.1;
+            break;
+        case BLOCK.PACKED_ICE:
+            r = 0.65 + rand * 0.05;
+            g = 0.75 + rand * 0.05;
+            b = 0.95 + rand * 0.05;
             break;
         case BLOCK.SPAWN: 
             r = 1.0; g = 0.84; b = 0.0;
@@ -72,6 +118,71 @@ function fastColor(type, rand, out) {
             r = 1.0; g = 0.0; b = 1.0;
     }
     out[0] = r; out[1] = g; out[2] = b;
+}
+
+// Helper function to determine block type based on biome and depth
+function getBiomeBlock(biome, depth, y, groundHeight) {
+    // DESERT BIOME
+    if (biome === 'desert') {
+        if (depth === 0) return BLOCK.SAND;
+        if (depth < 4) return BLOCK.SANDSTONE;
+        if (depth < 8) return BLOCK.CLAY;
+        return BLOCK.STONE;
+    }
+    
+    // TUNDRA BIOME
+    if (biome === 'tundra') {
+        if (depth === 0) return BLOCK.SNOW;
+        if (depth < 2) return BLOCK.PACKED_ICE;
+        if (depth < 5) return BLOCK.GRAVEL;
+        return BLOCK.STONE;
+    }
+    
+    // MOUNTAIN BIOME
+    if (biome === 'mountain') {
+        if (groundHeight > 70) {
+            if (depth === 0) return BLOCK.SNOW;
+            if (depth < 3) return BLOCK.PACKED_ICE;
+            return BLOCK.GRANITE;
+        }
+        if (depth === 0) return BLOCK.GRAVEL;
+        if (depth < 5) return BLOCK.GRANITE;
+        return BLOCK.STONE;
+    }
+    
+    // VOLCANIC BIOME
+    if (biome === 'volcanic') {
+        if (depth === 0) return BLOCK.OBSIDIAN;
+        if (depth < 3) return BLOCK.GRAVEL;
+        if (depth < 7) return BLOCK.GRANITE;
+        return BLOCK.STONE;
+    }
+    
+    // PLAINS BIOME (default)
+    if (depth === 0) return BLOCK.GRASS;
+    if (depth < 3) return BLOCK.DIRT;
+    if (depth < 8) {
+        // Add some variety in subsurface
+        const mix = noise3D(y * 0.3, depth * 0.5, y * 0.3);
+        if (mix > 0.3) return BLOCK.GRAVEL;
+        if (mix < -0.3) return BLOCK.CLAY;
+        return BLOCK.DIRT;
+    }
+    return BLOCK.STONE;
+}
+
+// Determine biome based on position
+function getBiome(wx, wz) {
+    const biomeScale = 0.008;
+    const biomeNoise = noise3D(wx * biomeScale, 0, wz * biomeScale);
+    const tempNoise = noise3D(wx * biomeScale * 0.5, 500, wz * biomeScale * 0.5);
+    
+    // Combine noise for biome selection
+    if (biomeNoise > 0.4) return 'mountain';
+    if (biomeNoise < -0.4 && tempNoise < 0) return 'desert';
+    if (tempNoise < -0.5) return 'tundra';
+    if (biomeNoise < -0.2 && tempNoise > 0.3) return 'volcanic';
+    return 'plains';
 }
 
 self.onmessage = (e) => {
@@ -84,26 +195,42 @@ self.onmessage = (e) => {
     const strideY = size;          
     const strideZ = size * height; 
     
-    // 1. GENERATE TERRAIN
+    // 1. GENERATE TERRAIN WITH BIOMES
     const scaleBase = 0.02;
     const scaleMount = 0.04;
     const scaleIsland = 0.04;
+    const scaleDetail = 0.1; // For fine detail variations
 
     for (let lx = 0; lx < size; lx++) {
         const wx = startX + lx;
         for (let lz = 0; lz < size; lz++) {
             const wz = startZ + lz;
 
+            // Determine biome for this column
+            const biome = getBiome(wx, wz);
+
+            // Base terrain height
             let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
+            
+            // Mountain generation
             const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
             if (mountain > 0) h += mountain * 35;
+            
+            // Biome-specific height adjustments
+            if (biome === 'mountain') {
+                h += noise3D(wx * scaleMount * 0.5, 200, wz * scaleMount * 0.5) * 20;
+            } else if (biome === 'desert') {
+                // Flatter with dunes
+                const dunes = noise3D(wx * 0.05, 300, wz * 0.05);
+                h = h * 0.7 + dunes * 8;
+            } else if (biome === 'tundra') {
+                // Gentle rolling hills
+                h = h * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
+            }
+            
             const groundHeight = Math.floor(h);
-
             const colBase = lx + lz * strideZ;
 
-            // OPTIMIZATION: Early exit loop
-            // Don't loop all the way to 'height' (96) if ground is only at 30.
-            // Add padding for floating islands (approx max height 90)
             const loopMax = Math.min(height, Math.max(groundHeight + 2, 90));
 
             for (let y = 0; y < loopMax; y++) {
@@ -111,21 +238,45 @@ self.onmessage = (e) => {
                 
                 if (y <= groundHeight) {
                     const depth = groundHeight - y;
-                    if (groundHeight > 58) {
-                        blockType = (depth === 0) ? BLOCK.SNOW : (depth < 3 ? BLOCK.STONE : BLOCK.STONE);
-                    } else if (groundHeight < 22) {
-                        blockType = (depth < 3) ? BLOCK.SAND : BLOCK.STONE;
-                    } else {
-                        blockType = (depth === 0) ? BLOCK.GRASS : (depth < 3 ? BLOCK.DIRT : BLOCK.STONE);
+                    blockType = getBiomeBlock(biome, depth, y, groundHeight);
+                    
+                    // Add surface detail variations
+                    if (depth === 0) {
+                        const detail = noise3D(wx * scaleDetail, y * scaleDetail, wz * scaleDetail);
+                        
+                        // Moss on stone in wet areas
+                        if (biome === 'plains' && detail > 0.6) {
+                            blockType = BLOCK.MOSS_STONE;
+                        }
+                        
+                        // Marble patches in mountains
+                        if (biome === 'mountain' && groundHeight > 60 && detail < -0.6) {
+                            blockType = BLOCK.MARBLE;
+                        }
                     }
                 } else if (y > 45) {
+                    // Floating islands
                     const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
                     if (islandNoise > 0.45) {
-                        if (y > 80) blockType = BLOCK.ICE;
-                        else if (y > 78) blockType = BLOCK.SNOW;
-                        else blockType = BLOCK.STONE;
+                        if (y > 80) {
+                            blockType = BLOCK.PACKED_ICE;
+                        } else if (y > 78) {
+                            blockType = BLOCK.ICE;
+                        } else {
+                            // Vary island composition
+                            const islandDetail = noise3D(wx * 0.15, y * 0.15, wz * 0.15);
+                            if (islandDetail > 0.3) {
+                                blockType = BLOCK.MARBLE;
+                            } else if (islandDetail < -0.3) {
+                                blockType = BLOCK.GRANITE;
+                            } else {
+                                blockType = BLOCK.STONE;
+                            }
+                        }
+                        
+                        // Grass on top of lower islands
                         if (y < 70 && islandNoise < 0.5 && noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0) {
-                            blockType = BLOCK.GRASS;
+                            blockType = BLOCK.MOSS_STONE;
                         }
                     }
                 }
@@ -197,7 +348,6 @@ self.onmessage = (e) => {
 
     const OFFSETS = [1, -1, strideY, -strideY, strideZ, -strideZ];
     
-    // Pre-compute neighbor checks for entire chunk to enable early culling
     const neighborCache = new Uint8Array(size * height * size * 6);
     
     for (let lz = 0; lz < size; lz++) {
@@ -214,7 +364,6 @@ self.onmessage = (e) => {
                 const cacheBase = idx * 6;
                 let hasExposedFace = false;
 
-                // Check all 6 neighbors
                 for (let f = 0; f < 6; f++) {
                     const nx = lx + FACE_DIRS[f*3];
                     const ny = y + FACE_DIRS[f*3+1];
@@ -226,14 +375,13 @@ self.onmessage = (e) => {
                             exposed = true;
                         }
                     } else {
-                        exposed = true; // Edge faces are exposed
+                        exposed = true;
                     }
 
                     neighborCache[cacheBase + f] = exposed ? 1 : 0;
                     if (exposed) hasExposedFace = true;
                 }
 
-                // Skip blocks with no exposed faces entirely
                 if (!hasExposedFace) continue;
 
                 const wx = startX + lx;
