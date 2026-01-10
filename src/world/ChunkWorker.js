@@ -203,9 +203,11 @@ self.onmessage = (e) => {
                         const corner = FACE_CORNERS[cOffset + c];
                         const dst = vertCount * 3;
                         
-                        BUFFER_POS[dst] = lx + corner[0];
+                        // OPTIMIZATION: Bake world position into the geometry
+                        // This avoids costly matrix updates on the main thread
+                        BUFFER_POS[dst] = startX + lx + corner[0];
                         BUFFER_POS[dst+1] = y + corner[1];
-                        BUFFER_POS[dst+2] = lz + corner[2];
+                        BUFFER_POS[dst+2] = startZ + lz + corner[2];
 
                         BUFFER_NORM[dst] = FACE_DIRS[f*3];
                         BUFFER_NORM[dst+1] = FACE_DIRS[f*3+1];

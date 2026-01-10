@@ -83,16 +83,21 @@ export class PlayerCamera {
         const rollSpeed = 5.0; 
         const wingSpeed = 5.0;
         
-        this._currentRoll += (targetRoll - this._currentRoll) * rollSpeed * dt;
-        this._currentWingAngle += (targetWingAngle - this._currentWingAngle) * wingSpeed * dt;
-
-        player.mesh.rotation.z = this._currentRoll;
-
-        if (player.leftWingPivot) {
-            player.leftWingPivot.rotation.y = this._currentWingAngle;
+        // OPTIMIZATION: Only update transforms if there's a visible change
+        if (Math.abs(targetRoll - this._currentRoll) > 0.001) {
+            this._currentRoll += (targetRoll - this._currentRoll) * rollSpeed * dt;
+            player.mesh.rotation.z = this._currentRoll;
         }
-        if (player.rightWingPivot) {
-            player.rightWingPivot.rotation.y = -this._currentWingAngle;
+
+        if (Math.abs(targetWingAngle - this._currentWingAngle) > 0.001) {
+            this._currentWingAngle += (targetWingAngle - this._currentWingAngle) * wingSpeed * dt;
+            
+            if (player.leftWingPivot) {
+                player.leftWingPivot.rotation.y = this._currentWingAngle;
+            }
+            if (player.rightWingPivot) {
+                player.rightWingPivot.rotation.y = -this._currentWingAngle;
+            }
         }
 
         // --- Camera Logic ---

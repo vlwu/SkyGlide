@@ -10,7 +10,6 @@ export class WorldManager {
         this.renderDistance = CONFIG.WORLD.RENDER_DISTANCE;
 
         this.chunks = new Map(); 
-        // Optimization: Cache array for faster iteration in render loop
         this._chunkArray = [];
         
         // Optimization: Integer cache for fast lookups
@@ -49,7 +48,6 @@ export class WorldManager {
         if (this.renderDistance !== dist) {
             this.renderDistance = dist;
             this.updateMaxVisibleDist();
-            // Trigger an immediate queue update to cull far chunks
             this.lastUpdate = 0;
         }
     }
@@ -103,8 +101,8 @@ export class WorldManager {
             disposalCount++;
         }
 
-        // Throttle visibility checks to ~60Hz
-        if (now - this.lastVisibilityUpdate > 16) {
+        // OPTIMIZATION: Throttle visibility checks to ~33Hz (30FPS)
+        if (now - this.lastVisibilityUpdate > 33) {
             this.lastVisibilityUpdate = now;
 
             this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -116,7 +114,6 @@ export class WorldManager {
 
             const safeRadiusSq = CONFIG.WORLD.SAFE_RADIUS_SQ;
             
-            // Optimization: Iterate array instead of Map iterator
             const chunks = this._chunkArray;
             const len = chunks.length;
 
@@ -124,6 +121,7 @@ export class WorldManager {
                 const chunk = chunks[i];
                 if (!chunk.mesh) continue;
 
+                // Simple check for safe radius - no need for frustum math nearby
                 const dx = chunk.worldX - playerPos.x;
                 const dz = chunk.worldZ - playerPos.z;
                 const distSq = dx*dx + dz*dz;
@@ -131,6 +129,7 @@ export class WorldManager {
                 let isVisible = false;
 
                 if (distSq <= this.maxVisibleDistSq) {
+                    // OPTIMIZATION: Always show nearby chunks without Frustum cull
                     if (distSq > safeRadiusSq) {
                         const invLen = 1.0 / Math.sqrt(distSq);
                         const dot = (dx * invLen * this._cameraForward.x) + (dz * invLen * this._cameraForward.z);
@@ -155,7 +154,8 @@ export class WorldManager {
             }
         }
 
-        if (now - this.lastUpdate > 200) {
+        // OPTIMIZATION: Update chunk generation queue less frequently (500ms vs 200ms)
+        if (now - this.lastUpdate > 500) {
             this.lastUpdate = now;
             this.updateQueue(playerPos, camera);
         }

@@ -45,12 +45,14 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.BufferAttribute(geoData.color, 3));
         geometry.setIndex(new THREE.BufferAttribute(geoData.index, 1));
 
+        // OPTIMIZATION: Bbox is now computed on world-space vertices directly
         geometry.computeBoundingBox();
         this.bbox.copy(geometry.boundingBox);
-        this.bbox.translate(new THREE.Vector3(this.x * this.size, 0, this.z * this.size));
 
         this.mesh = new THREE.Mesh(geometry, this.material);
-        this.mesh.position.set(this.x * this.size, 0, this.z * this.size);
+        
+        // OPTIMIZATION: Position is baked into geometry, so we sit at 0,0,0
+        // this.mesh.position.set(this.x * this.size, 0, this.z * this.size); 
         
         // Performance: Shadows default to false, enabled only when close
         this.mesh.castShadow = false; 
@@ -59,7 +61,7 @@ export class Chunk {
         this.mesh.frustumCulled = false;
         
         this.mesh.matrixAutoUpdate = false;
-        this.mesh.updateMatrix();
+        // No updateMatrix() needed since position/rot/scale are default
 
         this.scene.add(this.mesh);
         this.isLoaded = true;

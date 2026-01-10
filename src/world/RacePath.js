@@ -21,7 +21,8 @@ export class RacePath {
         this.dummy = new THREE.Object3D(); 
         this.colorHelper = new THREE.Color();
 
-        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 8, 12); 
+        // OPTIMIZATION: Reduced segments from 8/12 to 6/8
+        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 6, 8); 
         this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
         
         this.uniforms = {
@@ -84,7 +85,7 @@ export class RacePath {
         
         // Branch limiting
         this.branchCount = 0;
-        this.MAX_BRANCHES = 8; // Hard limit on total number of branches
+        this.MAX_BRANCHES = 8; 
         
         this.lastMatrixUpdate = 0;
         this.matrixDirty = false;
@@ -394,6 +395,10 @@ export class RacePath {
             const ring = ringsToCheck[i];
             if (!ring.active) continue;
 
+            // OPTIMIZATION: Early exit based on Z-axis distance
+            const dz = Math.abs(pPos.z - ring.position.z);
+            if (dz > 6.0) continue; // Sqrt of collisionDistSq (~5.5) + margin
+
             const distSq = pPos.distanceToSquared(ring.position);
             if (distSq < collisionDistSq) {
                 ring.active = false;
@@ -417,10 +422,12 @@ export class RacePath {
     }
 
     createVisuals() {
-        // Optimization: Segment the visuals so GPU Frustum Culling works effectively.
-        // Instead of 1 giant mesh per curve, create multiple smaller segments.
-        
-        const POINTS_PER_SEGMENT = 60; // Approx 100-120 world units
+        const POINTS_PER_SEGMENT = 60; 
+
+        // Arrays to aggregate all particles
+        const particlePositions = [];
+        const particleRandoms = [];
+        const particlePhases = [];
 
         for (const { curve } of this.curves) {
             const curveLength = curve.getLength();
@@ -428,7 +435,6 @@ export class RacePath {
             const allPoints = curve.getSpacedPoints(totalDivisions);
 
             for (let i = 0; i < allPoints.length - 1; i += POINTS_PER_SEGMENT - 1) {
-                // Overlap by 1 point to ensure mesh continuity
                 const end = Math.min(i + POINTS_PER_SEGMENT, allPoints.length);
                 const subset = allPoints.slice(i, end);
 
@@ -437,49 +443,57 @@ export class RacePath {
                 // 1. Tube Visuals
                 const subCurve = new THREE.CatmullRomCurve3(subset);
                 const tubeGeo = new THREE.TubeGeometry(subCurve, subset.length * 2, 0.2, 4, false);
-                
-                // Compute bbox immediately for Three.js frustum culling
                 tubeGeo.computeBoundingBox();
 
                 const tubeMesh = new THREE.Mesh(tubeGeo, this.sharedTubeMat);
                 this.scene.add(tubeMesh);
                 this.visualItems.push(tubeMesh);
 
-                // 2. Particle Visuals (Segmented)
-                const particleCount = Math.floor(subset.length * 0.4); 
+                // 2. Aggregate Particle Data
+                // OPTIMIZATION: Reduced particle density from 0.4 to 0.2
+                const particleCount = Math.floor(subset.length * 0.2); 
                 if (particleCount > 0) {
-                    // Sample positions from the subCurve for smooth distribution
                     const subPoints = subCurve.getSpacedPoints(particleCount);
-                    const posArray = new Float32Array(particleCount * 3);
-                    const randomArray = new Float32Array(particleCount * 3);
-                    const phaseArray = new Float32Array(particleCount);
                     
                     for(let k=0; k<particleCount; k++) {
                         const pt = subPoints[k];
                         const theta = Math.random() * Math.PI * 2;
-                        posArray[k*3] = pt.x + Math.cos(theta) * 0.2;
-                        posArray[k*3+1] = pt.y + Math.sin(theta) * 0.2;
-                        posArray[k*3+2] = pt.z;
                         
-                        randomArray[k*3] = (Math.random() - 0.5) * 4.0;
-                        randomArray[k*3+1] = (Math.random() - 0.5) * 4.0;
-                        randomArray[k*3+2] = (Math.random() - 0.5) * 4.0;
+                        particlePositions.push(
+                            pt.x + Math.cos(theta) * 0.2,
+                            pt.y + Math.sin(theta) * 0.2,
+                            pt.z
+                        );
                         
-                        phaseArray[k] = Math.random();
+                        particleRandoms.push(
+                            (Math.random() - 0.5) * 4.0,
+                            (Math.random() - 0.5) * 4.0,
+                            (Math.random() - 0.5) * 4.0
+                        );
+                        
+                        particlePhases.push(Math.random());
                     }
-                    
-                    const partGeo = new THREE.BufferGeometry();
-                    partGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-                    partGeo.setAttribute('aRandom', new THREE.BufferAttribute(randomArray, 3));
-                    partGeo.setAttribute('aPhase', new THREE.BufferAttribute(phaseArray, 1));
-                    
-                    partGeo.computeBoundingBox(); // Important for culling
-
-                    const particles = new THREE.Points(partGeo, this.sharedPartMat);
-                    this.scene.add(particles);
-                    this.visualItems.push(particles);
                 }
             }
+        }
+
+        // OPTIMIZATION: Create single mesh for all particles
+        if (particlePositions.length > 0) {
+            const partGeo = new THREE.BufferGeometry();
+            partGeo.setAttribute('position', new THREE.Float32BufferAttribute(particlePositions, 3));
+            partGeo.setAttribute('aRandom', new THREE.Float32BufferAttribute(particleRandoms, 3));
+            partGeo.setAttribute('aPhase', new THREE.Float32BufferAttribute(particlePhases, 1));
+            
+            partGeo.computeBoundingBox();
+
+            const particles = new THREE.Points(partGeo, this.sharedPartMat);
+            // Disable frustum culling for the master particle system as it spans the whole world
+            // or let Three.js cull based on large bbox. 
+            // Since it's large, culling overhead is low (one check), but it will likely always be visible.
+            particles.frustumCulled = false; 
+            
+            this.scene.add(particles);
+            this.visualItems.push(particles);
         }
     }
 
@@ -491,13 +505,9 @@ export class RacePath {
         this.uniforms.uTime.value += dt;
         this._frameCount++;
 
-        // Optimization: Removed manual JS bucket-based culling. 
-        // We now rely on Three.js native Frustum Culling on the segmented visual meshes.
-        // This significantly reduces main-thread CPU usage.
-
-        // Handle deferred updates (30Hz = ~33ms)
+        // OPTIMIZATION: Batch matrix updates to 100ms interval instead of 33ms
         const now = performance.now();
-        if (now - this.lastMatrixUpdate > 33) {
+        if (now - this.lastMatrixUpdate > 100) {
             if (this.instancedMesh) {
                 if (this.matrixDirty) {
                     this.instancedMesh.instanceMatrix.needsUpdate = true;
