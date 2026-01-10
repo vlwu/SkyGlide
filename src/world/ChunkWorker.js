@@ -237,7 +237,8 @@ self.onmessage = (e) => {
                         const plantNoise = noise3D(wx * 0.9, y * 0.9, wz * 0.9);
 
                         if (block === BLOCK.GRASS) {
-                            if (plantNoise > 0.2) {
+                            // Reduced grass/flower density (was 0.2)
+                            if (plantNoise > 0.5) {
                                 if (plantNoise > 0.75) data[aboveIdx] = BLOCK.RED_FLOWER;
                                 else if (plantNoise > 0.60) data[aboveIdx] = BLOCK.YELLOW_FLOWER;
                                 else data[aboveIdx] = BLOCK.TALL_GRASS;
@@ -246,16 +247,34 @@ self.onmessage = (e) => {
                             // Desert Vegetation
                             if (plantNoise > 0.6) {
                                 if (plantNoise > 0.85) {
-                                    // Cactus Base
-                                    data[aboveIdx] = BLOCK.CACTUS;
+                                    // Check neighbors for isolation
+                                    let neighborCactus = false;
+                                    const yAbove = y + 1;
                                     
-                                    // 2nd Block
-                                    if (plantNoise > 0.88 && aboveIdx + strideY < data.length) {
-                                        data[aboveIdx + strideY] = BLOCK.CACTUS;
+                                    // Check -X (Left)
+                                    if (lx > 0) {
+                                        const leftIdx = (lx - 1) + lz * strideZ + yAbove * strideY;
+                                        if (data[leftIdx] === BLOCK.CACTUS) neighborCactus = true;
+                                    }
+                                    
+                                    // Check -Z (Back)
+                                    if (lz > 0) {
+                                        const backIdx = lx + (lz - 1) * strideZ + yAbove * strideY;
+                                        if (data[backIdx] === BLOCK.CACTUS) neighborCactus = true;
+                                    }
+
+                                    if (!neighborCactus) {
+                                        // Cactus Base
+                                        data[aboveIdx] = BLOCK.CACTUS;
                                         
-                                        // 3rd Block (New Logic)
-                                        if (plantNoise > 0.94 && aboveIdx + strideY * 2 < data.length) {
-                                            data[aboveIdx + strideY * 2] = BLOCK.CACTUS;
+                                        // 2nd Block
+                                        if (plantNoise > 0.88 && aboveIdx + strideY < data.length) {
+                                            data[aboveIdx + strideY] = BLOCK.CACTUS;
+                                            
+                                            // 3rd Block
+                                            if (plantNoise > 0.94 && aboveIdx + strideY * 2 < data.length) {
+                                                data[aboveIdx + strideY * 2] = BLOCK.CACTUS;
+                                            }
                                         }
                                     }
                                 } else if (plantNoise > 0.70) {
