@@ -2,93 +2,107 @@ import * as THREE from 'three';
 import { CONFIG } from '../config/Config.js';
 
 export class Chunk {
-    constructor(x, z, scene, material) {
+    constructor(x, z, scene, material, waterMaterial) {
         this.x = x;
         this.z = z;
         this.scene = scene;
         this.material = material;
+        this.waterMaterial = waterMaterial;
         
         this.size = CONFIG.WORLD.CHUNK_SIZE;
         this.height = CONFIG.WORLD.CHUNK_HEIGHT;
         
         this.data = null;
         this.mesh = null;
+        this.waterMesh = null;
         this.isLoaded = false;
-        this.lod = 1; // 1 = Full Detail, 2 = Half, 4 = Quarter
+        this.lod = 1; 
         
-        // Cache center position for distance checks
         this.worldX = x * 16 + 8;
         this.worldZ = z * 16 + 8;
 
-        // Bounding box for manual culling
         this.bbox = new THREE.Box3();
         
-        // Shadow state cache
         this._lastShadowState = false;
     }
 
     getBlock(x, y, z) {
-        // LOD Handling: If LOD > 1, coordinate precision is lost
-        // We map input coord to the nearest stored voxel
         if (!this.data || x < 0 || x >= this.size || y < 0 || y >= this.height || z < 0 || z >= this.size) return 0;
-        
-        // Ensure we read from the correct index in the full resolution data
-        // Note: Currently we store full res data even at low LOD for physics accuracy
         return this.data[x + this.size * (y + this.height * z)];
     }
 
     applyMesh(payload) {
-        // If we received an update for a different LOD than requested, arguably we should ignore it,
-        // but for now we accept it to ensure something renders.
         this.lod = payload.lod;
         this.data = payload.data;
         const geoData = payload.geometry;
+        const waterGeoData = payload.waterGeometry;
 
-        // Clean up old mesh
-        if (this.mesh) {
-            this.scene.remove(this.mesh);
-            this.mesh.geometry.dispose();
-            this.mesh = null;
-        }
+        // Clean up old meshes
+        this.disposeMeshes();
 
-        if (geoData.position.length === 0) {
+        if (geoData.position.length === 0 && waterGeoData.position.length === 0) {
             this.isLoaded = true;
             return;
         }
 
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(geoData.position, 3));
-        geometry.setAttribute('normal', new THREE.BufferAttribute(geoData.normal, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(geoData.color, 3));
-        geometry.setIndex(new THREE.BufferAttribute(geoData.index, 1));
+        // --- Opaque Mesh ---
+        if (geoData.position.length > 0) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(geoData.position, 3));
+            geometry.setAttribute('normal', new THREE.BufferAttribute(geoData.normal, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(geoData.color, 3));
+            geometry.setIndex(new THREE.BufferAttribute(geoData.index, 1));
 
-        geometry.computeBoundingBox();
-        this.bbox.copy(geometry.boundingBox);
+            geometry.computeBoundingBox();
+            this.bbox.copy(geometry.boundingBox);
 
-        this.mesh = new THREE.Mesh(geometry, this.material);
-        
-        // Performance: Shadows default to false, enabled only when close
-        this.mesh.castShadow = false; 
-        this.mesh.receiveShadow = true; 
-        
-        // Disable frustum culling on the mesh itself because we handle it in WorldManager
-        this.mesh.frustumCulled = false;
-        
-        this.mesh.matrixAutoUpdate = false;
-        this.scene.add(this.mesh);
+            this.mesh = new THREE.Mesh(geometry, this.material);
+            this.mesh.castShadow = false; 
+            this.mesh.receiveShadow = true; 
+            this.mesh.frustumCulled = false;
+            this.mesh.matrixAutoUpdate = false;
+            this.scene.add(this.mesh);
+        } else {
+             // If only water, set bbox from water?
+             // For simplicity, we assume solid ground exists for bbox logic usually.
+             // If not, we might need a dummy bbox.
+             if (waterGeoData.position.length > 0) {
+                 // Use simple bounds for water only chunks
+                 const min = new THREE.Vector3(this.x * 16, 0, this.z * 16);
+                 const max = new THREE.Vector3((this.x+1) * 16, 256, (this.z+1) * 16);
+                 this.bbox.set(min, max);
+             }
+        }
+
+        // --- Water Mesh ---
+        if (waterGeoData && waterGeoData.position.length > 0) {
+            const wGeometry = new THREE.BufferGeometry();
+            wGeometry.setAttribute('position', new THREE.BufferAttribute(waterGeoData.position, 3));
+            wGeometry.setAttribute('normal', new THREE.BufferAttribute(waterGeoData.normal, 3));
+            wGeometry.setAttribute('color', new THREE.BufferAttribute(waterGeoData.color, 3));
+            wGeometry.setIndex(new THREE.BufferAttribute(waterGeoData.index, 1));
+
+            this.waterMesh = new THREE.Mesh(wGeometry, this.waterMaterial);
+            this.waterMesh.castShadow = false;
+            this.waterMesh.receiveShadow = true;
+            this.waterMesh.frustumCulled = false;
+            this.waterMesh.matrixAutoUpdate = false;
+            
+            // Render Order: Water should be rendered after opaque
+            this.waterMesh.renderOrder = 1; 
+            
+            this.scene.add(this.waterMesh);
+        }
+
         this.isLoaded = true;
     }
 
     update(distSq) {
         if (!this.mesh) return;
 
-        // Performance: Strict Shadow Culling with state caching
-        // Only cast shadows if within configured shadow distance
-        // Disable shadows entirely for Low LOD chunks
         const shadowDistSq = CONFIG.WORLD.SHADOW_DIST_SQ;
         const shouldCastShadow = (this.lod === 1) && (distSq <= shadowDistSq);
 
-        // Only update if state changed (avoid redundant GPU updates)
         if (shouldCastShadow !== this._lastShadowState) {
             this.mesh.castShadow = shouldCastShadow;
             this._lastShadowState = shouldCastShadow;
@@ -99,14 +113,26 @@ export class Chunk {
         if (this.mesh && this.mesh.visible !== visible) {
             this.mesh.visible = visible;
         }
+        if (this.waterMesh && this.waterMesh.visible !== visible) {
+            this.waterMesh.visible = visible;
+        }
     }
 
-    dispose() {
+    disposeMeshes() {
         if (this.mesh) {
             this.scene.remove(this.mesh);
             this.mesh.geometry.dispose();
             this.mesh = null;
         }
+        if (this.waterMesh) {
+            this.scene.remove(this.waterMesh);
+            this.waterMesh.geometry.dispose();
+            this.waterMesh = null;
+        }
+    }
+
+    dispose() {
+        this.disposeMeshes();
         this.data = null;
         this.isLoaded = false;
         this._lastShadowState = false;

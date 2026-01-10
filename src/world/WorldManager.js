@@ -22,6 +22,14 @@ export class WorldManager {
             vertexColors: true
         });
 
+        // Semi-transparent Water Material
+        this.waterMaterial = new THREE.MeshLambertMaterial({
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.75,
+            side: THREE.DoubleSide // Visible from below too
+        });
+
         this._cameraForward = new THREE.Vector3();
         this.generationQueue = [];
         this.applyQueue = [];
@@ -89,7 +97,6 @@ export class WorldManager {
         const playerPos = player.position;
         
         // OPTIMIZATION: Strict budget for mesh application (1/frame)
-        // Prevents main thread stutter when receiving worker data
         if (this.applyQueue.length > 0) {
              const data = this.applyQueue.shift();
              const chunk = this.chunks.get(data.key);
@@ -122,7 +129,8 @@ export class WorldManager {
 
             for (let i = 0; i < len; i++) {
                 const chunk = chunks[i];
-                if (!chunk.mesh) continue;
+                // Check if either mesh exists
+                if (!chunk.mesh && !chunk.waterMesh) continue;
 
                 const dx = chunk.worldX - playerPos.x;
                 const dz = chunk.worldZ - playerPos.z;
@@ -131,8 +139,8 @@ export class WorldManager {
                 let isVisible = false;
 
                 if (distSq <= this.maxVisibleDistSq) {
-                    // Culling: Safe radius always visible, otherwise check frustum
                     if (distSq > safeRadiusSq) {
+                        // Check bounds (bbox handles both meshes if implemented, or mainly ground)
                         if (this.frustum.intersectsBox(chunk.bbox)) {
                             isVisible = true;
                         }
@@ -141,9 +149,7 @@ export class WorldManager {
                     }
                 }
 
-                if (chunk.mesh.visible !== isVisible) {
-                    chunk.setVisible(isVisible);
-                }
+                chunk.setVisible(isVisible);
 
                 if (isVisible) {
                     chunk.update(distSq);
@@ -158,7 +164,6 @@ export class WorldManager {
         }
 
         // OPTIMIZATION: Throttled Dispatch
-        // Only dispatch 1 chunk every 3 frames to allow GPU to catch up
         if (this.chunkCooldown > 0) {
             this.chunkCooldown--;
         } else if (this.generationQueue.length > 0) {
@@ -167,7 +172,8 @@ export class WorldManager {
             
             // If new chunk
             if (!chunk) {
-                chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial);
+                // Pass water material here
+                chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial, this.waterMaterial);
                 this.chunks.set(req.key, chunk);
                 this._chunkArray.push(chunk);
             }
@@ -208,7 +214,6 @@ export class WorldManager {
         const newQueue = [];
         const range = this.renderDistance;
         
-        // Define LOD radii in chunks
         const lodLowRad = CONFIG.WORLD.LOD.DIST_LOW;
         const lodFarRad = CONFIG.WORLD.LOD.DIST_FAR;
 
@@ -220,7 +225,6 @@ export class WorldManager {
                 
                 activeKeys.add(key);
 
-                // Calculate distance in chunk units
                 const distChunks = Math.max(Math.abs(x), Math.abs(z));
                 let targetLOD = 1;
                 if (distChunks > lodFarRad) targetLOD = 4;
@@ -228,7 +232,6 @@ export class WorldManager {
 
                 const chunk = this.chunks.get(key);
                 
-                // Add to queue if missing OR if LOD needs update
                 if (!chunk || !chunk.isLoaded || chunk.lod !== targetLOD) {
                     const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
                     const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
@@ -239,13 +242,11 @@ export class WorldManager {
 
                     let score = distSq;
                     
-                    // Priority: Center > Near Camera > Far
                     if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
                         score = -99999999;
                     } else if (camera) {
                         const len = Math.sqrt(distSq) || 1;
                         const dot = ((dirX/len) * this._cameraForward.x) + ((dirZ/len) * this._cameraForward.z);
-                        // Penalize chunks behind camera
                         score -= (dot * 50000); 
                     }
                     newQueue.push({ x: chunkX, z: chunkZ, key, score, lod: targetLOD });

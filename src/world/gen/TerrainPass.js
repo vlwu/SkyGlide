@@ -1,10 +1,12 @@
 import { BLOCK } from '../BlockDefs.js';
 import { noise3D, getBiome, getBiomeBlock, smoothstep, mix } from '../BiomeUtils.js';
+import { CONFIG } from '../../config/Config.js';
 
 export class TerrainPass {
     static generate(data, startX, startZ, size, height) {
         const strideY = size;
         const strideZ = size * height;
+        const WATER_LEVEL = CONFIG.WORLD.WATER_LEVEL;
 
         const scaleBase = 0.02;
         const scaleMount = 0.015; 
@@ -44,6 +46,18 @@ export class TerrainPass {
                 if (wTundra > 0) h = mix(h, hTundraVal, wTundra);
                 if (wMount > 0)  h = mix(h, hMountVal, wMount);
 
+                // --- River Carving ---
+                // Ridged noise for river channels
+                const riverScale = 0.005;
+                const riverNoise = Math.abs(noise3D(wx * riverScale, 888, wz * riverScale));
+                // If value is close to 0, it's a river center
+                const riverThresh = 0.08;
+                if (riverNoise < riverThresh) {
+                    const depth = (riverThresh - riverNoise) / riverThresh; // 0 to 1
+                    // Dig down, ensuring we go below water level to create a river
+                    h -= depth * 15;
+                }
+
                 const groundHeight = Math.floor(h);
 
                 // --- Biome Jitter ---
@@ -62,12 +76,30 @@ export class TerrainPass {
                         const depth = groundHeight - y;
                         blockType = getBiomeBlock(biome, depth, y, groundHeight);
                         
+                        // Beaches: Sand near water level if not in extreme biomes
+                        if (y >= WATER_LEVEL - 2 && y <= WATER_LEVEL + 1) {
+                            if (biome !== 'tundra' && biome !== 'mountain' && biome !== 'volcanic') {
+                                if (blockType === BLOCK.GRASS || blockType === BLOCK.DIRT) {
+                                    blockType = BLOCK.SAND;
+                                }
+                            }
+                        }
+
+                        // Underwater floor fixes (e.g. Grass underwater -> Dirt/Gravel)
+                        if (y < WATER_LEVEL && blockType === BLOCK.GRASS) {
+                             blockType = BLOCK.DIRT;
+                        }
+
                         if (depth === 0) {
                             const detail = noise3D(wx * scaleDetail, y * scaleDetail, wz * scaleDetail);
-                            if (biome === 'plains' && detail > 0.6) blockType = BLOCK.MOSS_STONE;
+                            if (biome === 'plains' && detail > 0.6 && y > WATER_LEVEL + 2) blockType = BLOCK.MOSS_STONE;
                             if (biome === 'mountain' && groundHeight > 80 && detail < -0.5) blockType = BLOCK.SNOW;
                         }
                     } 
+                    // Water Generation
+                    else if (y <= WATER_LEVEL) {
+                        blockType = BLOCK.WATER;
+                    }
                     
                     // Floating Islands
                     if (y > 70) {

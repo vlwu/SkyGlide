@@ -24,7 +24,9 @@ export const BLOCK = {
     CACTUS: 21,
     DEAD_BUSH: 22,
     SPRUCE_LOG: 23,
-    SPRUCE_LEAVES: 24
+    SPRUCE_LEAVES: 24,
+    // Liquids
+    WATER: 25
 };
 
 // Face order: Right, Left, Top, Bottom, Front, Back
@@ -46,8 +48,13 @@ export const FACE_CORNERS = [
     [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]  // Back
 ];
 
+export function isWater(type) {
+    return type === BLOCK.WATER;
+}
+
 export function isTransparent(type) {
     return type === BLOCK.AIR || 
+           type === BLOCK.WATER ||
            type === BLOCK.TALL_GRASS || 
            type === BLOCK.RED_FLOWER || 
            type === BLOCK.YELLOW_FLOWER ||

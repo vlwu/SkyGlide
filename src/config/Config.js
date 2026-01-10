@@ -4,13 +4,14 @@ export const CONFIG = {
     WORLD: {
         CHUNK_SIZE: 16,
         CHUNK_HEIGHT: 256, 
-        RENDER_DISTANCE: 16, // Increased from 10
+        RENDER_DISTANCE: 16, 
         RENDER_DISTANCE_UNITS: 256,
         SAFE_RADIUS_SQ: 1600, 
-        MAX_SHADOW_DIST: 80, // Increased from 30 for better depth
-        SHADOW_DIST_SQ: 6400, // 80^2 (Increased from 900/1225)
+        MAX_SHADOW_DIST: 80, 
+        SHADOW_DIST_SQ: 6400, 
+        WATER_LEVEL: 18, // New Water Level
         LOD: {
-            DIST_LOW: 6, // Pushed back slightly
+            DIST_LOW: 6, 
             DIST_FAR: 10, 
         }
     },

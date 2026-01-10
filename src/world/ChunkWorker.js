@@ -1,13 +1,21 @@
-import { BLOCK, isTransparent, isPlant } from './BlockDefs.js';
+import { BLOCK, isTransparent, isPlant, isWater } from './BlockDefs.js';
 import { fastColor } from './BlockStyles.js';
 import { TerrainPass } from './gen/TerrainPass.js';
 import { VegetationPass } from './gen/VegetationPass.js';
 
 let MAX_VERTICES = 40000;
+// Buffers for Opaque Geometry
 let BUFFER_POS = new Float32Array(MAX_VERTICES * 3);
 let BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
 let BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
 let BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
+
+// Buffers for Water Geometry
+let MAX_VERTICES_W = 10000;
+let BUFFER_POS_W = new Float32Array(MAX_VERTICES_W * 3);
+let BUFFER_NORM_W = new Float32Array(MAX_VERTICES_W * 3);
+let BUFFER_COL_W = new Float32Array(MAX_VERTICES_W * 3);
+let BUFFER_IND_W = new Uint16Array(MAX_VERTICES_W * 1.5);
 
 self.onmessage = (e) => {
     const { x, z, size, height, pathSegments, lod = 1 } = e.data;
@@ -25,7 +33,6 @@ self.onmessage = (e) => {
     VegetationPass.generate(data, startX, startZ, size, height);
     
     // --- 3. Path/Structure Pass (Carving) ---
-    // Keep path carving here or move to another pass if it gets complex
     for (let lz = 0; lz < size; lz++) {
         const wz = startZ + lz;
         const points = pathSegments[wz];
@@ -75,10 +82,13 @@ self.onmessage = (e) => {
         }
     }
 
-    // --- 5. Meshing (Greedy + Plants) ---
-    // (Logic below remains largely identical but uses imported helpers)
+    // --- 5. Meshing ---
     let vertCount = 0;
     let indexCount = 0;
+    
+    let vertCountW = 0;
+    let indexCountW = 0;
+    
     const rgb = [0,0,0];
 
     const step = lod;
@@ -95,13 +105,24 @@ self.onmessage = (e) => {
 
     const mask = new Int32Array(Math.max(lSize, lHeight) * Math.max(lSize, lHeight));
 
-    const ensureBufferCapacity = (needed) => {
-        if (vertCount + needed >= MAX_VERTICES) {
-            MAX_VERTICES = Math.floor(MAX_VERTICES * 1.5);
-            const newPos = new Float32Array(MAX_VERTICES * 3); newPos.set(BUFFER_POS); BUFFER_POS = newPos;
-            const newNorm = new Float32Array(MAX_VERTICES * 3); newNorm.set(BUFFER_NORM); BUFFER_NORM = newNorm;
-            const newCol = new Float32Array(MAX_VERTICES * 3); newCol.set(BUFFER_COL); BUFFER_COL = newCol;
-            const newInd = new Uint16Array(MAX_VERTICES * 1.5); newInd.set(BUFFER_IND); BUFFER_IND = newInd;
+    // Helper to grow buffers
+    const ensureBufferCapacity = (needed, isWater) => {
+        if (isWater) {
+             if (vertCountW + needed >= MAX_VERTICES_W) {
+                MAX_VERTICES_W = Math.floor(MAX_VERTICES_W * 1.5);
+                const newPos = new Float32Array(MAX_VERTICES_W * 3); newPos.set(BUFFER_POS_W); BUFFER_POS_W = newPos;
+                const newNorm = new Float32Array(MAX_VERTICES_W * 3); newNorm.set(BUFFER_NORM_W); BUFFER_NORM_W = newNorm;
+                const newCol = new Float32Array(MAX_VERTICES_W * 3); newCol.set(BUFFER_COL_W); BUFFER_COL_W = newCol;
+                const newInd = new Uint16Array(MAX_VERTICES_W * 1.5); newInd.set(BUFFER_IND_W); BUFFER_IND_W = newInd;
+            }
+        } else {
+            if (vertCount + needed >= MAX_VERTICES) {
+                MAX_VERTICES = Math.floor(MAX_VERTICES * 1.5);
+                const newPos = new Float32Array(MAX_VERTICES * 3); newPos.set(BUFFER_POS); BUFFER_POS = newPos;
+                const newNorm = new Float32Array(MAX_VERTICES * 3); newNorm.set(BUFFER_NORM); BUFFER_NORM = newNorm;
+                const newCol = new Float32Array(MAX_VERTICES * 3); newCol.set(BUFFER_COL); BUFFER_COL = newCol;
+                const newInd = new Uint16Array(MAX_VERTICES * 1.5); newInd.set(BUFFER_IND); BUFFER_IND = newInd;
+            }
         }
     };
 
@@ -120,11 +141,28 @@ self.onmessage = (e) => {
                 for (x[u] = 0; x[u] < dims[u]; x[u]++) {
                     const b1 = (x[d] >= 0) ? getLODBlock(x[0], x[1], x[2]) : BLOCK.AIR;
                     const b2 = (x[d] < dims[d] - 1) ? getLODBlock(x[0] + q[0], x[1] + q[1], x[2] + q[2]) : BLOCK.AIR;
+                    
                     let faceType = 0;
+                    
                     const t1 = isTransparent(b1);
                     const t2 = isTransparent(b2);
-                    if (!t1 && t2) faceType = b1;      
-                    else if (t1 && !t2) faceType = -b2; 
+                    const w1 = isWater(b1);
+                    const w2 = isWater(b2);
+
+                    // Refined visibility logic for Transparent/Water
+                    if (!t1 && t2) {
+                        // Solid next to Transparent -> Draw Solid
+                        faceType = b1; 
+                    } else if (t1 && !t2) {
+                        // Transparent next to Solid -> Draw Solid (neighbor)
+                        faceType = -b2; 
+                    } else if (t1 && t2) {
+                        // Both transparent
+                        // Draw water if next to Air/Plant, but not next to Water
+                        if (w1 && !w2) faceType = b1;
+                        else if (w2 && !w1) faceType = -b2;
+                    }
+                    
                     mask[n++] = faceType;
                 }
             }
@@ -145,12 +183,18 @@ self.onmessage = (e) => {
                         x[u] = i; x[v] = j;
                         const du = [0, 0, 0]; du[u] = w;
                         const dv = [0, 0, 0]; dv[v] = h;
-                        const vBase = vertCount;
+                        
+                        const type = Math.abs(c);
+                        const isWaterBlock = isWater(type);
+                        
+                        // Select Buffers
+                        const vBase = isWaterBlock ? vertCountW : vertCount;
+                        
                         const start = [x[0] * step, x[1] * step, x[2] * step];
                         const spanU = [du[0] * step, du[1] * step, du[2] * step];
                         const spanV = [dv[0] * step, dv[1] * step, dv[2] * step];
                         const corners = [[0, 0, 0], spanU, [spanU[0]+spanV[0], spanU[1]+spanV[1], spanU[2]+spanV[2]], spanV];
-                        const type = Math.abs(c);
+                        
                         const isBack = c < 0;
                         const wx = startX + start[0];
                         const wz = startZ + start[2];
@@ -164,23 +208,42 @@ self.onmessage = (e) => {
                         else if (d === 0) shade = 0.85; 
                         else shade = 0.9; 
 
-                        ensureBufferCapacity(4);
+                        ensureBufferCapacity(4, isWaterBlock);
+                        
+                        // Buffer References
+                        const POS = isWaterBlock ? BUFFER_POS_W : BUFFER_POS;
+                        const NORM = isWaterBlock ? BUFFER_NORM_W : BUFFER_NORM;
+                        const COL = isWaterBlock ? BUFFER_COL_W : BUFFER_COL;
+                        const IND = isWaterBlock ? BUFFER_IND_W : BUFFER_IND;
+
+                        let vc = isWaterBlock ? vertCountW : vertCount;
+                        let ic = isWaterBlock ? indexCountW : indexCount;
+
                         for (let k = 0; k < 4; k++) {
                             const p = isBack ? corners[3-k] : corners[k];
-                            const dst = vertCount * 3;
-                            BUFFER_POS[dst] = startX + start[0] + p[0];
-                            BUFFER_POS[dst+1] = start[1] + p[1];
-                            BUFFER_POS[dst+2] = startZ + start[2] + p[2];
-                            BUFFER_NORM[dst] = q[0] * (isBack ? -1 : 1);
-                            BUFFER_NORM[dst+1] = q[1] * (isBack ? -1 : 1);
-                            BUFFER_NORM[dst+2] = q[2] * (isBack ? -1 : 1);
-                            BUFFER_COL[dst] = rgb[0] * shade;
-                            BUFFER_COL[dst+1] = rgb[1] * shade;
-                            BUFFER_COL[dst+2] = rgb[2] * shade;
-                            vertCount++;
+                            const dst = vc * 3;
+                            POS[dst] = startX + start[0] + p[0];
+                            POS[dst+1] = start[1] + p[1];
+                            POS[dst+2] = startZ + start[2] + p[2];
+                            NORM[dst] = q[0] * (isBack ? -1 : 1);
+                            NORM[dst+1] = q[1] * (isBack ? -1 : 1);
+                            NORM[dst+2] = q[2] * (isBack ? -1 : 1);
+                            COL[dst] = rgb[0] * shade;
+                            COL[dst+1] = rgb[1] * shade;
+                            COL[dst+2] = rgb[2] * shade;
+                            vc++;
                         }
-                        BUFFER_IND[indexCount++] = vBase; BUFFER_IND[indexCount++] = vBase + 1; BUFFER_IND[indexCount++] = vBase + 2;
-                        BUFFER_IND[indexCount++] = vBase + 2; BUFFER_IND[indexCount++] = vBase + 3; BUFFER_IND[indexCount++] = vBase;
+                        
+                        IND[ic++] = vBase; IND[ic++] = vBase + 1; IND[ic++] = vBase + 2;
+                        IND[ic++] = vBase + 2; IND[ic++] = vBase + 3; IND[ic++] = vBase;
+
+                        if (isWaterBlock) {
+                            vertCountW = vc;
+                            indexCountW = ic;
+                        } else {
+                            vertCount = vc;
+                            indexCount = ic;
+                        }
 
                         for (l = 0; l < h; ++l) { for (k = 0; k < w; ++k) { mask[n + k + l * dims[u]] = 0; } }
                         i += w; n += w;
@@ -190,7 +253,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // Plant Meshing
+    // Plant Meshing (Only Opaque/Cutout, No Water)
     if (lod === 1) {
         for (let lx = 0; lx < size; lx++) {
             for (let ly = 0; ly < height; ly++) {
@@ -205,7 +268,7 @@ self.onmessage = (e) => {
                         seedH = (seedH ^ (seedH >> 13)) * 1274124933;
                         const rand = ((seedH >>> 0) / 4294967296); 
 
-                        ensureBufferCapacity(8);
+                        ensureBufferCapacity(8, false);
                         const vBase = vertCount;
                         
                         const pushVert = (vx, vy, vz, nx, ny, nz) => {
@@ -240,10 +303,22 @@ self.onmessage = (e) => {
     const colOut = BUFFER_COL.slice(0, vertCount * 3);
     const indOut = BUFFER_IND.slice(0, indexCount);
 
+    const posOutW = BUFFER_POS_W.slice(0, vertCountW * 3);
+    const normOutW = BUFFER_NORM_W.slice(0, vertCountW * 3);
+    const colOutW = BUFFER_COL_W.slice(0, vertCountW * 3);
+    const indOutW = BUFFER_IND_W.slice(0, indexCountW);
+
+    const transferList = [
+        data.buffer, 
+        posOut.buffer, normOut.buffer, colOut.buffer, indOut.buffer,
+        posOutW.buffer, normOutW.buffer, colOutW.buffer, indOutW.buffer
+    ];
+
     self.postMessage({ 
         key: `${x},${z}`,
         lod: lod,
         data: data,
-        geometry: { position: posOut, normal: normOut, color: colOut, index: indOut }
-    }, [data.buffer, posOut.buffer, normOut.buffer, colOut.buffer, indOut.buffer]);
+        geometry: { position: posOut, normal: normOut, color: colOut, index: indOut },
+        waterGeometry: { position: posOutW, normal: normOutW, color: colOutW, index: indOutW }
+    }, transferList);
 };

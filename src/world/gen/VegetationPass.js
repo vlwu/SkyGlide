@@ -1,10 +1,12 @@
 import { BLOCK, isTransparent } from '../BlockDefs.js';
 import { noise3D } from '../BiomeUtils.js';
+import { CONFIG } from '../../config/Config.js';
 
 export class VegetationPass {
     static generate(data, startX, startZ, size, height) {
         const strideY = size;
         const strideZ = size * height;
+        const WATER_LEVEL = CONFIG.WORLD.WATER_LEVEL;
 
         // 1. TREES
         const treeCheckRange = 3; 
@@ -22,7 +24,8 @@ export class VegetationPass {
                         let groundY = -1;
                         for (let y = height - 1; y > 0; y--) {
                             const idx = lx + lz * strideZ + y * strideY;
-                            if (data[idx] !== BLOCK.AIR && !isTransparent(data[idx])) {
+                            const b = data[idx];
+                            if (b !== BLOCK.AIR && b !== BLOCK.WATER && !isTransparent(b)) {
                                 if (y < 100) { // Limit tree altitude
                                     groundY = y;
                                     break;
@@ -30,7 +33,8 @@ export class VegetationPass {
                             }
                         }
 
-                        if (groundY > 10) {
+                        // Ensure we aren't planting underwater or on beach near water
+                        if (groundY > WATER_LEVEL + 1) {
                             const b = data[lx + lz * strideZ + groundY * strideY];
                             
                             // Check valid soil and choose tree type
@@ -55,7 +59,10 @@ export class VegetationPass {
                     const idx = lx + lz * strideZ + y * strideY;
                     const block = data[idx];
                     
-                    if (block !== BLOCK.AIR && !isTransparent(block)) {
+                    // Don't plant on water or if below water level
+                    if (y <= WATER_LEVEL) continue;
+
+                    if (block !== BLOCK.AIR && block !== BLOCK.WATER && !isTransparent(block)) {
                         const aboveIdx = idx + strideY;
                         if (aboveIdx < data.length && data[aboveIdx] === BLOCK.AIR) {
                             this.placeGroundCover(data, aboveIdx, block, wx, y, wz, strideY, lx, lz, strideZ);

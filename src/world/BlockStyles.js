@@ -36,6 +36,9 @@ export function fastColor(type, rand, out, yRatio = 0.5) {
         case BLOCK.CACTUS:
             r = 0.1 + rand * 0.1; g = 0.5 + rand * 0.1; b = 0.1 + rand * 0.05; break;
         
+        case BLOCK.WATER:
+            r = 0.2; g = 0.5; b = 0.8; break; // Alpha handled in material
+            
         // Vegetation
         case BLOCK.OAK_LOG:
             r = 0.4 + rand * 0.1; g = 0.3 + rand * 0.05; b = 0.2 + rand * 0.05; break;
