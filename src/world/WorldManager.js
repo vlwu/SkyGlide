@@ -122,7 +122,6 @@ export class WorldManager {
                 const chunk = chunks[i];
                 if (!chunk.mesh) continue;
 
-                // Simple check for safe radius - no need for frustum math nearby
                 const dx = chunk.worldX - playerPos.x;
                 const dz = chunk.worldZ - playerPos.z;
                 const distSq = dx*dx + dz*dz;
@@ -130,15 +129,10 @@ export class WorldManager {
                 let isVisible = false;
 
                 if (distSq <= this.maxVisibleDistSq) {
-                    // OPTIMIZATION: Always show nearby chunks without Frustum cull
+                    // Culling: Safe radius always visible, otherwise check frustum
                     if (distSq > safeRadiusSq) {
-                        const invLen = 1.0 / Math.sqrt(distSq);
-                        const dot = (dx * invLen * this._cameraForward.x) + (dz * invLen * this._cameraForward.z);
-                        
-                        if (dot > -0.5) {
-                             if (this.frustum.intersectsBox(chunk.bbox)) {
-                                isVisible = true;
-                            }
+                        if (this.frustum.intersectsBox(chunk.bbox)) {
+                            isVisible = true;
                         }
                     } else {
                         isVisible = true;
@@ -155,55 +149,55 @@ export class WorldManager {
             }
         }
 
-        // OPTIMIZATION: Update chunk generation queue less frequently (500ms vs 200ms)
-        if (now - this.lastUpdate > 500) {
+        // OPTIMIZATION: Update chunk generation queue less frequently
+        if (now - this.lastUpdate > 200) {
             this.lastUpdate = now;
             this.updateQueue(playerPos, camera);
         }
 
-        // OPTIMIZATION: Adjust jobs based on player state
         const speed = player.velocity.length();
         let jobsPerFrame = 2;
-        
-        if (speed < 5) {
-            // Idle/Walking: Load more terrain
-            jobsPerFrame = 4;
-        } else if (speed > 20) {
-            // Fast Flying: Reduce load to keep frame rate high
-            jobsPerFrame = 1;
-        }
+        if (speed < 5) jobsPerFrame = 4;
+        else if (speed > 20) jobsPerFrame = 1;
 
         let dispatched = 0;
 
         while (this.generationQueue.length > 0 && dispatched < jobsPerFrame) {
             const req = this.generationQueue.shift();
             
-            if (this.chunks.has(req.key)) continue;
-
-            const chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial);
-            this.chunks.set(req.key, chunk);
-            this._chunkArray.push(chunk);
-
-            const pathSegments = {};
-            const startZ = req.z * this.chunkSize;
+            let chunk = this.chunks.get(req.key);
             
-            for (let z = 0; z < this.chunkSize; z++) {
-                const wz = startZ + z;
-                const points = this.racePath.getPointsAtZ(wz);
-                if (points && points.length > 0) {
-                    pathSegments[wz] = points.map(p => ({ x: p.x, y: p.y }));
-                }
+            // If new chunk
+            if (!chunk) {
+                chunk = new Chunk(req.x, req.z, this.scene, this.chunkMaterial);
+                this.chunks.set(req.key, chunk);
+                this._chunkArray.push(chunk);
             }
 
-            this.worker.postMessage({
-                x: req.x,
-                z: req.z,
-                size: this.chunkSize,
-                height: CONFIG.WORLD.CHUNK_HEIGHT,
-                pathSegments: pathSegments
-            });
+            // Dispatch if new or LOD changed
+            if (!chunk.isLoaded || chunk.lod !== req.lod) {
+                const pathSegments = {};
+                const startZ = req.z * this.chunkSize;
+                
+                for (let z = 0; z < this.chunkSize; z++) {
+                    const wz = startZ + z;
+                    const points = this.racePath.getPointsAtZ(wz);
+                    if (points && points.length > 0) {
+                        pathSegments[wz] = points.map(p => ({ x: p.x, y: p.y }));
+                    }
+                }
 
-            dispatched++;
+                this.worker.postMessage({
+                    x: req.x,
+                    z: req.z,
+                    lod: req.lod,
+                    size: this.chunkSize,
+                    height: CONFIG.WORLD.CHUNK_HEIGHT,
+                    pathSegments: pathSegments
+                });
+
+                dispatched++;
+            }
         }
     }
 
@@ -214,7 +208,10 @@ export class WorldManager {
         const activeKeys = new Set();
         const newQueue = [];
         const range = this.renderDistance;
-        const rangeSq = (range * this.chunkSize) ** 2;
+        
+        // Define LOD radii in chunks
+        const lodLowRad = CONFIG.WORLD.LOD.DIST_LOW;
+        const lodFarRad = CONFIG.WORLD.LOD.DIST_FAR;
 
         for (let z = -range; z <= range; z++) {
             for (let x = -range; x <= range; x++) {
@@ -224,7 +221,16 @@ export class WorldManager {
                 
                 activeKeys.add(key);
 
-                if (!this.chunks.has(key)) {
+                // Calculate distance in chunk units
+                const distChunks = Math.max(Math.abs(x), Math.abs(z));
+                let targetLOD = 1;
+                if (distChunks > lodFarRad) targetLOD = 4;
+                else if (distChunks > lodLowRad) targetLOD = 2;
+
+                const chunk = this.chunks.get(key);
+                
+                // Add to queue if missing OR if LOD needs update
+                if (!chunk || !chunk.isLoaded || chunk.lod !== targetLOD) {
                     const wx = (chunkX * this.chunkSize) + (this.chunkSize / 2);
                     const wz = (chunkZ * this.chunkSize) + (this.chunkSize / 2);
                     
@@ -232,18 +238,18 @@ export class WorldManager {
                     const dirZ = wz - playerPos.z;
                     const distSq = dirX*dirX + dirZ*dirZ;
 
-                    if (distSq > rangeSq * 1.2) continue;
-
                     let score = distSq;
                     
+                    // Priority: Center > Near Camera > Far
                     if ((chunkX >= -1 && chunkX <= 0) && (chunkZ >= -1 && chunkZ <= 0)) {
                         score = -99999999;
                     } else if (camera) {
                         const len = Math.sqrt(distSq) || 1;
                         const dot = ((dirX/len) * this._cameraForward.x) + ((dirZ/len) * this._cameraForward.z);
+                        // Penalize chunks behind camera
                         score -= (dot * 50000); 
                     }
-                    newQueue.push({ x: chunkX, z: chunkZ, key, score });
+                    newQueue.push({ x: chunkX, z: chunkZ, key, score, lod: targetLOD });
                 }
             }
         }

@@ -9,6 +9,11 @@ export const CONFIG = {
         SAFE_RADIUS_SQ: 1600, // 40^2
         MAX_SHADOW_DIST: 30,
         SHADOW_DIST_SQ: 900, // 30^2
+        // LOD Settings
+        LOD: {
+            DIST_LOW: 4,  // Chunks > 4 units away get LOD 2 (Step 2)
+            DIST_FAR: 7,  // Chunks > 7 units away get LOD 4 (Step 4)
+        }
     },
     PHYSICS: {
         GRAVITY: 25.0,

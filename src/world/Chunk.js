@@ -13,6 +13,7 @@ export class Chunk {
         this.data = null;
         this.mesh = null;
         this.isLoaded = false;
+        this.lod = 1; // 1 = Full Detail, 2 = Half, 4 = Quarter
         
         // Cache center position for distance checks
         this.worldX = x * 16 + 8;
@@ -26,13 +27,28 @@ export class Chunk {
     }
 
     getBlock(x, y, z) {
+        // LOD Handling: If LOD > 1, coordinate precision is lost
+        // We map input coord to the nearest stored voxel
         if (!this.data || x < 0 || x >= this.size || y < 0 || y >= this.height || z < 0 || z >= this.size) return 0;
+        
+        // Ensure we read from the correct index in the full resolution data
+        // Note: Currently we store full res data even at low LOD for physics accuracy
         return this.data[x + this.size * (y + this.height * z)];
     }
 
     applyMesh(payload) {
+        // If we received an update for a different LOD than requested, arguably we should ignore it,
+        // but for now we accept it to ensure something renders.
+        this.lod = payload.lod;
         this.data = payload.data;
         const geoData = payload.geometry;
+
+        // Clean up old mesh
+        if (this.mesh) {
+            this.scene.remove(this.mesh);
+            this.mesh.geometry.dispose();
+            this.mesh = null;
+        }
 
         if (geoData.position.length === 0) {
             this.isLoaded = true;
@@ -45,24 +61,19 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.BufferAttribute(geoData.color, 3));
         geometry.setIndex(new THREE.BufferAttribute(geoData.index, 1));
 
-        // OPTIMIZATION: Bbox is now computed on world-space vertices directly
         geometry.computeBoundingBox();
         this.bbox.copy(geometry.boundingBox);
 
         this.mesh = new THREE.Mesh(geometry, this.material);
         
-        // OPTIMIZATION: Position is baked into geometry, so we sit at 0,0,0
-        // this.mesh.position.set(this.x * this.size, 0, this.z * this.size); 
-        
         // Performance: Shadows default to false, enabled only when close
         this.mesh.castShadow = false; 
         this.mesh.receiveShadow = true; 
         
+        // Disable frustum culling on the mesh itself because we handle it in WorldManager
         this.mesh.frustumCulled = false;
         
         this.mesh.matrixAutoUpdate = false;
-        // No updateMatrix() needed since position/rot/scale are default
-
         this.scene.add(this.mesh);
         this.isLoaded = true;
     }
@@ -72,8 +83,9 @@ export class Chunk {
 
         // Performance: Strict Shadow Culling with state caching
         // Only cast shadows if within 35 units (35^2 = 1225)
+        // Disable shadows entirely for Low LOD chunks
         const shadowDistSq = 1225;
-        const shouldCastShadow = distSq <= shadowDistSq;
+        const shouldCastShadow = (this.lod === 1) && (distSq <= shadowDistSq);
 
         // Only update if state changed (avoid redundant GPU updates)
         if (shouldCastShadow !== this._lastShadowState) {
