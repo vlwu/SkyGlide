@@ -108,8 +108,11 @@ self.onmessage = (e) => {
                     
                     const groundY = Math.floor(h);
 
+                    // Check if the surface block is actually Grass before placing a tree
+                    const surfaceBlock = getBiomeBlock(biome, 0, groundY, groundY);
+
                     // Tree Constraints
-                    if (groundY > 10 && groundY < height - 10) {
+                    if (groundY > 10 && groundY < height - 10 && surfaceBlock === BLOCK.GRASS) {
                         // Place Tree
                         const treeHeight = 4 + Math.floor((treeNoise - 0.75) * 20); // 4 to 6
                         const leafStart = groundY + treeHeight - 2;
@@ -263,12 +266,6 @@ self.onmessage = (e) => {
                     const rand = ((h >>> 0) / 4294967296); 
 
                     // Cross has 2 planes -> 4 faces (double sided simulated by quads)
-                    // But to save verts we can just do 2 planes and rely on single side if viewed from top?
-                    // Standard is 2 double-sided planes. 
-                    // Let's do 4 quads (8 tris) to ensure visibility from all angles without material hacks.
-                    // Plane 1: (0,0)-(1,1)
-                    // Plane 2: (0,1)-(1,0)
-                    
                     const vBase = vertCount;
                     
                     // Vertex generation helper
