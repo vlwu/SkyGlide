@@ -9,8 +9,12 @@ export class WorldManager {
         this.renderDistance = renderDistance; 
 
         this.chunks = new Map(); 
-        this.lastChunkKey = '';
+        
+        // Optimization: Integer cache for fast lookups
         this.lastChunk = null;
+        this.lastChunkKey = '';
+        this.lastCX = null;
+        this.lastCZ = null;
 
         this.chunkMaterial = new THREE.MeshLambertMaterial({ 
             vertexColors: true
@@ -43,6 +47,8 @@ export class WorldManager {
         this.chunks.clear();
         this.lastChunk = null;
         this.lastChunkKey = '';
+        this.lastCX = null;
+        this.lastCZ = null;
         this.generationQueue = [];
     }
 
@@ -195,16 +201,19 @@ export class WorldManager {
         const cx = Math.floor(x / this.chunkSize);
         const cz = Math.floor(z / this.chunkSize);
         
-        const key = `${cx},${cz}`;
         let chunk;
 
-        if (key === this.lastChunkKey && this.lastChunk) {
+        // Optimization: Fast integer comparison avoids string allocation for hot-path lookups
+        if (this.lastChunk && this.lastCX === cx && this.lastCZ === cz) {
             chunk = this.lastChunk;
         } else {
+            const key = `${cx},${cz}`;
             chunk = this.chunks.get(key);
             if (chunk) {
                 this.lastChunk = chunk;
                 this.lastChunkKey = key;
+                this.lastCX = cx;
+                this.lastCZ = cz;
             }
         }
         

@@ -77,7 +77,9 @@ export class PlayerCamera {
         this._camDir.normalize();
 
         let actualDist = maxDist;
-        const step = 0.5; // Optimization: Increased step size from 0.2 to 0.5 to reduce raycast iterations
+        // Optimization: Increased step size to 0.8 reduces raycast iterations significantly
+        // while maintaining acceptable camera collision precision.
+        const step = 0.8; 
 
         for (let d = 0; d <= maxDist; d += step) {
             this._tempVec.copy(this._viewTarget).addScaledVector(this._camDir, d);

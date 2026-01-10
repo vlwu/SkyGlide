@@ -15,6 +15,10 @@ export class RacePath {
         this.visualItems = []; 
         this.visualBuckets = new Map();
         this.VISUAL_BUCKET_SIZE = 100;
+        
+        // Optimization: Zero-allocation visibility tracking
+        this._visibleItems = [];
+        this._frameCount = 0;
 
         this.instancedMesh = null;
         this.dummy = new THREE.Object3D(); 
@@ -44,6 +48,7 @@ export class RacePath {
         });
         this.visualItems = [];
         this.visualBuckets.clear();
+        this._visibleItems = [];
 
         if (this.instancedMesh) {
             this.scene.remove(this.instancedMesh);
@@ -436,38 +441,47 @@ export class RacePath {
 
     update(dt, playerPos = null) {
         this.uniforms.uTime.value += dt;
+        this._frameCount++;
 
         if (playerPos) {
             const centerBucket = Math.floor(playerPos.z / this.VISUAL_BUCKET_SIZE);
             const minB = centerBucket - 3;
             const maxB = centerBucket + 3;
             
-            if (!this._lastVisibleItems) this._lastVisibleItems = new Set();
-            const newVisibleItems = new Set();
+            const currentFrame = this._frameCount;
+            const visibleNow = [];
 
+            // Optimization: Avoid creating new Sets every frame. 
+            // Use frame-based tagging and simple arrays.
             for (let b = minB; b <= maxB; b++) {
                 const bucket = this.visualBuckets.get(b);
                 if (bucket) {
                     for (let i = 0; i < bucket.length; i++) {
                         const item = bucket[i];
                         if (item.userData.bbox) {
+                            // Culling Check
                             if (playerPos.z > item.userData.bbox.max.z + 100 || playerPos.z < item.userData.bbox.min.z - 250) {
                                 continue; 
                             }
-                            item.visible = true;
-                            newVisibleItems.add(item);
+                            
+                            if (!item.visible) item.visible = true;
+                            item.userData.lastFrame = currentFrame;
+                            visibleNow.push(item);
                         }
                     }
                 }
             }
 
-            this._lastVisibleItems.forEach(item => {
-                if (!newVisibleItems.has(item)) {
+            // Hide items that were visible previously but not this frame
+            for (let i = 0; i < this._visibleItems.length; i++) {
+                const item = this._visibleItems[i];
+                if (item.userData.lastFrame !== currentFrame) {
                     item.visible = false;
                 }
-            });
+            }
 
-            this._lastVisibleItems = newVisibleItems;
+            // Swap list (fast, no allocation if just replacing reference)
+            this._visibleItems = visibleNow;
         }
     }
 }
