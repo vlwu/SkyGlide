@@ -15,10 +15,11 @@ export class RacePath {
         this.ringBuckets = new Map();
         
         // OPTIMIZATION: Reduce bucket size for finer spatial hashing
-        this.BUCKET_SIZE = 10;
+        this.BUCKET_SIZE = 30; // Increased to 30 to reduce bucket count overhead
         
         // Visuals
         this.visualItems = []; 
+        this.particlesMesh = null; // Reusable particles mesh
         
         this._frameCount = 0;
 
@@ -37,7 +38,8 @@ export class RacePath {
         // OPTIMIZATION: Dirty set for partial GPU updates
         this.dirtyRingIndices = new Set();
         
-        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 6, 8); 
+        // OPTIMIZATION: Lower poly torus (5, 6) instead of (6, 8)
+        this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 5, 6); 
         
         this.ringUniforms = {
             uTime: { value: 0 }
@@ -143,6 +145,11 @@ export class RacePath {
             if (item.geometry) item.geometry.dispose();
         });
         this.visualItems = [];
+
+        // Particles mesh is managed separately for reuse
+        if (this.particlesMesh) {
+            this.particlesMesh.visible = false;
+        }
 
         if (this.instancedMesh) {
             this.scene.remove(this.instancedMesh);
@@ -512,7 +519,8 @@ export class RacePath {
                 this.visualItems.push(tubeMesh);
 
                 // 2. Aggregate Particle Data
-                const particleCount = Math.floor(subset.length * 0.2); 
+                // OPTIMIZATION: Reduced multiplier from 0.2 to 0.1
+                const particleCount = Math.floor(subset.length * 0.1); 
                 if (particleCount > 0) {
                     const subPoints = subCurve.getSpacedPoints(particleCount);
                     
@@ -538,19 +546,45 @@ export class RacePath {
             }
         }
 
+        // OPTIMIZATION: Reuse particle geometry (Pooling)
         if (particlePositions.length > 0) {
-            const partGeo = new THREE.BufferGeometry();
-            partGeo.setAttribute('position', new THREE.Float32BufferAttribute(particlePositions, 3));
-            partGeo.setAttribute('aRandom', new THREE.Float32BufferAttribute(particleRandoms, 3));
-            partGeo.setAttribute('aPhase', new THREE.Float32BufferAttribute(particlePhases, 1));
-            
-            partGeo.computeBoundingBox();
+            if (!this.particlesMesh) {
+                // Initial creation with large buffer if first run
+                const maxParticles = 60000; // Buffer cap
+                const partGeo = new THREE.BufferGeometry();
+                
+                partGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(maxParticles * 3), 3));
+                partGeo.setAttribute('aRandom', new THREE.BufferAttribute(new Float32Array(maxParticles * 3), 3));
+                partGeo.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(maxParticles), 1));
+                
+                this.particlesMesh = new THREE.Points(partGeo, this.sharedPartMat);
+                this.particlesMesh.frustumCulled = false;
+                this.scene.add(this.particlesMesh);
+            }
 
-            const particles = new THREE.Points(partGeo, this.sharedPartMat);
-            particles.frustumCulled = false; 
+            const geo = this.particlesMesh.geometry;
+            const posAttr = geo.attributes.position;
+            const randAttr = geo.attributes.aRandom;
+            const phaseAttr = geo.attributes.aPhase;
+
+            // Update attributes
+            let count = Math.min(particlePositions.length / 3, posAttr.count);
             
-            this.scene.add(particles);
-            this.visualItems.push(particles);
+            // We use .set to update range without reallocation
+            posAttr.set(particlePositions.slice(0, count * 3), 0);
+            randAttr.set(particleRandoms.slice(0, count * 3), 0);
+            phaseAttr.set(particlePhases.slice(0, count), 0);
+
+            posAttr.needsUpdate = true;
+            randAttr.needsUpdate = true;
+            phaseAttr.needsUpdate = true;
+            
+            geo.setDrawRange(0, count);
+            geo.computeBoundingBox();
+            
+            this.particlesMesh.visible = true;
+        } else if (this.particlesMesh) {
+            this.particlesMesh.visible = false;
         }
     }
 

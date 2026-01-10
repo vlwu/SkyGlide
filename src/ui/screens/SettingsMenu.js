@@ -10,6 +10,14 @@ const FPS_STEPS = [
 
 const QUALITY_STEPS = ['LOW', 'MEDIUM', 'HIGH'];
 
+const RENDER_DIST_STEPS = [
+    { value: 'AUTO', label: 'AUTO' },
+    { value: 8, label: 'Short' },
+    { value: 12, label: 'Medium' },
+    { value: 16, label: 'Far' },
+    { value: 24, label: 'Extreme' }
+];
+
 export class SettingsMenu {
     constructor(uiManager) {
         this.uiManager = uiManager;
@@ -28,12 +36,16 @@ export class SettingsMenu {
         const currentFps = settingsManager.get('fpsLimit');
         const currentSens = settingsManager.get('sensitivity');
         const currentQuality = settingsManager.get('quality');
+        const currentDist = settingsManager.get('renderDistance');
         
         let fpsIndex = FPS_STEPS.findIndex(step => step.value === currentFps);
         if (fpsIndex === -1) fpsIndex = 0; 
 
         let qualIndex = QUALITY_STEPS.indexOf(currentQuality);
         if (qualIndex === -1) qualIndex = 2; 
+
+        let distIndex = RENDER_DIST_STEPS.findIndex(step => step.value === currentDist);
+        if (distIndex === -1) distIndex = 2; // Default to Medium (12)
 
         this.element.innerHTML = `
             <div class="menu-content settings-content">
@@ -48,6 +60,15 @@ export class SettingsMenu {
                                 min="0" max="${QUALITY_STEPS.length - 1}" step="1" 
                                 value="${qualIndex}">
                             <span id="quality-value" class="slider-value">${QUALITY_STEPS[qualIndex]}</span>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <span>Render Dist</span>
+                        <div class="slider-container">
+                            <input type="range" id="dist-slider" 
+                                min="0" max="${RENDER_DIST_STEPS.length - 1}" step="1" 
+                                value="${distIndex}">
+                            <span id="dist-value" class="slider-value">${RENDER_DIST_STEPS[distIndex].label}</span>
                         </div>
                     </div>
                     <div class="setting-row">
@@ -144,6 +165,20 @@ export class SettingsMenu {
         qSlider.addEventListener('change', (e) => {
             const index = parseInt(e.target.value);
             settingsManager.set('quality', QUALITY_STEPS[index]);
+            this.uiManager.notifySettingsChanged();
+        });
+        
+        const distSlider = this.element.querySelector('#dist-slider');
+        const distLabel = this.element.querySelector('#dist-value');
+
+        distSlider.addEventListener('input', (e) => {
+            const index = parseInt(e.target.value);
+            distLabel.textContent = RENDER_DIST_STEPS[index].label;
+        });
+
+        distSlider.addEventListener('change', (e) => {
+            const index = parseInt(e.target.value);
+            settingsManager.set('renderDistance', RENDER_DIST_STEPS[index].value);
             this.uiManager.notifySettingsChanged();
         });
 

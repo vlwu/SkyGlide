@@ -70,26 +70,32 @@ const fpsCounter = new FPSCounter();
 
 const applyGraphicsSettings = () => {
     const quality = settingsManager.get('quality');
+    const savedRenderDist = settingsManager.get('renderDistance');
     
     let pixelRatio = 1.5;
     let shadows = true;
-    let renderDist = 12; // Default (Medium)
+    let renderDist = 12; // Default
     let shadowMapSize = 512;
+    let autoLOD = false;
+
+    if (savedRenderDist === 'AUTO') {
+        autoLOD = true;
+        renderDist = 12; // Start medium
+    } else {
+        renderDist = parseInt(savedRenderDist);
+    }
     
     if (quality === 'LOW') {
         pixelRatio = 0.8;
         shadows = false;
-        renderDist = 8;
         shadowMapSize = 256;
     } else if (quality === 'MEDIUM') {
         pixelRatio = 1.0;
         shadows = true;
-        renderDist = 12;
         shadowMapSize = 512;
     } else if (quality === 'HIGH') {
         pixelRatio = 1.25;
         shadows = true;
-        renderDist = 16;
         shadowMapSize = 1024;
     }
 
@@ -115,13 +121,8 @@ const applyGraphicsSettings = () => {
         dirLight.shadow.camera.updateProjectionMatrix();
     }
 
+    worldManager.setAutoRenderDistance(autoLOD);
     worldManager.setRenderDistance(renderDist);
-    
-    const renderDistUnits = renderDist * CONFIG.WORLD.CHUNK_SIZE;
-    const fogFar = renderDistUnits - CONFIG.GRAPHICS.FOG.FAR_OFFSET;
-    
-    scene.fog.far = fogFar;
-    scene.fog.near = Math.max(50, fogFar * 0.6); 
 };
 
 applyGraphicsSettings();
@@ -144,7 +145,8 @@ uiManager.setRestartHandler((mode) => {
         racePath.resetRings();
     }
     
-    worldManager.update(player, camera); 
+    // Initial update with 0 dt
+    worldManager.update(player, camera, 0, fpsCounter.fps); 
 });
 
 uiManager.setExitHandler(() => {
@@ -223,7 +225,8 @@ function animate(time) {
                 gameScore += CONFIG.GAME.PROXIMITY.SCORE_RATE * dt;
             }
 
-            worldManager.update(player, camera);
+            // Pass dt and FPS to WorldManager for AutoLOD
+            worldManager.update(player, camera, dt, fpsCounter.fps);
 
             if (player.position.y < CONFIG.GAME.FLOOR_LIMIT || player.position.y > CONFIG.GAME.CEILING_LIMIT) {
                 triggerGameOver();

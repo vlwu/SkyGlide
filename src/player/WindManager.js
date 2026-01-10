@@ -128,9 +128,15 @@ export class WindManager {
             targetOpacity = CONFIG.GRAPHICS.WIND.OPACITY_MIN + t * (CONFIG.GRAPHICS.WIND.OPACITY_MAX - CONFIG.GRAPHICS.WIND.OPACITY_MIN);
         }
 
-        this.particles.material.uniforms.uOpacity.value = targetOpacity;
+        // OPTIMIZATION: Skip updates if barely visible
+        if (targetOpacity < 0.05) {
+            this.particles.material.uniforms.uOpacity.value = 0;
+            this.particles.visible = false;
+            return;
+        }
 
-        if (targetOpacity <= 0.01) return;
+        this.particles.visible = true;
+        this.particles.material.uniforms.uOpacity.value = targetOpacity;
 
         // Move particles relative to camera
         // We simulate infinite scrolling by resetting Z
@@ -139,10 +145,6 @@ export class WindManager {
         // Get camera basis
         const camPos = camera.position;
         const camRot = camera.rotation; // Euler
-        
-        // For simple wind effect, we just parent physically to camera? 
-        // No, ThreeJS parenting creates lag/jitter in transform. 
-        // Better to manually position the container at camera, but offset points locally.
         
         this.particles.position.copy(camPos);
         this.particles.rotation.copy(camRot);

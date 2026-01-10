@@ -13,7 +13,8 @@ export class SettingsManager {
             },
             fpsLimit: 0, // 0 = VSync (Browser Default)
             sensitivity: 1.0, // Multiplier for mouse sensitivity
-            quality: 'HIGH' // Graphics Quality: LOW, MEDIUM, HIGH
+            quality: 'HIGH', // Graphics Quality: LOW, MEDIUM, HIGH
+            renderDistance: 12 // Default 12 chunks
         };
         
         this.settings = this.load();

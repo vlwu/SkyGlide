@@ -12,6 +12,11 @@ export class WorldManager {
         this.chunkSize = CONFIG.WORLD.CHUNK_SIZE;
         this.renderDistance = CONFIG.WORLD.RENDER_DISTANCE;
 
+        // Auto-LOD state
+        this.isAutoLOD = false;
+        this.autoLODTimer = 0;
+        this.currentAutoDist = 12;
+
         // OPTIMIZATION: Use integer keys for map lookups
         this.chunks = new Map(); 
         this._chunkArray = [];
@@ -72,12 +77,27 @@ export class WorldManager {
         }
     }
 
+    setAutoRenderDistance(enabled) {
+        this.isAutoLOD = enabled;
+        if (enabled) {
+            this.currentAutoDist = this.renderDistance;
+        }
+    }
+
     setRenderDistance(dist) {
         if (this.renderDistance !== dist) {
             this.renderDistance = dist;
             this.updateMaxVisibleDist();
             this.precomputeLODTemplates();
             this.lastUpdate = 0;
+            
+            // Adjust fog if available
+            if (this.scene.fog) {
+                const renderDistUnits = dist * CONFIG.WORLD.CHUNK_SIZE;
+                const fogFar = renderDistUnits - CONFIG.GRAPHICS.FOG.FAR_OFFSET;
+                this.scene.fog.far = fogFar;
+                this.scene.fog.near = Math.max(50, fogFar * 0.6);
+            }
         }
     }
 
@@ -124,10 +144,31 @@ export class WorldManager {
         return chunk && chunk.isLoaded;
     }
 
-    update(player, camera) {
+    update(player, camera, dt, currentFps) {
         this.frameCounter++;
         const now = performance.now();
         const playerPos = player.position;
+
+        // Auto LOD Logic
+        if (this.isAutoLOD) {
+            this.autoLODTimer += dt;
+            if (this.autoLODTimer > 1.0) { // Check every second
+                this.autoLODTimer = 0;
+                
+                let changed = false;
+                if (currentFps > 55 && this.currentAutoDist < 16) {
+                    this.currentAutoDist++;
+                    changed = true;
+                } else if (currentFps < 45 && this.currentAutoDist > 10) {
+                    this.currentAutoDist--;
+                    changed = true;
+                }
+                
+                if (changed) {
+                    this.setRenderDistance(this.currentAutoDist);
+                }
+            }
+        }
         
         // 1. Process Apply Queue (Meshing)
         const applyStart = performance.now();
