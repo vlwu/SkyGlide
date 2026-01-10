@@ -399,7 +399,7 @@ canvas { display: block; }
     display: flex;
     align-items: center;
     gap: 15px;
-    width: 200px;
+    width: 300px;
 }
 
 input[type=range] {

@@ -5,6 +5,26 @@ export class HowToPlayMenu {
         this.uiManager = uiManager;
         this.element = document.createElement('div');
         this.element.className = 'screen-overlay settings-menu'; 
+        
+        this.render();
+        document.getElementById('ui-layer').appendChild(this.element);
+    }
+
+    formatKey(code) {
+        if (!code) return '???';
+        if (code.startsWith('Key')) return code.slice(3);
+        if (code.startsWith('Digit')) return code.slice(5);
+        if (code === 'Space') return 'SPACE';
+        if (code === 'ShiftLeft') return 'L-SHIFT';
+        if (code === 'ShiftRight') return 'R-SHIFT';
+        if (code === 'ControlLeft') return 'L-CTRL';
+        if (code === 'ControlRight') return 'R-CTRL';
+        return code.toUpperCase();
+    }
+
+    render() {
+        const k = settingsManager.settings.keys;
+        const moveKeys = `${this.formatKey(k.forward)} / ${this.formatKey(k.left)} / ${this.formatKey(k.backward)} / ${this.formatKey(k.right)}`;
 
         this.element.innerHTML = `
             <div class="menu-content settings-content" style="max-width: 600px;">
@@ -14,11 +34,11 @@ export class HowToPlayMenu {
                     <h3>CONTROLS</h3>
                     <div class="htp-grid">
                         <div class="htp-row"><span class="key">MOUSE</span> <span>Pitch & Yaw</span></div>
-                        <div class="htp-row"><span class="key">SPACE</span> <span>Jump / Activate Wings</span></div>
-                        <div class="htp-row"><span class="key">SHIFT</span> <span>Turbo Boost (Requires Energy)</span></div>
-                        <div class="htp-row"><span class="key">C / CTRL</span> <span>Air Brake / Tight Turn</span></div>
-                        <div class="htp-row"><span class="key">WASD</span> <span>Ground Movement</span></div>
-                        <div class="htp-row"><span class="key">R</span> <span>Quick Restart</span></div>
+                        <div class="htp-row"><span class="key">${this.formatKey(k.jump)}</span> <span>Jump / Activate Wings</span></div>
+                        <div class="htp-row"><span class="key">${this.formatKey(k.boost)}</span> <span>Turbo Boost (Requires Energy)</span></div>
+                        <div class="htp-row"><span class="key">${this.formatKey(k.brake)}</span> <span>Air Brake / Tight Turn</span></div>
+                        <div class="htp-row"><span class="key" style="font-size: 0.8rem">${moveKeys}</span> <span>Ground Movement</span></div>
+                        <div class="htp-row"><span class="key">${this.formatKey(k.reset)}</span> <span>Quick Restart</span></div>
                     </div>
                 </div>
 
@@ -41,10 +61,12 @@ export class HowToPlayMenu {
             e.stopPropagation();
             this.uiManager.goBack();
         });
-
-        document.getElementById('ui-layer').appendChild(this.element);
     }
 
-    show() { this.element.style.display = 'flex'; }
+    show() { 
+        this.render(); // Re-render to check for keybind updates
+        this.element.style.display = 'flex'; 
+    }
+    
     hide() { this.element.style.display = 'none'; }
 }

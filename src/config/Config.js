@@ -21,7 +21,7 @@ export const CONFIG = {
         SPEED_WALK: 10.0,
         SPEED_FLY_MIN: 15.0,
         SPEED_FLY_MAX: 35.0, 
-        SPEED_BOOST_CAP: 60.0, 
+        SPEED_BOOST_CAP: 50.0, 
         FRICTION_DEFAULT: 10.0,
         
         // Active Ability Specs
