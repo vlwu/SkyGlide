@@ -85,6 +85,10 @@ export class RacePath {
         this._lastCollisionBucket = -999999;
         this._lastCollisionRings = [];
         
+        // Branch limiting
+        this.branchCount = 0;
+        this.MAX_BRANCHES = 8; // Hard limit on total number of branches
+        
         this.generate();
     }
 
@@ -115,6 +119,8 @@ export class RacePath {
         
         this._lastCollisionBucket = -999999;
         this._lastCollisionRings = [];
+        
+        this.branchCount = 0;
     }
 
     reset() {
@@ -156,6 +162,13 @@ export class RacePath {
     }
 
     createBranch(startPos, startDir, segments, depth) {
+        // Hard limit on total branches to prevent exponential growth
+        if (this.branchCount >= this.MAX_BRANCHES) {
+            return;
+        }
+        
+        this.branchCount++;
+        
         const points = [];
         points.push(startPos.clone());
         const controlPoint = startPos.clone().add(startDir.clone().multiplyScalar(20));
@@ -177,15 +190,23 @@ export class RacePath {
             currentPos = nextPos;
             segmentsSinceBranch++;
 
+            // Only branch if we haven't hit the global limit
+            if (this.branchCount >= this.MAX_BRANCHES) {
+                continue; // Skip branching logic
+            }
+
             const forcedSplit = (depth === 0 && i === 40);
 
-            if (depth < 3 && (segments - i) > 50) {
-                if (forcedSplit || (segmentsSinceBranch > 25 && Math.random() < 0.15)) {
+            // Reduced branching: max depth of 2 instead of 3, and lower probability
+            if (depth < 2 && (segments - i) > 50) {
+                if (forcedSplit || (segmentsSinceBranch > 30 && Math.random() < 0.12)) {
                     const angle = (Math.PI / 5) * (Math.random() > 0.5 ? 1 : -1);
                     const branchDir = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle).normalize();
                     this.createBranch(nextPos, branchDir, segments - i, depth + 1);
                     segmentsSinceBranch = 0;
-                    if (forcedSplit || Math.random() < 0.2) {
+                    
+                    // Only create a second branch if forced split and we have room
+                    if (forcedSplit && this.branchCount < this.MAX_BRANCHES && Math.random() < 0.15) {
                         const angle2 = -angle * 0.8; 
                         const branchDir2 = currentDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle2).normalize();
                         this.createBranch(nextPos, branchDir2, segments - i, depth + 1);
