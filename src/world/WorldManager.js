@@ -29,6 +29,9 @@ export class WorldManager {
         this.lastUpdate = 0;
         this.lastVisibilityUpdate = 0;
         this.frameCounter = 0; 
+        
+        // Chunk Generation Throttling
+        this.chunkCooldown = 0;
 
         this.frustum = new THREE.Frustum();
         this.projScreenMatrix = new THREE.Matrix4();
@@ -71,6 +74,7 @@ export class WorldManager {
         this.generationQueue = [];
         this.applyQueue = [];
         this.disposalQueue = [];
+        this.chunkCooldown = 0;
     }
 
     hasChunk(cx, cz) {
@@ -84,22 +88,20 @@ export class WorldManager {
         const now = performance.now();
         const playerPos = player.position;
         
-        // Batched mesh application (2/frame)
-        let applyCount = 0;
-        while (this.applyQueue.length > 0 && applyCount < 2) {
+        // OPTIMIZATION: Strict budget for mesh application (1/frame)
+        // Prevents main thread stutter when receiving worker data
+        if (this.applyQueue.length > 0) {
              const data = this.applyQueue.shift();
              const chunk = this.chunks.get(data.key);
              if (chunk) {
                  chunk.applyMesh(data);
              }
-             applyCount++;
         }
 
-        let disposalCount = 0;
-        while (this.disposalQueue.length > 0 && disposalCount < 2) {
+        // Throttle disposal
+        if (this.disposalQueue.length > 0) {
             const chunk = this.disposalQueue.shift();
             chunk.dispose();
-            disposalCount++;
         }
 
         // OPTIMIZATION: Throttle visibility checks to ~33Hz (30FPS)
@@ -155,16 +157,12 @@ export class WorldManager {
             this.updateQueue(playerPos, camera);
         }
 
-        const speed = player.velocity.length();
-        let jobsPerFrame = 2;
-        if (speed < 5) jobsPerFrame = 4;
-        else if (speed > 20) jobsPerFrame = 1;
-
-        let dispatched = 0;
-
-        while (this.generationQueue.length > 0 && dispatched < jobsPerFrame) {
+        // OPTIMIZATION: Throttled Dispatch
+        // Only dispatch 1 chunk every 3 frames to allow GPU to catch up
+        if (this.chunkCooldown > 0) {
+            this.chunkCooldown--;
+        } else if (this.generationQueue.length > 0) {
             const req = this.generationQueue.shift();
-            
             let chunk = this.chunks.get(req.key);
             
             // If new chunk
@@ -196,7 +194,8 @@ export class WorldManager {
                     pathSegments: pathSegments
                 });
 
-                dispatched++;
+                // Set cooldown to skip next 2 frames
+                this.chunkCooldown = 2;
             }
         }
     }

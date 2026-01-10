@@ -185,9 +185,10 @@ window.addEventListener('resize', () => {
 
 const clock = new THREE.Clock();
 let lastFrameTime = 0;
-let lastShadowUpdate = 0;
+
 // Optimization: Track shadow position for distance checks
 const lastShadowPos = new THREE.Vector3(); 
+let framesSinceShadowUpdate = 0;
 
 function animate(time) {
     requestAnimationFrame(animate);
@@ -239,18 +240,21 @@ function animate(time) {
 
             uiManager.hud.update(player, gameScore);
             
-            // Optimization: Throttled Shadow Update
+            // OPTIMIZATION: Throttled Shadow Update
+            // Combine strict distance check (200^2 units) AND frame counter (1 sec)
             if (dirLight.castShadow) {
+                framesSinceShadowUpdate++;
                 const distMovedSq = player.position.distanceToSquared(lastShadowPos);
-                // Update only if moved > 10 units (100 sq) OR 500ms passed
-                if (distMovedSq > 100 || time - lastShadowUpdate > 500) {
+                
+                // Only update if moved > 200 units AND at least 60 frames passed
+                if (distMovedSq > 40000 && framesSinceShadowUpdate > 60) {
                     dirLight.position.x = player.position.x + 50;
                     dirLight.position.z = player.position.z + 50;
                     dirLight.target.position.copy(player.position);
                     dirLight.target.updateMatrixWorld();
                     
                     lastShadowPos.copy(player.position);
-                    lastShadowUpdate = time;
+                    framesSinceShadowUpdate = 0;
                 }
             }
         } else {

@@ -27,6 +27,12 @@ export class RacePath {
         this._activeRings = []; 
         this._lastCollisionBucket = -999999;
         
+        // OPTIMIZATION: Object pooling for collision result
+        this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
+        
+        // OPTIMIZATION: Dirty set for partial GPU updates
+        this.dirtyRingIndices = new Set();
+        
         this.ringGeometry = new THREE.TorusGeometry(5.0, 0.2, 6, 8); 
         
         this.ringUniforms = {
@@ -116,16 +122,10 @@ export class RacePath {
             depthWrite: false
         });
         
-        this._collisionResult = { scoreIncrease: 0, boostAmount: 0 };
-        
         // Branch limiting
         this.branchCount = 0;
         this.MAX_BRANCHES = 8; 
         
-        this.lastMatrixUpdate = 0;
-        this.matrixDirty = false;
-        this.colorDirty = false;
-
         this.generate();
     }
 
@@ -153,11 +153,10 @@ export class RacePath {
         this.pathLookup.clear();
         
         this._lastCollisionBucket = -999999;
-        this._activeRings.length = 0; // Clear without deallocating
+        this._activeRings.length = 0; 
         
         this.branchCount = 0;
-        this.matrixDirty = false;
-        this.colorDirty = false;
+        this.dirtyRingIndices.clear();
     }
 
     reset() {
@@ -167,6 +166,7 @@ export class RacePath {
 
     resetRings() {
         if (!this.instancedMesh) return;
+        this.dirtyRingIndices.clear();
 
         for (let i = 0; i < this.ringData.length; i++) {
             const data = this.ringData[i];
@@ -185,6 +185,7 @@ export class RacePath {
             this.instancedMesh.setColorAt(i, this.colorHelper);
         }
         
+        // Full update required on reset
         this.instancedMesh.instanceMatrix.needsUpdate = true;
         if (this.instancedMesh.instanceColor) this.instancedMesh.instanceColor.needsUpdate = true;
     }
@@ -442,19 +443,9 @@ export class RacePath {
             const distSq = pPos.distanceToSquared(ring.position);
             if (distSq < collisionDistSq) {
                 ring.active = false;
-                const idx = ring.index;
                 
-                // MATRIX UPDATE - direct write to dummy, avoiding extra allocations
-                this.instancedMesh.getMatrixAt(idx, this.dummy.matrix);
-                this.dummy.scale.multiplyScalar(0.1); 
-                this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
-                this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
-                
-                this.colorHelper.setHex(0x333333);
-                this.instancedMesh.setColorAt(idx, this.colorHelper);
-                
-                this.matrixDirty = true;
-                this.colorDirty = true;
+                // OPTIMIZATION: Mark dirty instead of updating immediately
+                this.dirtyRingIndices.add(ring.index);
                 
                 this._collisionResult.scoreIncrease++;
                 this._collisionResult.boostAmount = Math.max(this._collisionResult.boostAmount, ring.boostAmount);
@@ -550,21 +541,48 @@ export class RacePath {
             this.ringUniforms.uTime.value += dt;
         }
 
-        // OPTIMIZATION: Batch matrix updates to 100ms interval instead of 33ms
-        // This effectively batches the GPU upload of the matrix attribute
-        const now = performance.now();
-        if (now - this.lastMatrixUpdate > 100) {
-            if (this.instancedMesh) {
-                if (this.matrixDirty) {
-                    this.instancedMesh.instanceMatrix.needsUpdate = true;
-                    this.matrixDirty = false;
-                }
-                if (this.colorDirty && this.instancedMesh.instanceColor) {
+        // OPTIMIZATION: Batched partial updates for Rings
+        if (this.instancedMesh && this.dirtyRingIndices.size > 0) {
+            const MAX_UPDATES_PER_FRAME = 10;
+            let count = 0;
+            let minIdx = Number.MAX_SAFE_INTEGER;
+            let maxIdx = Number.MIN_SAFE_INTEGER;
+
+            // Iterate set, process up to limit
+            for (const idx of this.dirtyRingIndices) {
+                if (count >= MAX_UPDATES_PER_FRAME) break;
+                
+                // Retrieve data
+                this.instancedMesh.getMatrixAt(idx, this.dummy.matrix);
+                this.dummy.scale.multiplyScalar(0.1); 
+                this.dummy.matrix.compose(this.dummy.position, this.dummy.quaternion, this.dummy.scale);
+                this.instancedMesh.setMatrixAt(idx, this.dummy.matrix);
+                
+                this.colorHelper.setHex(0x333333);
+                this.instancedMesh.setColorAt(idx, this.colorHelper);
+                
+                if (idx < minIdx) minIdx = idx;
+                if (idx > maxIdx) maxIdx = idx;
+
+                this.dirtyRingIndices.delete(idx);
+                count++;
+            }
+
+            if (count > 0) {
+                // Set update ranges to minimize upload bandwidth
+                const itemSize = 16; // matrix is 16 floats
+                const colorSize = 3; // color is 3 floats
+
+                this.instancedMesh.instanceMatrix.updateRange.offset = minIdx * itemSize;
+                this.instancedMesh.instanceMatrix.updateRange.count = (maxIdx - minIdx + 1) * itemSize;
+                this.instancedMesh.instanceMatrix.needsUpdate = true;
+
+                if (this.instancedMesh.instanceColor) {
+                    this.instancedMesh.instanceColor.updateRange.offset = minIdx * colorSize;
+                    this.instancedMesh.instanceColor.updateRange.count = (maxIdx - minIdx + 1) * colorSize;
                     this.instancedMesh.instanceColor.needsUpdate = true;
-                    this.colorDirty = false;
                 }
             }
-            this.lastMatrixUpdate = now;
         }
     }
 }

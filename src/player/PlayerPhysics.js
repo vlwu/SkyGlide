@@ -13,6 +13,11 @@ export class PlayerPhysics {
         this._nextPos = new THREE.Vector3();
         this._tempVec = new THREE.Vector3();
         
+        // Zero-allocation pools
+        this._tempResult = new THREE.Vector3();
+        this._collisionPoint = new THREE.Vector3();
+        this._normalVec = new THREE.Vector3();
+
         this.radius = CONFIG.PLAYER.RADIUS;
     }
 

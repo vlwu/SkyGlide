@@ -2,11 +2,11 @@
 import { BLOCK, FACE_DIRS, FACE_CORNERS, isTransparent, isPlant } from './BlockDefs.js';
 import { fastColor, getBiome, getBiomeBlock, noise3D } from './BiomeUtils.js';
 
-const MAX_VERTICES = 40000;
-const BUFFER_POS = new Float32Array(MAX_VERTICES * 3);
-const BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
-const BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
-const BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
+let MAX_VERTICES = 40000;
+let BUFFER_POS = new Float32Array(MAX_VERTICES * 3);
+let BUFFER_NORM = new Float32Array(MAX_VERTICES * 3);
+let BUFFER_COL = new Float32Array(MAX_VERTICES * 3);
+let BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
 
 self.onmessage = (e) => {
     const { x, z, size, height, pathSegments, lod = 1 } = e.data;
@@ -285,6 +285,29 @@ self.onmessage = (e) => {
     // Mask for greedy meshing
     const mask = new Int32Array(Math.max(lSize, lHeight) * Math.max(lSize, lHeight));
 
+    // Helper to resize buffers if needed
+    const ensureBufferCapacity = (needed) => {
+        if (vertCount + needed >= MAX_VERTICES) {
+            MAX_VERTICES = Math.floor(MAX_VERTICES * 1.5);
+            
+            const newPos = new Float32Array(MAX_VERTICES * 3);
+            newPos.set(BUFFER_POS);
+            BUFFER_POS = newPos;
+
+            const newNorm = new Float32Array(MAX_VERTICES * 3);
+            newNorm.set(BUFFER_NORM);
+            BUFFER_NORM = newNorm;
+
+            const newCol = new Float32Array(MAX_VERTICES * 3);
+            newCol.set(BUFFER_COL);
+            BUFFER_COL = newCol;
+
+            const newInd = new Uint16Array(MAX_VERTICES * 1.5);
+            newInd.set(BUFFER_IND);
+            BUFFER_IND = newInd;
+        }
+    };
+
     // Axis: 0=X, 1=Y, 2=Z
     for (let d = 0; d < 3; d++) {
         let i, j, k, l, w, h, u = (d + 1) % 3, v = (d + 2) % 3;
@@ -368,6 +391,8 @@ self.onmessage = (e) => {
                         else if (d === 0) shade = 0.85; 
                         else shade = 0.9; 
 
+                        ensureBufferCapacity(4);
+
                         for (let k = 0; k < 4; k++) {
                             const p = isBack ? corners[3-k] : corners[k];
                             const dst = vertCount * 3;
@@ -426,6 +451,7 @@ self.onmessage = (e) => {
                         seedH = (seedH ^ (seedH >> 13)) * 1274124933;
                         const rand = ((seedH >>> 0) / 4294967296); 
 
+                        ensureBufferCapacity(8); // 8 verts for plant
                         const vBase = vertCount;
                         
                         const pushVert = (vx, vy, vz, nx, ny, nz) => {
@@ -458,10 +484,7 @@ self.onmessage = (e) => {
                         pushVert(0.85, 0.8, 0.15, 0.7, 0, -0.7);
                         pushVert(0.15, 0.8, 0.85, 0.7, 0, -0.7);
 
-                        // Double sided indices (2 faces * 2 sides = 4 draws, but simplified here to 2 faces double-drawn or just cull disabled in shader/material)
-                        // In main.js material uses default (CullFaceBack). 
-                        // To make plants visible from both sides without changing material, we can add reverse faces.
-                        
+                        // Double sided indices
                         for(let i=0; i<2; i++) {
                             const base = vBase + i * 4;
                             // Front
