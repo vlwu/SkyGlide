@@ -29,11 +29,14 @@ export class PauseMenu {
         `;
 
         this.elScore = this.element.querySelector('#pause-score-val');
+        this.btnResume = this.element.querySelector('#btn-resume');
 
         // Resume
-        this.element.querySelector('#btn-resume').addEventListener('click', (e) => {
+        this.btnResume.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.uiManager.onGameResume();
+            if (this.canResume) {
+                this.uiManager.onGameResume();
+            }
         });
 
         // Retry (Same Path)
@@ -84,7 +87,10 @@ export class PauseMenu {
         document.getElementById('ui-layer').appendChild(this.element);
 
         this.handleInput = this.handleInput.bind(this);
+        this.updateCountdown = this.updateCountdown.bind(this);
         this.openTime = 0;
+        this.canResume = false;
+        this.resumeDelay = 1200; // 1.2s delay for pointer lock cooldown safety
     }
 
     updateScore(score) {
@@ -94,7 +100,7 @@ export class PauseMenu {
     }
 
     handleInput(e) {
-        if (Date.now() - this.openTime < 100) return;
+        if (!this.canResume) return;
 
         if (e.code === 'Escape') {
             e.preventDefault();
@@ -106,11 +112,36 @@ export class PauseMenu {
     show() { 
         this.element.style.display = 'flex'; 
         this.openTime = Date.now();
+        this.canResume = false;
+        
+        // Initial visual state
+        this.btnResume.style.opacity = '0.5';
+        this.btnResume.style.cursor = 'wait';
+        
         document.addEventListener('keyup', this.handleInput);
+        this.updateCountdown();
     }
 
     hide() { 
         this.element.style.display = 'none'; 
         document.removeEventListener('keyup', this.handleInput);
+    }
+
+    updateCountdown() {
+        if (this.element.style.display === 'none') return;
+
+        const elapsed = Date.now() - this.openTime;
+        const remaining = Math.max(0, this.resumeDelay - elapsed);
+
+        if (remaining > 0) {
+            const seconds = (remaining / 1000).toFixed(1);
+            this.btnResume.textContent = `RESUME IN ${seconds}s`;
+            requestAnimationFrame(this.updateCountdown);
+        } else {
+            this.canResume = true;
+            this.btnResume.textContent = 'RESUME';
+            this.btnResume.style.opacity = '1';
+            this.btnResume.style.cursor = 'pointer';
+        }
     }
 }
