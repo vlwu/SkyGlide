@@ -8,6 +8,7 @@ import { UIManager } from './ui/UIManager.js';
 import { FPSCounter } from './ui/FPSCounter.js';
 import { settingsManager } from './settings/SettingsManager.js';
 import { CONFIG } from './config/Config.js';
+import { BLOCK } from './world/BlockDefs.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -145,6 +146,11 @@ function animate(time) {
             worldManager.update(player.position, camera);
 
             if (player.position.y < CONFIG.GAME.FLOOR_LIMIT || player.position.y > CONFIG.GAME.CEILING_LIMIT) {
+                uiManager.onGameOver();
+            }
+
+            // Game Over if player lands on anything other than spawn platform
+            if (player.onGround && player.groundBlock !== BLOCK.SPAWN) {
                 uiManager.onGameOver();
             }
 

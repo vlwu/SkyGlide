@@ -258,6 +258,11 @@ export class PlayerPhysics {
                     player.position.y = Math.floor(this._nextPos.y + 0.1) + 1; 
                     player.velocity.y = 0;
                     player.onGround = true; 
+
+                    // Update groundBlock immediately for precise logic in main loop
+                    this._tempVec.set(player.position.x, player.position.y - 0.05, player.position.z);
+                    player.groundBlock = this.getWorldBlockInternal(this._tempVec.x, this._tempVec.y, this._tempVec.z);
+
                     if(player.state === 'FLYING' || player.state === 'FALLING') player.state = 'WALKING';
                 } else {
                     player.position.y = Math.floor(this._nextPos.y) - 0.2; 
