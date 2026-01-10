@@ -196,6 +196,7 @@ export class PlayerPhysics {
         const DIVE_ACCEL = 2.0; 
         const CLIMB_BOOST = 0.8;
         const STEER_SPEED = 12.0; 
+        const VERT_STEER_SPEED = 6.0; // vertical responsiveness
 
         const lift = sqrpitchcos * LIFT_COEFF;
         player.velocity.y += (-GRAVITY + lift) * dt;
@@ -224,6 +225,7 @@ export class PlayerPhysics {
             player.velocity.z -= (look.z / hlook) * climbForce;
         }
 
+        // Horizontal Steering
         if (hlook > 0) {
             const hvel = Math.sqrt(player.velocity.x**2 + player.velocity.z**2);
             const targetX = (look.x / hlook) * hvel;
@@ -232,6 +234,11 @@ export class PlayerPhysics {
             player.velocity.x += (targetX - player.velocity.x) * STEER_SPEED * dt;
             player.velocity.z += (targetZ - player.velocity.z) * STEER_SPEED * dt;
         }
+
+        // Vertical Steering (Feature: Enhanced Responsiveness)
+        const speed = player.velocity.length();
+        const targetY = speed * look.y;
+        player.velocity.y += (targetY - player.velocity.y) * VERT_STEER_SPEED * dt;
 
         const MAX_SPEED = 35.0;
         const speedSq = player.velocity.lengthSq();
