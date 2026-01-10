@@ -3,14 +3,33 @@ export class GameOverMenu {
         this.uiManager = uiManager;
         this.element = document.createElement('div');
         this.element.className = 'screen-overlay';
-        this.element.style.background = 'rgba(20, 0, 0, 0.8)'; // Reddish tint for failure
+        this.element.style.background = 'rgba(20, 0, 0, 0.9)'; // Darker for readability
         
         this.element.innerHTML = `
             <div class="menu-content" style="border-color: #ff3333;">
                 <h1 class="game-title" style="font-size: 3.5rem; color: #ff3333;">SIGNAL <span style="color: white">LOST</span></h1>
-                <p class="subtitle" style="color: #ff8888; margin-bottom: 2rem;">Altitude Critical</p>
                 
-                <div class="button-group-vertical">
+                <div class="stats-container">
+                    <div class="stat-row main-stat">
+                        <span class="stat-label">RINGS COLLECTED</span>
+                        <span class="stat-value" id="go-score">0</span>
+                    </div>
+                    
+                    <div id="go-highscore-alert" class="highscore-alert">NEW HIGH SCORE!</div>
+
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <span class="stat-label-sm">DISTANCE</span>
+                            <span class="stat-value-sm" id="go-dist">0m</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label-sm">FLIGHT TIME</span>
+                            <span class="stat-value-sm" id="go-time">0s</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="button-group-vertical" style="margin-top: 2rem;">
                     <div class="button-group">
                         <button id="btn-retry-go" class="btn-primary" style="background: #ff3333; color: white;">RETRY RUN</button>
                         <button id="btn-new-path-go" class="btn-primary" style="background: #ff8833; color: white;">NEW PATH</button>
@@ -19,6 +38,12 @@ export class GameOverMenu {
                 </div>
             </div>
         `;
+
+        // Cache elements
+        this.elScore = this.element.querySelector('#go-score');
+        this.elDist = this.element.querySelector('#go-dist');
+        this.elTime = this.element.querySelector('#go-time');
+        this.elAlert = this.element.querySelector('#go-highscore-alert');
 
         // Retry Button (Soft Reset)
         const retryBtn = this.element.querySelector('#btn-retry-go');
@@ -54,6 +79,24 @@ export class GameOverMenu {
         });
 
         document.getElementById('ui-layer').appendChild(this.element);
+    }
+
+    updateStats(score, distance, time, isNewRecord) {
+        this.elScore.textContent = score;
+        this.elDist.textContent = Math.floor(distance).toLocaleString() + 'm';
+        
+        const minutes = Math.floor(time / 60);
+        const seconds = Math.floor(time % 60);
+        const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+        this.elTime.textContent = timeStr;
+
+        if (isNewRecord) {
+            this.elAlert.style.display = 'block';
+            this.elScore.style.color = '#ffd700'; // Gold
+        } else {
+            this.elAlert.style.display = 'none';
+            this.elScore.style.color = 'white';
+        }
     }
 
     show() { this.element.style.display = 'flex'; }

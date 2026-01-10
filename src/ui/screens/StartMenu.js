@@ -1,3 +1,5 @@
+import { statsManager } from '../../settings/StatsManager.js';
+
 export class StartMenu {
     constructor(uiManager) {
         this.uiManager = uiManager;
@@ -9,6 +11,11 @@ export class StartMenu {
                 <h1 class="game-title">SKY<span class="highlight">GLIDE</span></h1>
                 <p class="subtitle">High Velocity Voxel Flight</p>
                 
+                <div class="highscore-container">
+                    <span class="hs-label">HIGH SCORE</span>
+                    <span class="hs-value" id="start-highscore">0</span>
+                </div>
+
                 <div class="button-group">
                     <button id="btn-start" class="btn-primary">INITIATE FLIGHT</button>
                     <button id="btn-settings-start" class="btn-secondary">SETTINGS</button>
@@ -19,6 +26,8 @@ export class StartMenu {
                 </div>
             </div>
         `;
+
+        this.elHighScore = this.element.querySelector('#start-highscore');
 
         this.element.querySelector('#btn-start').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -31,8 +40,20 @@ export class StartMenu {
         });
 
         document.getElementById('ui-layer').appendChild(this.element);
+        
+        // Initial update
+        this.updateHighScore();
     }
 
-    show() { this.element.style.display = 'flex'; }
+    updateHighScore() {
+        if (this.elHighScore) {
+            this.elHighScore.textContent = statsManager.getHighScore();
+        }
+    }
+
+    show() { 
+        this.updateHighScore();
+        this.element.style.display = 'flex'; 
+    }
     hide() { this.element.style.display = 'none'; }
 }

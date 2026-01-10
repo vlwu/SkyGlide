@@ -3,6 +3,7 @@ import { HUD } from './screens/HUD.js';
 import { PauseMenu } from './screens/PauseMenu.js';
 import { SettingsMenu } from './screens/SettingsMenu.js';
 import { GameOverMenu } from './screens/GameOverMenu.js';
+import { statsManager } from '../settings/StatsManager.js';
 
 export class UIManager {
     constructor(player) {
@@ -110,8 +111,12 @@ export class UIManager {
         this.requestLock();
     }
     
-    onGameOver() {
+    onGameOver(stats = null) {
         if (this.activeScreen !== 'GAMEOVER') {
+            if (stats) {
+                const result = statsManager.saveRun(stats.score, stats.distance, stats.time);
+                this.gameOverMenu.updateStats(stats.score, stats.distance, stats.time, result.isNewRecord);
+            }
             this.showScreen('GAMEOVER');
             document.exitPointerLock();
         }

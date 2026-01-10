@@ -59,6 +59,8 @@ const player = new Player(scene, camera, worldManager);
 
 let gameScore = 0;
 let isGameRunning = false; 
+let gameStartTime = 0;
+const spawnPos = new THREE.Vector3(0, 16, 0);
 
 racePath.clear();
 worldManager.reset();
@@ -116,6 +118,7 @@ uiManager.setSettingsChangeHandler(applyGraphicsSettings);
 uiManager.setRestartHandler((mode) => {
     isGameRunning = true;
     gameScore = 0;
+    gameStartTime = Date.now();
     player.reset();
 
     if (!racePath.hasPath()) {
@@ -139,6 +142,16 @@ uiManager.setExitHandler(() => {
     racePath.clear();
     worldManager.reset();
 });
+
+const triggerGameOver = () => {
+    const dist = player.position.distanceTo(spawnPos);
+    const time = (Date.now() - gameStartTime) / 1000;
+    uiManager.onGameOver({
+        score: gameScore,
+        distance: dist,
+        time: time
+    });
+};
 
 document.addEventListener('pointerlockchange', () => {
     if (document.pointerLockElement === document.body) {
@@ -194,12 +207,12 @@ function animate(time) {
             worldManager.update(player.position, camera);
 
             if (player.position.y < CONFIG.GAME.FLOOR_LIMIT || player.position.y > CONFIG.GAME.CEILING_LIMIT) {
-                uiManager.onGameOver();
+                triggerGameOver();
             }
 
             // Game Over if player lands on anything other than spawn platform
             if (player.onGround && player.groundBlock !== BLOCK.SPAWN) {
-                uiManager.onGameOver();
+                triggerGameOver();
             }
 
             const collisionResult = racePath.checkCollisions(player);

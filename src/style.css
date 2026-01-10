@@ -87,9 +87,34 @@ canvas { display: block; }
 .subtitle {
     font-size: 1.2rem;
     color: #8fbcd4;
-    margin-bottom: 3rem;
+    margin-bottom: 2rem;
     letter-spacing: 2px;
     text-transform: uppercase;
+}
+
+.highscore-container {
+    background: rgba(0, 210, 255, 0.1);
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    padding: 10px 25px;
+    border-radius: 4px;
+    margin-bottom: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.hs-label {
+    font-size: 0.8rem;
+    color: #8fbcd4;
+    letter-spacing: 2px;
+    margin-bottom: 5px;
+}
+
+.hs-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
 }
 
 .btn-primary {
@@ -114,6 +139,79 @@ canvas { display: block; }
     margin-top: 2rem;
     color: rgba(255,255,255,0.4);
     font-size: 0.9rem;
+}
+
+/* Stats Display in Game Over */
+.stats-container {
+    background: rgba(0,0,0,0.4);
+    padding: 20px;
+    border-radius: 8px;
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.stat-row.main-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    width: 100%;
+}
+
+.stat-label {
+    font-size: 0.9rem;
+    color: #aaa;
+    letter-spacing: 2px;
+}
+
+.stat-value {
+    font-size: 4rem;
+    font-weight: bold;
+    color: white;
+    line-height: 1;
+}
+
+.stats-grid {
+    display: flex;
+    width: 100%;
+    justify-content: space-around;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.stat-label-sm {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.stat-value-sm {
+    font-size: 1.4rem;
+    color: #ddd;
+    font-weight: bold;
+}
+
+.highscore-alert {
+    color: #ffd700;
+    font-weight: bold;
+    font-style: italic;
+    margin-bottom: 15px;
+    animation: pulse 1s infinite;
+    display: none;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.8; }
 }
 
 /* Pause Menu */
