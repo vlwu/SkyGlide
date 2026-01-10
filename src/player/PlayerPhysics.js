@@ -68,9 +68,6 @@ export class PlayerPhysics {
         let val = this.world.getBlock(x, y, z);
         if (val) return val;
 
-        // Only check boundaries if we are very close to an edge.
-        // This avoids 4 extra Map lookups for every single collision check
-        // when the player is safely in the middle of a block.
         const rx = x % 1; 
         const rz = z % 1;
         const buffer = this.radius;
@@ -167,10 +164,6 @@ export class PlayerPhysics {
     }
 
     handleFlying(dt, player) {
-        // Optimization: Cap physics steps to avoid death spiral
-        // If fps drops to 5, dt is 0.2. 
-        // 0.2 / 0.05 = 4 iterations.
-        // Cap at 4 to prevent infinite freezing.
         const stepSize = 0.05;
         let remaining = dt;
         let iterations = 0;
@@ -249,35 +242,40 @@ export class PlayerPhysics {
     }
 
     resolvePhysics(dt, player) {
+        // Resolve X
         this._nextPos.copy(player.position);
         this._nextPos.x += player.velocity.x * dt;
         if (this.checkCollisionBody(this._nextPos, player)) {
             player.velocity.x = 0;
-            if (player.state === 'FLYING') this.crash(player);
+            // Feature: Removed crash() call to allow wall sliding in FLYING state
         } else {
             player.position.x = this._nextPos.x;
         }
 
+        // Resolve Z
         this._nextPos.copy(player.position);
         this._nextPos.z += player.velocity.z * dt;
         if (this.checkCollisionBody(this._nextPos, player)) {
             player.velocity.z = 0;
-            if (player.state === 'FLYING') this.crash(player);
+            // Feature: Removed crash() call to allow wall sliding in FLYING state
         } else {
             player.position.z = this._nextPos.z;
         }
 
+        // Resolve Y
         this._nextPos.copy(player.position);
         this._nextPos.y += player.velocity.y * dt;
         
         if (Math.abs(player.velocity.y) > 0.001) {
             if (this.checkCollisionBody(this._nextPos, player)) {
                 if (player.velocity.y < 0) {
+                    // Landing on ground
                     player.position.y = Math.floor(this._nextPos.y + 0.1) + 1; 
                     player.velocity.y = 0;
                     player.onGround = true; 
                     if(player.state === 'FLYING' || player.state === 'FALLING') player.state = 'WALKING';
                 } else {
+                    // Hitting ceiling
                     player.position.y = Math.floor(this._nextPos.y) - 0.2; 
                     player.velocity.y = 0;
                 }

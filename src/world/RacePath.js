@@ -13,7 +13,6 @@ export class RacePath {
         
         // Visuals
         this.visualItems = []; 
-        // Optimization: Spatial buckets for visual culling
         this.visualBuckets = new Map();
         this.VISUAL_BUCKET_SIZE = 100;
 
@@ -141,7 +140,8 @@ export class RacePath {
         this.curves.push({ curve, depth }); 
 
         const length = curve.getLength();
-        const divisions = Math.floor(length * 4); 
+        // Improvement: Increase divisions significantly for smoother tunnel carving
+        const divisions = Math.floor(length * 10); 
         const spacedPoints = curve.getSpacedPoints(divisions);
 
         if (spacedPoints.length > 0) {
@@ -177,9 +177,10 @@ export class RacePath {
     addToLookup(z, point) {
         if (!this.pathLookup.has(z)) this.pathLookup.set(z, []);
         const list = this.pathLookup.get(z);
+        // Reduce threshold slightly to keep points dense enough
         if (list.length > 0) {
             const last = list[list.length - 1];
-            if (last.distanceToSquared(point) < 1.0) return; 
+            if (last.distanceToSquared(point) < 0.25) return; 
         }
         list.push(point);
     }
@@ -315,7 +316,11 @@ export class RacePath {
 
     createVisuals() {
         for (const { curve } of this.curves) {
-            const tubeGeo = new THREE.TubeGeometry(curve, 100, 0.2, 6, false);
+            // Improvement: Dynamic tube resolution based on length to prevent jagged edges
+            const curveLength = curve.getLength();
+            const segments = Math.floor(curveLength * 2); // Higher resolution
+
+            const tubeGeo = new THREE.TubeGeometry(curve, segments, 0.2, 6, false);
             tubeGeo.computeBoundingBox();
             
             const tubeVert = `
@@ -356,7 +361,8 @@ export class RacePath {
             this.addToVisualBucket(tubeMesh);
 
             // Particles
-            const particleCount = 300; 
+            // Scaled particle count based on length to avoid gaps
+            const particleCount = Math.floor(curveLength * 0.4); 
             const curvePoints = curve.getSpacedPoints(particleCount);
             const posArray = new Float32Array(particleCount * 3);
             const randomArray = new Float32Array(particleCount * 3);
@@ -415,7 +421,6 @@ export class RacePath {
             return;
         }
         
-        // Add item to every bucket it intersects
         const minBucket = Math.floor(item.userData.bbox.min.z / this.VISUAL_BUCKET_SIZE);
         const maxBucket = Math.floor(item.userData.bbox.max.z / this.VISUAL_BUCKET_SIZE);
 
@@ -433,39 +438,9 @@ export class RacePath {
         this.uniforms.uTime.value += dt;
 
         if (playerPos) {
-            // Optimization: Only update visibility for nearby buckets
             const centerBucket = Math.floor(playerPos.z / this.VISUAL_BUCKET_SIZE);
-            
-            // Check range: -3 to +3 buckets (approx 300 units behind, 300 units ahead)
             const minB = centerBucket - 3;
             const maxB = centerBucket + 3;
-
-            // 1. Hide everything from previous active buckets?
-            // Actually, easier to hide everything if we track active set, but for now
-            // since we don't have a list of "currently visible", we rely on the fact that
-            // we only turn ON things nearby. 
-            // Ideally we'd turn OFF things leaving the range.
-            // Simplified approach: Iterate all buckets? No, that defeats the point.
-            // Better approach: Keep a set of currently visible items.
-            
-            // For this specific implementation where we need "precise code modifications":
-            // I will use a Set to track items we just checked to avoid double processing,
-            // and I will assume items far away can be culled.
-            // But without iterating ALL, we can't hide the far ones unless we store them.
-            
-            // Revised logic: 
-            // 1. We know which buckets are in range. 
-            // 2. We can't easily "hide everything else" without a list.
-            // 3. Fallback: Iterate the 'visualItems' list but check the bucket index logic?
-            //    No, that's O(N).
-            
-            // Correct logic:
-            // Since we added items to visualBuckets, we can just iterate the active buckets
-            // to SET visible = true.
-            // But we need to set visible = false for others.
-            // Given the constraints, I will iterate the active buckets to set visible=true, 
-            // but we need a way to turn off the others.
-            // The cleanest way without massive refactor is to keep a Set of "last visible items".
             
             if (!this._lastVisibleItems) this._lastVisibleItems = new Set();
             const newVisibleItems = new Set();
@@ -475,10 +450,8 @@ export class RacePath {
                 if (bucket) {
                     for (let i = 0; i < bucket.length; i++) {
                         const item = bucket[i];
-                        // Double check precise bounds
                         if (item.userData.bbox) {
                             if (playerPos.z > item.userData.bbox.max.z + 100 || playerPos.z < item.userData.bbox.min.z - 250) {
-                                // Out of range (can happen if item spans multiple buckets but we are at edge)
                                 continue; 
                             }
                             item.visible = true;
@@ -488,7 +461,6 @@ export class RacePath {
                 }
             }
 
-            // Hide items that are no longer in the new set
             this._lastVisibleItems.forEach(item => {
                 if (!newVisibleItems.has(item)) {
                     item.visible = false;
