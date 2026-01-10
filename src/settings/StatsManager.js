@@ -22,10 +22,11 @@ export class StatsManager {
 
     saveRun(score, distance, time) {
         let newRecord = false;
+        const finalScore = Math.round(score);
         
         // Update High Score
-        if (score > this.stats.highScore) {
-            this.stats.highScore = score;
+        if (finalScore > this.stats.highScore) {
+            this.stats.highScore = finalScore;
             newRecord = true;
         }
 
@@ -42,7 +43,7 @@ export class StatsManager {
     }
 
     getHighScore() {
-        return this.stats.highScore;
+        return Math.round(this.stats.highScore);
     }
 }
 

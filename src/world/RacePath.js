@@ -191,7 +191,8 @@ export class RacePath {
     }
 
     generate() {
-        const startPos = new THREE.Vector3(0, 15, 0);
+        // Start higher up to match the increased world height
+        const startPos = new THREE.Vector3(0, 160, 0);
         const startDir = new THREE.Vector3(0, 0, -1);
         
         this.createBranch(startPos, startDir, 250, 0);
@@ -230,13 +231,16 @@ export class RacePath {
             const z = currentPos.z - 40; 
             
             const xRange = 60 * varianceMult;
-            const yRange = 30 * varianceMult;
+            // Increased vertical variance for higher world
+            const yRange = 50 * varianceMult; 
             
             const x = currentPos.x + (Math.random() - 0.5) * xRange; 
             let y = currentPos.y + (Math.random() - 0.5) * yRange; 
             
-            const maxAlt = Math.min(240, 80 + (varianceMult - 1.0) * 50);
-            y = Math.max(20, Math.min(maxAlt, y));
+            // Adjusted altitude limits (min 40, max 240) to utilize the vertical space
+            const maxAlt = 240;
+            const minAlt = 40;
+            y = Math.max(minAlt, Math.min(maxAlt, y));
 
             const nextPos = new THREE.Vector3(x, y, z);
             points.push(nextPos);

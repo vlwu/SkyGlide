@@ -82,7 +82,7 @@ export class GameOverMenu {
     }
 
     updateStats(score, distance, time, isNewRecord) {
-        this.elScore.textContent = score;
+        this.elScore.textContent = Math.round(score);
         this.elDist.textContent = Math.floor(distance).toLocaleString() + 'm';
         
         const minutes = Math.floor(time / 60);
