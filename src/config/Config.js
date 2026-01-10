@@ -69,10 +69,10 @@ export const CONFIG = {
             FAR_OFFSET: 50
         },
         WIND: {
-            COUNT: 200,
+            COUNT: 100,
             COLOR: 0xffffff,
             OPACITY_MIN: 0.0,
-            OPACITY_MAX: 0.6
+            OPACITY_MAX: 0.2
         }
     }
 };
