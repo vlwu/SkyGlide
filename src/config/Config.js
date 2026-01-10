@@ -3,7 +3,7 @@ import * as THREE from 'three';
 export const CONFIG = {
     WORLD: {
         CHUNK_SIZE: 16,
-        CHUNK_HEIGHT: 96,
+        CHUNK_HEIGHT: 256, // Increased for verticality
         RENDER_DISTANCE: 10,
         RENDER_DISTANCE_UNITS: 160,
         SAFE_RADIUS_SQ: 1600, 
@@ -42,11 +42,11 @@ export const CONFIG = {
         }
     },
     GAME: {
-        CEILING_LIMIT: 250,
+        CEILING_LIMIT: 320, // Raised ceiling
         FLOOR_LIMIT: -30,
         CYCLE_DURATION: 300, 
         RINGS: {
-            BUCKET_SIZE: 20, // Reduced from 50 to 20 for finer spatial hashing
+            BUCKET_SIZE: 20, 
             VISUAL_BUCKET_SIZE: 100,
             COLLISION_DIST_SQ: 30.25,
             RENDER_DIST: 200

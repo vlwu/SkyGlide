@@ -1,4 +1,3 @@
-// src/world/ChunkWorker.js
 import { BLOCK, FACE_DIRS, FACE_CORNERS, isTransparent, isPlant } from './BlockDefs.js';
 import { fastColor, getBiome, getBiomeBlock, noise3D } from './BiomeUtils.js';
 
@@ -11,7 +10,6 @@ let BUFFER_IND = new Uint16Array(MAX_VERTICES * 1.5);
 self.onmessage = (e) => {
     const { x, z, size, height, pathSegments, lod = 1 } = e.data;
     
-    // Always generate full resolution data for consistency
     const data = new Uint8Array(size * height * size);
     const startX = x * size;
     const startZ = z * size;
@@ -21,9 +19,13 @@ self.onmessage = (e) => {
     
     // 1. GENERATE TERRAIN
     const scaleBase = 0.02;
-    const scaleMount = 0.04;
-    const scaleIsland = 0.04;
+    const scaleMount = 0.015; // Slower frequency for larger mountains
     const scaleDetail = 0.1;
+    
+    // Island parameters
+    const islandBaseScale = 0.012; 
+    const islandCenterY = 160;
+    const islandBand = 60; // Spread of islands
 
     for (let lx = 0; lx < size; lx++) {
         const wx = startX + lx;
@@ -31,27 +33,35 @@ self.onmessage = (e) => {
             const wz = startZ + lz;
             const biome = getBiome(wx, wz);
 
+            // --- Ground Terrain ---
             let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
             
-            const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
-            if (mountain > 0) h += mountain * 35;
+            // Base Mountain Mass
+            const mNoise = noise3D(wx * scaleMount, 100, wz * scaleMount);
             
             if (biome === 'mountain') {
-                h += noise3D(wx * scaleMount * 0.5, 200, wz * scaleMount * 0.5) * 20;
+                // Ridged Multifractal: 1.0 - abs(noise) creates sharp creases
+                const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
+                const ridgeHeight = ridge * ridge * 60; // Square it for sharper peaks
+                
+                h += (mNoise > 0 ? mNoise * 50 : 0) + ridgeHeight;
             } else if (biome === 'desert') {
-                const dunes = noise3D(wx * 0.05, 300, wz * 0.05);
-                h = h * 0.7 + dunes * 8;
+                const dunes = Math.abs(noise3D(wx * 0.05, 300, wz * 0.05));
+                h = h * 0.6 + dunes * 15;
             } else if (biome === 'tundra') {
                 h = h * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
+            } else {
+                // Plains/Volcanic
+                if (mNoise > 0.3) h += (mNoise - 0.3) * 30;
             }
             
             const groundHeight = Math.floor(h);
-            const colBase = lx + lz * strideZ;
-            const loopMax = Math.min(height, Math.max(groundHeight + 2, 90));
 
-            for (let y = 0; y < loopMax; y++) {
+            // Fill loop (0 to height) to handle both ground and islands
+            for (let y = 0; y < height; y++) {
                 let blockType = BLOCK.AIR;
                 
+                // --- Ground Layer ---
                 if (y <= groundHeight) {
                     const depth = groundHeight - y;
                     blockType = getBiomeBlock(biome, depth, y, groundHeight);
@@ -59,98 +69,130 @@ self.onmessage = (e) => {
                     if (depth === 0) {
                         const detail = noise3D(wx * scaleDetail, y * scaleDetail, wz * scaleDetail);
                         if (biome === 'plains' && detail > 0.6) blockType = BLOCK.MOSS_STONE;
-                        if (biome === 'mountain' && groundHeight > 60 && detail < -0.6) blockType = BLOCK.MARBLE;
+                        if (biome === 'mountain' && groundHeight > 80 && detail < -0.5) blockType = BLOCK.SNOW;
                     }
-                } else if (y > 45) {
-                    // Floating islands
-                    const islandNoise = noise3D(wx * scaleIsland, y * scaleIsland, wz * scaleIsland);
-                    if (islandNoise > 0.45) {
-                        if (y > 80) blockType = BLOCK.PACKED_ICE;
-                        else if (y > 78) blockType = BLOCK.ICE;
-                        else {
-                            const islandDetail = noise3D(wx * 0.15, y * 0.15, wz * 0.15);
-                            if (islandDetail > 0.3) blockType = BLOCK.MARBLE;
-                            else if (islandDetail < -0.3) blockType = BLOCK.GRANITE;
-                            else blockType = BLOCK.STONE;
-                        }
-                        if (y < 70 && islandNoise < 0.5 && noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0) {
-                            blockType = BLOCK.MOSS_STONE;
+                } 
+                
+                // --- Floating Islands (Sky Layer) ---
+                // Only spawn if well above ground to keep flight corridors open
+                if (y > 100) {
+                    // Vertical Density Gradient:
+                    // 1.0 at center, 0.0 at edges of band
+                    const dist = Math.abs(y - islandCenterY);
+                    const densityGradient = Math.max(0, 1.0 - (dist / islandBand));
+                    
+                    if (densityGradient > 0) {
+                        // Squeeze Y coord to make islands flat (plateaus)
+                        const n1 = noise3D(wx * islandBaseScale, y * 0.02, wz * islandBaseScale);
+                        const n2 = noise3D(wx * 0.05, y * 0.05, wz * 0.05) * 0.15; // Detail
+                        
+                        // Combine and apply gradient
+                        // We need a high threshold at edges, low at center
+                        const noiseVal = n1 + n2;
+                        const threshold = 0.2 + (1.0 - densityGradient) * 0.6;
+                        
+                        if (noiseVal > threshold) {
+                            // Island Biome Logic
+                            if (y > 170) blockType = BLOCK.SNOW;
+                            else if (y > 165) blockType = BLOCK.PACKED_ICE;
+                            else if (noiseVal > threshold + 0.15 && densityGradient > 0.8) {
+                                // Top soil for islands
+                                blockType = BLOCK.GRASS;
+                            } else {
+                                // Underside
+                                blockType = BLOCK.STONE;
+                                if (noise3D(wx * 0.1, y * 0.1, wz * 0.1) > 0.3) blockType = BLOCK.MOSS_STONE;
+                            }
                         }
                     }
                 }
-                
+
                 if (blockType !== BLOCK.AIR) {
-                    data[colBase + y * strideY] = blockType; 
+                    data[lx + lz * strideZ + y * strideY] = blockType; 
                 }
             }
         }
     }
 
-    // 2. VEGETATION PASS (Trees & Plants)
+    // 2. VEGETATION PASS
+    // Update ranges for new height
     const treeCheckRange = 3; 
     for (let lx = -treeCheckRange; lx < size + treeCheckRange; lx++) {
         const wx = startX + lx;
         for (let lz = -treeCheckRange; lz < size + treeCheckRange; lz++) {
             const wz = startZ + lz;
 
-            // Simple deterministic noise for tree placement
             const treeNoise = noise3D(wx * 0.8, 999, wz * 0.8);
             if (treeNoise > 0.75) {
-                const biome = getBiome(wx, wz);
-                if (biome === 'plains' || biome === 'tundra' || biome === 'mountain') {
-                    // Calculate ground height
-                    let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
-                    const mountain = noise3D(wx * scaleMount, 100, wz * scaleMount);
-                    if (mountain > 0) h += mountain * 35;
-                    if (biome === 'mountain') h += noise3D(wx * scaleMount * 0.5, 200, wz * scaleMount * 0.5) * 20;
-                    else if (biome === 'tundra') h = h * 0.8 + noise3D(wx * 0.03, 400, wz * 0.03) * 5;
-                    
-                    const groundY = Math.floor(h);
-                    const surfaceBlock = getBiomeBlock(biome, 0, groundY, groundY);
+                // ... (Recalculate h for tree placement - simplified copy of ground logic)
+                // Note: For performance, we only spawn trees on the "Ground" layer we calculated before.
+                // Since we don't have random access to the generated 'h' here without recalculating,
+                // we reconstruct basic height.
+                
+                let h = noise3D(wx * scaleBase, 0, wz * scaleBase) * 15 + 30;
+                // Simplified biome check for trees to avoid full recalc cost
+                // Just checking basic mountains
+                const mNoise = noise3D(wx * scaleMount, 100, wz * scaleMount);
+                 if (getBiome(wx, wz) === 'mountain') {
+                    const ridge = 1.0 - Math.abs(noise3D(wx * 0.03, 200, wz * 0.03));
+                    h += (mNoise > 0 ? mNoise * 50 : 0) + (ridge * ridge * 60);
+                } else {
+                     if (mNoise > 0.3) h += (mNoise - 0.3) * 30;
+                }
+                
+                const groundY = Math.floor(h);
 
-                    if (groundY > 10 && groundY < height - 10 && surfaceBlock === BLOCK.GRASS) {
-                        const treeHeight = 4 + Math.floor((treeNoise - 0.75) * 20); 
-                        const leafStart = groundY + treeHeight - 2;
-                        const leafEnd = groundY + treeHeight + 1;
+                // Ensure we are inside chunk bounds and surface is valid
+                if (groundY > 10 && groundY < height - 10) {
+                     // Check if there is actually a block here (could be tunnel)
+                     // Since we can't easily check neighbors across chunks here for tree bases,
+                     // we rely on the deterministic heightmap.
+                     
+                     // Only spawn if within this chunk
+                     if (lx >= 0 && lx < size && lz >= 0 && lz < size) {
+                         const idx = lx + lz * strideZ + groundY * strideY;
+                         // Verify ground block is "soil"
+                         const b = data[idx];
+                         if (b === BLOCK.GRASS || b === BLOCK.DIRT || b === BLOCK.SNOW) {
+                             const treeHeight = 4 + Math.floor((treeNoise - 0.75) * 20); 
+                             const leafStart = groundY + treeHeight - 2;
+                             const leafEnd = groundY + treeHeight + 1;
 
-                        // Trunk
-                        for(let y = groundY + 1; y < groundY + treeHeight; y++) {
-                            if (lx >= 0 && lx < size && lz >= 0 && lz < size) {
-                                const idx = lx + lz * strideZ + y * strideY;
-                                if (data[idx] === BLOCK.AIR || isPlant(data[idx])) {
-                                    data[idx] = BLOCK.OAK_LOG;
-                                }
-                            }
-                        }
+                             // Trunk
+                             for(let y = groundY + 1; y < groundY + treeHeight; y++) {
+                                 const tIdx = lx + lz * strideZ + y * strideY;
+                                 if (tIdx < data.length) data[tIdx] = BLOCK.OAK_LOG;
+                             }
 
-                        // Leaves
-                        for(let ly = leafStart; ly <= leafEnd; ly++) {
-                            for(let bx = lx - 2; bx <= lx + 2; bx++) {
-                                for(let bz = lz - 2; bz <= lz + 2; bz++) {
-                                    if (bx >= 0 && bx < size && bz >= 0 && bz < size && ly >= 0 && ly < height) {
-                                        const dist = Math.abs(bx - lx) + Math.abs(bz - lz) + Math.abs(ly - (leafStart + 1));
-                                        if (dist <= 3) {
-                                            const idx = bx + bz * strideZ + ly * strideY;
-                                            if (data[idx] === BLOCK.AIR) {
-                                                data[idx] = BLOCK.OAK_LEAVES;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                             // Leaves
+                             for(let ly = leafStart; ly <= leafEnd; ly++) {
+                                 for(let bx = lx - 2; bx <= lx + 2; bx++) {
+                                     for(let bz = lz - 2; bz <= lz + 2; bz++) {
+                                         if (bx >= 0 && bx < size && bz >= 0 && bz < size && ly < height) {
+                                             const dist = Math.abs(bx - lx) + Math.abs(bz - lz) + Math.abs(ly - (leafStart + 1));
+                                             if (dist <= 3) {
+                                                 const lIdx = bx + bz * strideZ + ly * strideY;
+                                                 if (data[lIdx] === BLOCK.AIR) data[lIdx] = BLOCK.OAK_LEAVES;
+                                             }
+                                         }
+                                     }
+                                 }
+                             }
+                         }
+                     }
                 }
             }
         }
     }
 
-    // Grass/Flowers/Desert Vegetation
+    // Grass/Flowers Pass
     for (let lx = 0; lx < size; lx++) {
         const wx = startX + lx;
         for (let lz = 0; lz < size; lz++) {
             const wz = startZ + lz;
             
+            // Scan from top down, but handling both Islands and Ground
+            // We scan the whole column
             for (let y = height - 2; y > 0; y--) {
                 const idx = lx + lz * strideZ + y * strideY;
                 const block = data[idx];
@@ -167,51 +209,13 @@ self.onmessage = (e) => {
                                 else data[aboveIdx] = BLOCK.TALL_GRASS;
                             }
                         }
-                        else if (block === BLOCK.SAND) {
-                            if (plantNoise > 0.3) {
-                                if (plantNoise > 0.65) {
-                                    // Cactus
-                                    let neighborCactus = false;
-                                    const offsets = [[0,-1], [-1,0], [-1,-1], [-1,1]];
-                                    for(let o of offsets) {
-                                        const nx = lx + o[0];
-                                        const nz = lz + o[1];
-                                        if (nx >= 0 && nx < size && nz >= 0 && nz < size) {
-                                            const nBase = nx + nz * strideZ;
-                                            const minNy = Math.max(0, y - 2);
-                                            const maxNy = Math.min(height - 1, y + 2);
-                                            for(let ny = minNy; ny <= maxNy; ny++) {
-                                                if(data[nBase + ny * strideY] === BLOCK.CACTUS) {
-                                                    neighborCactus = true;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        if(neighborCactus) break;
-                                    }
-
-                                    if (!neighborCactus) {
-                                        const h = (plantNoise > 0.8) ? 3 : 2;
-                                        for(let k = 0; k < h; k++) {
-                                            const cIdx = idx + strideY * (k + 1);
-                                            if (cIdx < data.length && data[cIdx] === BLOCK.AIR) {
-                                                data[cIdx] = BLOCK.CACTUS;
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    data[aboveIdx] = BLOCK.DEAD_BUSH;
-                                }
-                            }
-                        }
                     }
-                    break; 
                 }
             }
         }
     }
     
-    // 3. CARVE TUNNEL
+    // 3. CARVE TUNNEL (Unchanged, just ensures bounds)
     for (let lz = 0; lz < size; lz++) {
         const wz = startZ + lz;
         const points = pathSegments[wz];
@@ -219,7 +223,7 @@ self.onmessage = (e) => {
         const strideZ_lz = lz * strideZ;
         for (let lx = 0; lx < size; lx++) {
             const wx = startX + lx;
-            let tunnelMinY = 999, tunnelMaxY = -999;
+            let tunnelMinY = 9999, tunnelMaxY = -9999;
             for (let i = 0; i < points.length; i++) {
                 const p = points[i];
                 const dx = wx - p.x;
@@ -241,7 +245,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // 4. FORCE SPAWN (Keep spawn clear)
+    // 4. FORCE SPAWN (Clear area)
     const minWx = -2, maxWx = 2;
     const minWz = -2, maxWz = 2;
     const loopMinX = Math.max(0, minWx - startX);
@@ -254,7 +258,7 @@ self.onmessage = (e) => {
             const zOffset = lz * strideZ;
             for(let lx = loopMinX; lx <= loopMaxX; lx++) {
                 data[lx + strideY * 14 + zOffset] = BLOCK.SPAWN;
-                for(let y = 15; y <= 25; y++) { 
+                for(let y = 15; y <= 30; y++) { 
                     data[lx + strideY * y + zOffset] = BLOCK.AIR;
                 }
             }
@@ -266,14 +270,10 @@ self.onmessage = (e) => {
     let indexCount = 0;
     const rgb = [0,0,0];
 
-    // LOD step
     const step = lod;
-    
-    // Dimensions based on LOD
     const lSize = Math.ceil(size / step);
     const lHeight = Math.ceil(height / step);
 
-    // Helpers to access data with LOD
     const getLODBlock = (lx, ly, lz) => {
         const x = lx * step;
         const y = ly * step;
@@ -282,10 +282,8 @@ self.onmessage = (e) => {
         return data[x + z * strideZ + y * strideY];
     };
 
-    // Mask for greedy meshing
     const mask = new Int32Array(Math.max(lSize, lHeight) * Math.max(lSize, lHeight));
 
-    // Helper to resize buffers if needed
     const ensureBufferCapacity = (needed) => {
         if (vertCount + needed >= MAX_VERTICES) {
             MAX_VERTICES = Math.floor(MAX_VERTICES * 1.5);
@@ -308,7 +306,6 @@ self.onmessage = (e) => {
         }
     };
 
-    // Axis: 0=X, 1=Y, 2=Z
     for (let d = 0; d < 3; d++) {
         let i, j, k, l, w, h, u = (d + 1) % 3, v = (d + 2) % 3;
         const x = [0, 0, 0];
@@ -329,7 +326,6 @@ self.onmessage = (e) => {
                     const t1 = isTransparent(b1);
                     const t2 = isTransparent(b2);
 
-                    // Note: isPlant() blocks are isTransparent=true, so they won't form faces here
                     if (!t1 && t2) faceType = b1;      
                     else if (t1 && !t2) faceType = -b2; 
 
@@ -434,8 +430,7 @@ self.onmessage = (e) => {
         }
     }
 
-    // 6. PLANT MESHING (Standard Cross Geometry, separate pass)
-    // Only perform for detailed LOD to reduce noise/geometry at distance
+    // 6. PLANT MESHING (LOD 1 only)
     if (lod === 1) {
         for (let lx = 0; lx < size; lx++) {
             for (let ly = 0; ly < height; ly++) {
@@ -451,7 +446,7 @@ self.onmessage = (e) => {
                         seedH = (seedH ^ (seedH >> 13)) * 1274124933;
                         const rand = ((seedH >>> 0) / 4294967296); 
 
-                        ensureBufferCapacity(8); // 8 verts for plant
+                        ensureBufferCapacity(8);
                         const vBase = vertCount;
                         
                         const pushVert = (vx, vy, vz, nx, ny, nz) => {
@@ -472,22 +467,18 @@ self.onmessage = (e) => {
                             vertCount++;
                         };
 
-                        // Diagonal 1
                         pushVert(0.15, 0, 0.15, 0.7, 0, 0.7);
                         pushVert(0.85, 0, 0.85, 0.7, 0, 0.7);
                         pushVert(0.85, 0.8, 0.85, 0.7, 0, 0.7);
                         pushVert(0.15, 0.8, 0.15, 0.7, 0, 0.7);
                         
-                        // Diagonal 2
                         pushVert(0.15, 0, 0.85, 0.7, 0, -0.7);
                         pushVert(0.85, 0, 0.15, 0.7, 0, -0.7);
                         pushVert(0.85, 0.8, 0.15, 0.7, 0, -0.7);
                         pushVert(0.15, 0.8, 0.85, 0.7, 0, -0.7);
 
-                        // Double sided indices
                         for(let i=0; i<2; i++) {
                             const base = vBase + i * 4;
-                            // Front
                             BUFFER_IND[indexCount++] = base;
                             BUFFER_IND[indexCount++] = base + 1;
                             BUFFER_IND[indexCount++] = base + 2;
@@ -495,7 +486,6 @@ self.onmessage = (e) => {
                             BUFFER_IND[indexCount++] = base + 3;
                             BUFFER_IND[indexCount++] = base;
                             
-                            // Back (Reverse Winding)
                             BUFFER_IND[indexCount++] = base;
                             BUFFER_IND[indexCount++] = base + 3;
                             BUFFER_IND[indexCount++] = base + 2;

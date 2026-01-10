@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CONFIG } from '../config/Config.js';
 
 export class Chunk {
     constructor(x, z, scene, material) {
@@ -7,8 +8,8 @@ export class Chunk {
         this.scene = scene;
         this.material = material;
         
-        this.size = 16;
-        this.height = 96;
+        this.size = CONFIG.WORLD.CHUNK_SIZE;
+        this.height = CONFIG.WORLD.CHUNK_HEIGHT;
         
         this.data = null;
         this.mesh = null;
